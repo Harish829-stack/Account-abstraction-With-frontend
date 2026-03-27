@@ -19,7 +19,7 @@
 # Hardhat coverage reports
 /coverage
 
-/skandha
+skandha/
 
 
     
