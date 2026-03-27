@@ -1,7 +1,7 @@
 
 //before running this script- run approvePaymasterERC20 ,because the paymaster will pull 
 //erc20 token from smartAccount,when it will execute userOp
-
+// and before approving,transfer usdc  tokens and some amount to SmartAccount
 
 import hre from "hardhat";
 import axios from "axios";
@@ -9,7 +9,7 @@ import "dotenv/config";
 
 const ENTRYPOINT = process.env.ENTRY_POINT!;
 const FACTORY = process.env.FACTORY!;
-const PAYMASTER_ADDRESS = process.env.ERC20PAYMASTER!;
+const PAYMASTER_ADDRESS = process.env.ERC20PAYMASTER!; 
 
 const SALT = 1;
 const SKANDHA_URL = "http://127.0.0.1:14337/rpc";

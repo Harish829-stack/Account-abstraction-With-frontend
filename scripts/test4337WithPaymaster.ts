@@ -10,7 +10,7 @@ const PAYMASTER_ADDRESS= process.env.PAYMASTER;
 
 const SKANDHA_URL = "http://127.0.0.1:14337/rpc"; // local Skandha v1 HTTP
 
-function toHex(value: bigint | number) {
+function toHex(value: bigint | number) { 
   return "0x" + value.toString(16);
 }
 

@@ -1,6 +1,8 @@
 import hre from "hardhat";
+import "dotenv/config"
 
-const PAYMASTER_ADDR = "0xEa1A9b6fe92D1de8F620BAd0e4EF99c3C7f1581d";
+const PAYMASTER_ADDR =process.env.ERC20PAYMASTER;
+//we can add other paymaster also
 
 async function main() {
     const { ethers } = await hre.network.connect();
@@ -9,7 +11,7 @@ async function main() {
     console.log("Current EOA Wallet:", owner.address);
 
     // 1. Connect to your deployed Paymaster contract
-    const paymaster = await ethers.getContractAt("Paymaster", PAYMASTER_ADDR);
+    const paymaster = await ethers.getContractAt("Paymaster", PAYMASTER_ADDR!);
 
     // 2. Define Stake Parameters
     // Bundlers like Skandha usually require a 1-day delay (86400 seconds)

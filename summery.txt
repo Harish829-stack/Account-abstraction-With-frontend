@@ -1,0 +1,100 @@
+---------------Overview----------------
+
+This project implements a custom ERC-4337 Paymaster designed for EntryPoint v0.6.
+It allows users to pay for transaction gas fees using ERC20 tokens (specifically USDC) instead of native ETH. To ensure security and prevent "Sponsorship Griefing," it utilizes a backend signature verification step.
+
+----------------How it Works (The Flow)------------------
+Approval: The User's Smart Account approves the Paymaster to spend their USDC.
+
+Request: The user creates a UserOperation.
+
+Sponsorship: A backend service verifies the UserOp and signs it.
+
+Validation: * The Paymaster checks the backend signature.
+
+It uses a Chainlink Price Feed to calculate the current ETH gas cost in USDC.
+
+It "pre-charges" (pulls) the maximum USDC cost from the user.
+
+Execution: The transaction runs.
+
+Post-Op: The Paymaster calculates the actual gas used and refunds the excess USDC back to the user's Smart Account.
+
+---------------🛠 Key Functions Reference------------------
+1. validatePaymasterUserOp
+The heart of the contract. It performs three critical checks:
+
+Signature Verification: Checks if the data in paymasterAndData was signed by the authorized verifyingSigner.
+
+Price Calculation: Calls _getTokenAmount using Chainlink.
+
+Asset Lock: Moves USDC from user to Paymaster.
+
+2. postOp
+The "Accounting" function.
+
+It runs after the user's transaction.
+
+It ensures the user is only charged for the gas they actually consumed, not the "worst-case" estimate.
+
+3. _getTokenAmount
+The mathematical engine. It dynamically scales based on:
+
+tokenDecimals (e.g., 6 for USDC).
+
+priceDecimals (e.g., 8 for Chainlink USD feeds).
+
+PRICE_MARKUP (10% extra to protect against price volatility during the block).
+
+-----------------------------🚀 Deployment & Usage Guide------------------------------
+Step 1: Deployment
+Deploy the contract with the following parameters for Sepolia:
+
+EntryPoint: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
+
+USDC: 0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8
+
+Price Feed: 0x694AA1769357215DE4FAC081bf1f309aDC325306
+
+Step 2: Initialize Bundler Reputation
+Bash
+# Deposit ETH into EntryPoint for the Paymaster to spend
+await paymaster.deposit({ value: ethers.parseEther("0.1") });
+
+# Stake ETH to allow the Bundler (Skandha) to trust this Paymaster
+await paymaster.addStake(86400, { value: ethers.parseEther("0.01") });
+Step 3: User Approval
+Users must approve the Paymaster before sending a sponsored UserOp:
+
+TypeScript
+const approveCallData = usdc.interface.encodeFunctionData("approve", [PAYMASTER, amount]);
+// Wrap this in a UserOp or EOA transaction
+
+
+----------📝 Example UserOperation Construction (v0.6)---------------
+When pushing to GitHub, include this snippet to show how to pack the paymasterAndData field:
+
+TypeScript
+// Define Timestamps
+const validUntil = Math.floor(Date.now() / 1000) + 600;
+const validAfter = 0;
+
+// 1. Get Hash from Contract
+const paymasterHash = await paymaster.getHash(userOp, validUntil, validAfter);
+
+// 2. Sign with Backend Private Key
+const paymasterSignature = await backendSigner.signMessage(ethers.getBytes(paymasterHash));
+
+// 3. Pack paymasterAndData
+// Layout: [Address(20)] [validUntil(6)] [validAfter(6)] [Signature(variable)]
+userOp.paymasterAndData = ethers.concat([
+    PAYMASTER_ADDRESS,
+    ethers.solidityPacked(["uint48", "uint48"], [validUntil, validAfter]),
+    paymasterSignature
+]);
+⚠️ Important Notes for GitHub Readme
+Math safety: The contract uses a dynamic decimal calculation to handle various tokens, but it is optimized for 6-decimal USDC and 8-decimal Chainlink feeds.
+
+Skandha Integration: Ensure the Paymaster address is whitelisted in your Skandha config.json under the whitelistedEntities section.
+
+Signer Security: The verifyingSigner should be a secure backend wallet, not the same wallet used as the Smart Account owner.

@@ -1,3 +1,7 @@
+
+//before approving,transfer usdc  tokens and some amount to SmartAccount
+
+
 import hre from "hardhat";
 import axios from "axios";
 import "dotenv/config";

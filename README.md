@@ -268,6 +268,94 @@ In v0.6, use `entryPoint.deposits(address)` to query stake/balance info. `getDep
 
 ---
 
+## Paymaster Modes
+
+This project supports **two Paymaster implementations** that can be used interchangeably depending on your use case.
+
+### Verifying Paymaster (ETH-Sponsored)
+
+The original paymaster — a backend-signed verifying paymaster where **your backend/protocol sponsors gas fees on behalf of the user**. The user pays nothing; gas is covered from the Paymaster's deposited ETH balance in the EntryPoint.
+
+**Best for:**
+- dApps that want to offer gasless transactions (e.g. onboarding new users with zero ETH)
+- Subsidising specific actions (e.g. first mint, first swap)
+- Any flow where the protocol absorbs the gas cost
+
+**How it works:**
+1. Backend verifies the UserOp and signs it with `verifyingSigner`
+2. Paymaster validates the signature on-chain
+3. Gas is deducted from the Paymaster's ETH deposit in the EntryPoint — user pays nothing
+
+**Commands:**
+
+```bash
+# Deploy
+npx hardhat run scripts/deployPaymaster.ts --network sepolia
+
+# Stake & fund
+npx hardhat run scripts/addStake.ts --network sepolia
+
+# Send a sponsored (gasless) UserOp
+npx hardhat run scripts/test4337WithPaymaster.ts --network sepolia
+```
+
+---
+
+### ERC20 Paymaster (USDC / Token-Sponsored)
+
+The extended paymaster — users pay for gas in **USDC instead of ETH**. No ETH balance is needed in the Smart Account. A Chainlink ETH/USD price feed converts the gas cost to USDC in real time, and a pre-charge / refund mechanism ensures users only pay for gas actually consumed.
+
+**Best for:**
+- Wallets and dApps targeting users who hold stablecoins but no ETH
+- Cross-chain scenarios where the user's native asset is a token
+- "Pay with any token" UX patterns
+
+**How it works:**
+1. User approves the Paymaster to spend their USDC
+2. Backend signs the UserOp
+3. `validatePaymasterUserOp` checks the signature, fetches the live ETH/USD price, and pre-charges the max USDC cost from the user
+4. After execution, `postOp` calculates actual gas used and refunds excess USDC to the user
+
+**Additional constructor parameters (Sepolia):**
+
+| Parameter | Address |
+|---|---|
+| `token` (USDC) | `0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8` |
+| `priceFeed` (ETH/USD) | `0x694AA1769357215DE4FAC081bf1f309aDC325306` |
+
+**Commands:**
+
+```bash
+# User must approve the Paymaster to spend USDC first
+# (wrap this in a UserOp callData or send as an EOA tx)
+usdc.approve(PAYMASTER_ADDRESS, amount)
+
+# Deploy (pass USDC token address + Chainlink feed to constructor)
+npx hardhat run scripts/deployERC20Paymaster.ts --network sepolia
+
+# Stake & fund
+npx hardhat run scripts/addStake.ts --network sepolia
+
+# Send a USDC-sponsored UserOp
+npx hardhat run scripts/test4337WithERC20Paymaster.ts --network sepolia
+```
+
+---
+
+### Choosing a Paymaster
+
+| | Verifying Paymaster | ERC20 Paymaster |
+|---|---|---|
+| **User pays gas?** | No — protocol sponsors | Yes — in USDC, not ETH |
+| **ETH required in Smart Account?** | No | No |
+| **Token approval required?** | No | Yes (`USDC.approve`) |
+| **Chainlink dependency?** | No | Yes |
+| **Ideal for** | Gasless / subsidised UX | Stablecoin-native users |
+
+Both paymasters share the same Smart Account, Factory, Skandha bundler setup, and `paymasterAndData` layout — only the deployed paymaster contract and the test script differ.
+
+---
+
 ## Project Structure
 
 ```
@@ -276,7 +364,8 @@ In v0.6, use `entryPoint.deposits(address)` to query stake/balance info. `getDep
 ├── cache/                          # Hardhat cache
 ├── contracts/
 │   ├── BaseAccount.sol             # Abstract base account logic
-│   ├── CustomPaymaster.sol         # Verifying Paymaster (EntryPoint v0.6)
+│   ├── CustomPaymaster.sol         # Verifying Paymaster (ETH-sponsored, EntryPoint v0.6)
+│   ├── ERC20Paymaster.sol          # ERC20 Paymaster (USDC + Chainlink, EntryPoint v0.6)
 │   ├── Interfaces.sol              # Shared interfaces (IEntryPoint, etc.)
 │   ├── SmartAccount.sol            # ERC-4337 compatible smart account
 │   ├── SmartAccountFactory.sol     # Factory for deploying smart accounts
@@ -286,9 +375,11 @@ In v0.6, use `entryPoint.deposits(address)` to query stake/balance info. `getDep
 │   ├── addStake.ts                 # Stakes the Paymaster with the EntryPoint
 │   ├── checkStakeAndBal.ts         # Queries Paymaster deposit & stake status
 │   ├── deploy.ts                   # Deploys factory and account to Sepolia
-│   ├── deployPaymaster.ts          # Deploys and funds the CustomPaymaster
+│   ├── deployPaymaster.ts          # Deploys the Verifying Paymaster (ETH-sponsored)
+│   ├── deployERC20Paymaster.ts     # Deploys the ERC20 Paymaster (USDC + Chainlink)
 │   ├── test4337.ts                 # Sends a self-paid UserOperation
-│   └── test4337WithPaymaster.ts    # Sends a Paymaster-sponsored UserOperation
+│   ├── test4337WithPaymaster.ts    # Sends a Verifying Paymaster-sponsored UserOperation
+│   └── test4337WithERC20Paymaster.ts # Sends a USDC-sponsored UserOperation
 ├── skandha/                        # Skandha bundler (submodule / local clone)
 ├── test/                           # Contract test files
 ├── types/                          # TypeScript type definitions
