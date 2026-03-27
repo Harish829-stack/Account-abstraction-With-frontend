@@ -1,8 +1,9 @@
 
 import hre from "hardhat";
+import "dotenv/config"
 
 const ENTRYPOINT =
-"0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
+process.env.ENTRY_POINT;
 
 
 
@@ -24,7 +25,7 @@ async function main() {
 
  const paymaster =
    await Paymaster.deploy(
-     ENTRYPOINT,
+     ENTRYPOINT!,
      paymasterSigner
    );
 
@@ -39,7 +40,7 @@ async function main() {
  const entryPoint =
    await ethers.getContractAt(
      "IEntryPoint",
-     ENTRYPOINT
+     ENTRYPOINT!
    );
 
  const balance =

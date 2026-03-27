@@ -3,13 +3,13 @@
 import hre from "hardhat";
 import axios from "axios";
 import "dotenv/config"
-const targetAddress = "0x2fc678f0377A818DdEEca50FF10462AcA2A92CBe";
+const targetAddress = process.env.TARGET_CONTRACT_ADDRESS;
 const ENTRYPOINT = process.env.ENTRY_POINT;
 const FACTORY = process.env.FACTORY;
 const SALT = 1;
 const PAYMASTER_ADDRESS= process.env.PAYMASTER;
 
-const SKANDHA_URL = "http://127.0.0.1:14337/rpc"; // local Skandha v1 HTTP
+const SKANDHA_URL = process.env.SKANDHA_RPC_URL; // local Skandha v1 HTTP
 const targetAbi = [
   "function setNumber(uint8 _number) external payable",
   "function number() public view returns (uint8)",
@@ -57,11 +57,11 @@ async function main() {
     "SmartAccount",
     smartAccountAddress
   );
-  const targetContract = new ethers.Contract(targetAddress, targetAbi, owner);
+  const targetContract = new ethers.Contract(targetAddress!, targetAbi, owner);
   const targetFunctionData = targetContract.interface.encodeFunctionData("setNumber", [55]);
 
   const callData = smartAccount.interface.encodeFunctionData("execute", [
-    targetAddress,
+    targetAddress!,
     0,
      targetFunctionData,
   ]);
@@ -119,7 +119,7 @@ async function main() {
 
   // send UserOp via axios to local Skandha
   try {
-    const res = await axios.post(SKANDHA_URL, {
+    const res = await axios.post(SKANDHA_URL!, {
       jsonrpc: "2.0",
       id: 1,
       method: "eth_sendUserOperation",

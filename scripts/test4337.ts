@@ -1,10 +1,10 @@
 // import hre from "hardhat";
 
 // const ENTRYPOINT =
-// "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
+// process.env.ENTRY_POINT;
 
 // const FACTORY =
-// "0x8d6409753A2c4F2790b992fD00db897731dEA012";
+// process.env.FACTORY;
 
 // const SALT = 1;
 
@@ -25,7 +25,7 @@
 //  const factory =
 //    await ethers.getContractAt(
 //      "SmartAccountFactory",
-//      FACTORY
+//      FACTORY!
 //    );
 
 //  /*
@@ -68,7 +68,7 @@
 //  const entryPoint =
 //    await ethers.getContractAt(
 //      "IEntryPoint",
-//      ENTRYPOINT
+//      ENTRYPOINT!
 //    );
 
 //  /*
@@ -251,11 +251,11 @@ harish@harish-Vostro:~/Desktop/v0.6$
 import hre from "hardhat";
 import axios from "axios";
 
-const ENTRYPOINT = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
-const FACTORY = "0x8d6409753A2c4F2790b992fD00db897731dEA012";
+const ENTRYPOINT = process.env.ENTRY_POINT;
+const FACTORY = process.env.FACTORY;
 const SALT = 1;
 
-const SKANDHA_URL = "http://127.0.0.1:14337/rpc"; // local Skandha v1 HTTP
+const SKANDHA_URL = process.env.SKANDHA_RPC_URL; // local Skandha v1 HTTP
 
 function toHex(value: bigint | number) {
   return "0x" + value.toString(16);
@@ -267,7 +267,7 @@ async function main() {
 
   console.log("EOA:", owner.address);
 
-  const factory = await ethers.getContractAt("SmartAccountFactory", FACTORY);
+  const factory = await ethers.getContractAt("SmartAccountFactory", FACTORY!);
   const smartAccountAddress = await factory.getFunction("getAddress")(
     owner.address,
     SALT
@@ -277,7 +277,7 @@ async function main() {
   const code = await ethers.provider.getCode(smartAccountAddress);
   if (code === "0x") throw Error("SmartAccount not deployed");
 
-  const entryPoint = await ethers.getContractAt("IEntryPoint", ENTRYPOINT);
+  const entryPoint = await ethers.getContractAt("IEntryPoint", ENTRYPOINT!);
 
   const deposit = await entryPoint.balanceOf(smartAccountAddress);
   console.log("deposit:", deposit.toString());
@@ -328,7 +328,7 @@ async function main() {
 
   // send UserOp via axios to local Skandha
   try {
- const res = await axios.post(SKANDHA_URL, {
+ const res = await axios.post(SKANDHA_URL!, {
   jsonrpc: "2.0",
   id: 1,
   method: "eth_sendUserOperation",

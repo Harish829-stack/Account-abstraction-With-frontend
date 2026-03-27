@@ -12,7 +12,7 @@ const FACTORY = process.env.FACTORY!;
 const PAYMASTER_ADDRESS = process.env.ERC20PAYMASTER!; 
 
 const SALT = 1;
-const SKANDHA_URL = "http://127.0.0.1:14337/rpc";
+const SKANDHA_URL = process.env.SKANDHA_RPC_URL;
 
 function toHex(value: bigint | number) {
   return "0x" + value.toString(16);
@@ -252,7 +252,7 @@ async function main() {
   const res =
     await axios.post(
 
-      SKANDHA_URL,
+      SKANDHA_URL!,
 
       {
 

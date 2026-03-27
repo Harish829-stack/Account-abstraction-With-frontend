@@ -1,7 +1,8 @@
 import hre from "hardhat";
+import "dotenv/config"
 
-const ENTRYPOINT_ADDR = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
-const PAYMASTER_ADDR = "0xEa1A9b6fe92D1de8F620BAd0e4EF99c3C7f1581d";
+const ENTRYPOINT_ADDR = process.env.ENTRY_POINT;
+const PAYMASTER_ADDR = process.env.PAYMASTER;
 
 async function main() {
     const { ethers } = await hre.network.connect();
@@ -14,7 +15,7 @@ async function main() {
         [
             "function deposits(address account) public view returns (uint256 deposit, bool staked, uint256 stake, uint32 unstakeDelaySec, uint64 withdrawTime)"
         ],
-        ENTRYPOINT_ADDR
+        ENTRYPOINT_ADDR!
     );
 
     try {

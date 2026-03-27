@@ -1,18 +1,19 @@
 import hre from "hardhat";
 const { ethers } = await hre.network.connect();
+import "dotenv/config"
 
 async function main() {
   const [deployer] = await ethers.getSigners();
 
 
-  const ENTRY_POINT = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
-  const TOKEN = "0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8"; 
-  const PRICE_FEED = "0x694AA1769357215DE4FAC081bf1f309aDC325306";
+  const ENTRY_POINT = process.env.ENTRY_POINT;
+  const TOKEN = process.env.USDC_TOKEN_ADDRESS;
+  const PRICE_FEED = process.env.PRICE_FEED;
   const BACKEND_SIGNER = deployer;
 
 
   const Factory = await ethers.getContractFactory("ERC20Paymaster");
-  const paymaster = await Factory.deploy(ENTRY_POINT, TOKEN, PRICE_FEED, BACKEND_SIGNER);
+  const paymaster = await Factory.deploy(ENTRY_POINT!, TOKEN!, PRICE_FEED!, BACKEND_SIGNER);
   await paymaster.waitForDeployment();
   const address = await paymaster.getAddress();
   

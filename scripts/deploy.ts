@@ -1,7 +1,8 @@
 import hre from "hardhat";
+import "dotenv/config"
 
 const ENTRYPOINT =
-"0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
+process.env.ENTRY_POINT;
 
 const SALT = 1;
 
@@ -26,7 +27,7 @@ async function main() {
 
  const factory =
    await Factory.deploy(
-     ENTRYPOINT
+     ENTRYPOINT!
    );
 
  await factory.waitForDeployment();
@@ -94,7 +95,7 @@ async function main() {
  const entryPoint =
    await ethers.getContractAt(
      "IEntryPoint",
-     ENTRYPOINT
+     ENTRYPOINT!
    );
 
  const balance =

@@ -8,7 +8,7 @@ const FACTORY = process.env.FACTORY;
 const SALT = 1;
 const PAYMASTER_ADDRESS= process.env.PAYMASTER;
 
-const SKANDHA_URL = "http://127.0.0.1:14337/rpc"; // local Skandha v1 HTTP
+const SKANDHA_URL = process.env.SKANDHA_RPC_URL; // local Skandha v1 HTTP
 
 function toHex(value: bigint | number) { 
   return "0x" + value.toString(16);
@@ -108,7 +108,7 @@ async function main() {
 
   // send UserOp via axios to local Skandha
   try {
-    const res = await axios.post(SKANDHA_URL, {
+    const res = await axios.post(SKANDHA_URL!, {
       jsonrpc: "2.0",
       id: 1,
       method: "eth_sendUserOperation",
