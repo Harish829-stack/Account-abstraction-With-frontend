@@ -8,7 +8,7 @@ Approval: The User's Smart Account approves the Paymaster to spend their USDC.
 
 Request: The user creates a UserOperation.
 
-Sponsorship: A backend service verifies the UserOp and signs it.
+Sponsorship: A backend service verifies the UserOp and signs it. 
 
 Validation: * The Paymaster checks the backend signature.
 

@@ -22,8 +22,8 @@ contract ERC20Paymaster is IPaymaster, Ownable {
     address public verifyingSigner; // The backend address that signs the UserOp
 
     uint256 public constant PRICE_MARKUP = 110;
-    uint256 public constant PRICE_DENOMINATOR = 100;
-
+    uint256 public constant PRICE_DENOMINATOR = 100; 
+    
     constructor(
         IEntryPoint _entryPoint,
         IERC20 _token,
@@ -42,7 +42,7 @@ contract ERC20Paymaster is IPaymaster, Ownable {
     function validatePaymasterUserOp(
         UserOperation calldata userOp,
         bytes32 /*userOpHash*/,
-        uint256 maxCost
+        uint256 maxCost /**$$maxCost = (verificationGasLimit + callGasLimit + preVerificationGas) \times maxFeePerGas$$ */
     ) external override returns (bytes memory context, uint256 validationData) {
         require(
             msg.sender == address(entryPoint),

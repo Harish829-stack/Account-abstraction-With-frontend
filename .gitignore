@@ -19,6 +19,8 @@
 # Hardhat coverage reports
 /coverage
 
+/skandha
+
 
     
 .env
