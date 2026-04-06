@@ -21,7 +21,7 @@ contract SmartAccount is BaseAccount, ERC165 {
     event OwnerChanged(address indexed oldOwner, address indexed newOwner);
 
     event SmartAccountInitialized(
-        IEntryPoint indexed entryPoint,
+        IEntryPoint indexed entryPoint, 
         address indexed owner
     );
 

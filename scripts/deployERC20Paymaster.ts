@@ -13,7 +13,7 @@ async function main() {
 
 
   const Factory = await ethers.getContractFactory("ERC20Paymaster");
-  const paymaster = await Factory.deploy(ENTRY_POINT!, TOKEN!, PRICE_FEED!, BACKEND_SIGNER);
+  const paymaster = await Factory.deploy(ENTRY_POINT!, TOKEN!, PRICE_FEED!);
   await paymaster.waitForDeployment();
   const address = await paymaster.getAddress();
   
@@ -31,9 +31,9 @@ main().catch(console.error);
 
 
 /**
-  npx hardhat run scripts/deployERC20Paymaster.ts --network sepolia
+npx hardhat run scripts/deployERC20Paymaster.ts --network sepolia
 
-✅ Paymaster deployed at: 0x3D6c43456Bb957F742173628b4eF94a2cc7958bD
+✅ Paymaster deployed at: 0x6F0762312558bb7451A297D0A193192eaa90A8bb
 Staking and Depositing...
 ✅ Paymaster is ready for Skandha!
 

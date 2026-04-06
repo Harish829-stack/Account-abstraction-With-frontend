@@ -7,7 +7,7 @@ const targetAddress = process.env.TARGET_CONTRACT_ADDRESS;
 const ENTRYPOINT = process.env.ENTRY_POINT;
 const FACTORY = process.env.FACTORY;
 const SALT = 1;
-const PAYMASTER_ADDRESS= process.env.PAYMASTER;
+const PAYMASTER_ADDRESS= process.env.ERC20PAYMASTER!;
 
 const SKANDHA_URL = process.env.SKANDHA_RPC_URL; // local Skandha v1 HTTP
 const targetAbi = [

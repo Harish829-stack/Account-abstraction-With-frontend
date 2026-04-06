@@ -9,7 +9,7 @@ import "dotenv/config";
 
 const ENTRYPOINT = process.env.ENTRY_POINT!;
 const FACTORY = process.env.FACTORY!;
-const PAYMASTER_ADDRESS = process.env.ERC20PAYMASTER!; 
+const PAYMASTER_ADDRESS = process.env.ERC20PAYMASTER!;  
 
 const SALT = 1;
 const SKANDHA_URL = process.env.SKANDHA_RPC_URL;
@@ -178,52 +178,8 @@ async function main() {
 
   // -------- PAYMASTER SIGNATURE --------
 
-  // temporary paymasterAndData for hashing
-  const tempUserOp = {
-    ...userOp,
-    paymasterAndData:
-      PAYMASTER_ADDRESS
-  };
-
-  const paymasterHash =
-    await paymaster.getHash(
-      tempUserOp,
-      validUntil,
-      validAfter
-    );
-
-  const paymasterSignature =
-    await paymasterSigner.signMessage(
-      ethers.getBytes(
-        paymasterHash
-      )
-    );
-
-  // pack time bounds
-  const encodedTimeBounds =
-    ethers.solidityPacked(
-
-      [
-        "uint48",
-        "uint48"
-      ],
-
-      [
-        validUntil,
-        validAfter
-      ]
-    );
-
-  userOp.paymasterAndData =
-    ethers.concat([
-
-      PAYMASTER_ADDRESS,
-
-      encodedTimeBounds,
-
-      paymasterSignature
-
-    ]);
+  // Paymaster no longer requires a signature or time bounds, just the address
+  userOp.paymasterAndData = PAYMASTER_ADDRESS;
 
   // -------- ACCOUNT SIGNATURE --------
 

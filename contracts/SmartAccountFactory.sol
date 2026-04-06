@@ -10,7 +10,6 @@ import "./Interfaces.sol";
 contract SmartAccountFactory {
 
     SmartAccount public immutable implementation;
-
     constructor(
         IEntryPoint entryPoint
     ) {
