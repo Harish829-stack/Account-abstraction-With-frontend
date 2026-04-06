@@ -1,5 +1,45 @@
 import axios from "axios";
 
+export async function estimateUserOperationGas(userOp) {
+  const rpcUrl = import.meta.env.VITE_SKANDHA_RPC_URL;
+  const entryPoint = import.meta.env.VITE_ENTRY_POINT;
+
+  if (!rpcUrl) throw new Error("Bundler RPC URL not found in env");
+  if (!entryPoint) throw new Error("Entry Point missing in env");
+
+  // Create a copy for estimation
+  const opToEstimate = { ...userOp };
+  
+  // Provide dummy signature for estimation
+  if (!opToEstimate.signature || opToEstimate.signature === "0x") {
+    opToEstimate.signature = "0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c";
+  }
+
+  try {
+    const res = await axios.post(
+      rpcUrl,
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_estimateUserOperationGas",
+        params: [opToEstimate, entryPoint]
+      },
+      {
+        headers: { "Content-Type": "application/json" }
+      }
+    );
+
+    const data = res.data;
+    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+    return data.result;
+  } catch (error) {
+    if (error.response && error.response.data && error.response.data.error) {
+       throw new Error(error.response.data.error.message);
+    }
+    throw error;
+  }
+}
+
 export async function sendUserOperation(userOp) {
   const rpcUrl = import.meta.env.VITE_SKANDHA_RPC_URL;
   const entryPoint = import.meta.env.VITE_ENTRY_POINT;

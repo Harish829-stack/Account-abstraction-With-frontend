@@ -328,7 +328,7 @@ contract ERC20Paymaster is IPaymaster, Ownable {
 
     // --- ERC4337 COMPATIBILITY & MANAGEMENT ---
 
-    function deposit() public payable {
+    function deposit() public payable onlyOwner {
         entryPoint.depositTo{value: msg.value}(address(this));
     }
 

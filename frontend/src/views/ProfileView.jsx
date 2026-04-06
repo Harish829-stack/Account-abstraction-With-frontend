@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
+import { useToast } from '../context/ToastContext';
 import { shortenAddress, formatNum } from '../utils/helpers';
 import { Copy, Wallet, CheckCircle2, ShieldAlert, RotateCcw } from 'lucide-react';
 import { ERC20_ABI } from '../utils/abis';
 
 export default function ProfileView() {
   const { eoaAddress, eoaETHBalance, eoaUSDCBalance, smartAccountAddress, paymasterAddress, signer, provider, env, loadEOABalances, refreshAllData } = useAppContext();
+  const toast = useToast();
   
   const [copied, setCopied] = useState(false);
   const [saAllowance, setSaAllowance] = useState('0');
@@ -24,6 +26,7 @@ export default function ProfileView() {
   const copyAddress = () => {
     navigator.clipboard.writeText(eoaAddress);
     setCopied(true);
+    toast.success("Address copied to clipboard!");
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -73,10 +76,10 @@ export default function ProfileView() {
       }
       // Reset input
       if(isSa) setInputSaAllowance(''); else setInputPmAllowance('');
-      alert("Approval transaction successful!");
+      toast.success("Approval transaction successful!");
     } catch (err) {
-      if (err.code === 4001) alert("Transaction rejected by user");
-      else alert(err.reason || err.message || "Failed to approve");
+      if (err.code === 4001) toast.error("Transaction rejected by user");
+      else toast.error(err.reason || err.message || "Failed to approve");
     } finally {
       setPending(false);
     }

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
+import { useToast } from '../context/ToastContext';
 import { SmartAccountABI, ERC20_ABI, IEntryPointABI, ERC20PaymasterABI } from '../utils/abis';
-import { sendUserOperation, getUserOpReceipt } from '../utils/bundler';
+import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
 import { toHex } from '../utils/helpers';
 import { Send, Settings, ExternalLink } from 'lucide-react';
 
@@ -14,8 +15,10 @@ export default function SendOpView() {
     smartAccountAddress, 
     paymasterAddress,
     addPendingUserOp,
+    refreshAllData,
     env
   } = useAppContext();
+  const toast = useToast();
 
   const [receiver, setReceiver] = useState('');
   const [amount, setAmount] = useState('');
@@ -23,9 +26,9 @@ export default function SendOpView() {
   const [usePaymaster, setUsePaymaster] = useState(false);
   
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [callGasLimit, setCallGasLimit] = useState('500000');
-  const [verificationGasLimit, setVerificationGasLimit] = useState('500000');
-  const [preVerificationGas, setPreVerificationGas] = useState('100000');
+  const [callGasLimit, setCallGasLimit] = useState('100000');
+  const [verificationGasLimit, setVerificationGasLimit] = useState('120000');
+  const [preVerificationGas, setPreVerificationGas] = useState('45000');
 
   const [pending, setPending] = useState(false);
   const [userOpHashResult, setUserOpHashResult] = useState('');
@@ -64,10 +67,10 @@ export default function SendOpView() {
 
   const handleSendOp = async () => {
      if (!receiver || !amount || !smartAccountAddress || !signer) return;
-     if (!ethers.isAddress(receiver)) {
-        alert("Invalid receiver address");
-        return;
-     }
+      if (!ethers.isAddress(receiver)) {
+         toast.error("Invalid receiver address");
+         return;
+      }
 
      setPending(true);
      setUserOpHashResult('');
@@ -83,9 +86,9 @@ export default function SendOpView() {
           nonce: toHex(nonce),
           initCode: "0x",
           callData: calldata,
-          callGasLimit: toHex(callGasLimit),
-          verificationGasLimit: toHex(verificationGasLimit),
-          preVerificationGas: toHex(preVerificationGas),
+          callGasLimit: toHex(callGasLimit), // Initial fallback
+          verificationGasLimit: toHex(verificationGasLimit), // Initial fallback
+          preVerificationGas: toHex(preVerificationGas), // Initial fallback
           maxFeePerGas: toHex(fee.maxFeePerGas),
           maxPriorityFeePerGas: toHex(fee.maxPriorityFeePerGas),
           paymasterAndData: "0x",
@@ -95,6 +98,27 @@ export default function SendOpView() {
        if (usePaymaster) {
           if (!paymasterAddress) throw new Error("Paymaster address not set in State!");
           userOp.paymasterAndData = paymasterAddress;
+       }
+
+       // Estimate actual gas needed dynamically to prevent OOG and balance errors
+       try {
+           const estimated = await estimateUserOperationGas(userOp);
+           
+           // Apply padding to estimations for safety margins
+           const safeCallGasLimit = BigInt(estimated.callGasLimit);
+           const safeVerification = BigInt(estimated.verificationGasLimit);
+           // Skandha sometimes returns low preVerificationGas, standard padding is + 5000
+           const safePreVerification = BigInt(estimated.preVerificationGas) + 5000n;
+
+           userOp.callGasLimit = toHex(safeCallGasLimit);
+           userOp.verificationGasLimit = toHex(safeVerification);
+           userOp.preVerificationGas = toHex(safePreVerification);
+
+           setCallGasLimit(safeCallGasLimit.toString());
+           setVerificationGasLimit(safeVerification.toString());
+           setPreVerificationGas(safePreVerification.toString());
+       } catch (estimateErr) {
+           console.warn("Gas estimation failed, falling back to manual config:", estimateErr);
        }
 
        // Get UserOp Hash from EntryPoint
@@ -108,6 +132,7 @@ export default function SendOpView() {
        const finalHash = await sendUserOperation(userOp);
        setUserOpHashResult(finalHash);
        addPendingUserOp(finalHash);
+       toast.success("UserOperation submitted successfully!");
 
        // Wait 7 seconds and poll for transaction hash
         setWaitingForTx(true);
@@ -130,6 +155,7 @@ export default function SendOpView() {
               setTxHashResult(actualTxHash);
               addPendingUserOp(finalHash, actualTxHash);
               refreshAllData();
+              toast.success("Transaction confirmed on-chain!");
            } else {
               // fallback if not found
               addPendingUserOp(finalHash);
@@ -137,11 +163,11 @@ export default function SendOpView() {
            setWaitingForTx(false);
         }, 7000);
 
-     } catch (err) {
-       console.error(err);
-       if (err.code === 4001) alert("Transaction rejected by user");
-       else alert(err.reason || err.message || "Failed to submit UserOp");
-     } finally {
+      } catch (err) {
+        console.error(err);
+        if (err.code === 4001) toast.error("Transaction rejected by user");
+        else toast.error(err.reason || err.message || "Failed to submit UserOp");
+      } finally {
        setPending(false);
      }
   };

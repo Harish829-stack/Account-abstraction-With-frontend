@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
+import { useToast } from '../context/ToastContext';
 import { SmartAccountABI, ERC20_ABI, IEntryPointABI } from '../utils/abis';
-import { sendUserOperation, getUserOpReceipt } from '../utils/bundler';
+import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
 import { toHex } from '../utils/helpers';
 import { Layers, Settings, ExternalLink, Plus, Trash2, Send } from 'lucide-react';
 
@@ -14,8 +15,10 @@ export default function BatchSendView() {
     smartAccountAddress, 
     paymasterAddress,
     addPendingUserOp,
+    refreshAllData,
     env
   } = useAppContext();
+  const toast = useToast();
 
   const [operations, setOperations] = useState([
     { receiver: '', amount: '', token: 'ETH' }
@@ -23,9 +26,9 @@ export default function BatchSendView() {
   const [usePaymaster, setUsePaymaster] = useState(false);
   
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [callGasLimit, setCallGasLimit] = useState('1000000'); // higher default for batch
-  const [verificationGasLimit, setVerificationGasLimit] = useState('700000');
-  const [preVerificationGas, setPreVerificationGas] = useState('200000');
+  const [callGasLimit, setCallGasLimit] = useState('150000'); // lowered from 350k
+  const [verificationGasLimit, setVerificationGasLimit] = useState('140000'); // lowered from 250k
+  const [preVerificationGas, setPreVerificationGas] = useState('55000'); // slightly higher for batch
 
   const [pending, setPending] = useState(false);
   const [userOpHashResult, setUserOpHashResult] = useState('');
@@ -95,7 +98,7 @@ export default function BatchSendView() {
 
   const handleSendBatchOp = async () => {
     if (!isFormValid()) {
-      alert("Please ensure all receivers are valid addresses and amounts are > 0");
+      toast.error("Please ensure all receivers are valid addresses and amounts are > 0");
       return;
     }
     if (!smartAccountAddress || !signer) return;
@@ -114,9 +117,9 @@ export default function BatchSendView() {
          nonce: toHex(nonce),
          initCode: "0x",
          callData: calldata,
-         callGasLimit: toHex(callGasLimit),
-         verificationGasLimit: toHex(verificationGasLimit),
-         preVerificationGas: toHex(preVerificationGas),
+         callGasLimit: toHex(callGasLimit), // Initial fallback
+         verificationGasLimit: toHex(verificationGasLimit), // Initial fallback
+         preVerificationGas: toHex(preVerificationGas), // Initial fallback
          maxFeePerGas: toHex(fee.maxFeePerGas),
          maxPriorityFeePerGas: toHex(fee.maxPriorityFeePerGas),
          paymasterAndData: "0x",
@@ -126,6 +129,25 @@ export default function BatchSendView() {
       if (usePaymaster) {
          if (!paymasterAddress) throw new Error("Paymaster address not set in State!");
          userOp.paymasterAndData = paymasterAddress;
+      }
+
+      // Estimate actual gas needed dynamically
+      try {
+          const estimated = await estimateUserOperationGas(userOp);
+          
+          const safeCallGasLimit = BigInt(estimated.callGasLimit);
+          const safeVerification = BigInt(estimated.verificationGasLimit);
+          const safePreVerification = BigInt(estimated.preVerificationGas) + 5000n;
+
+          userOp.callGasLimit = toHex(safeCallGasLimit);
+          userOp.verificationGasLimit = toHex(safeVerification);
+          userOp.preVerificationGas = toHex(safePreVerification);
+
+          setCallGasLimit(safeCallGasLimit.toString());
+          setVerificationGasLimit(safeVerification.toString());
+          setPreVerificationGas(safePreVerification.toString());
+      } catch (estimateErr) {
+          console.warn("Gas estimation failed, falling back to manual config:", estimateErr);
       }
 
       // Get UserOp Hash from EntryPoint
@@ -139,6 +161,7 @@ export default function BatchSendView() {
       const finalHash = await sendUserOperation(userOp);
       setUserOpHashResult(finalHash);
       addPendingUserOp(finalHash);
+      toast.success("Batch UserOperation submitted!");
 
       // Wait 7 seconds and poll for transaction hash
       setWaitingForTx(true);
@@ -161,6 +184,7 @@ export default function BatchSendView() {
             setTxHashResult(actualTxHash);
             addPendingUserOp(finalHash, actualTxHash);
             refreshAllData();
+            toast.success("Batch transaction confirmed!");
          } else {
             // fallback if not found
             addPendingUserOp(finalHash);
@@ -170,8 +194,8 @@ export default function BatchSendView() {
 
     } catch (err) {
       console.error(err);
-      if (err.code === 4001) alert("Transaction rejected by user");
-      else alert(err.reason || err.message || "Failed to submit UserOp");
+      if (err.code === 4001) toast.error("Transaction rejected by user");
+      else toast.error(err.reason || err.message || "Failed to submit UserOp");
     } finally {
       setPending(false);
     }

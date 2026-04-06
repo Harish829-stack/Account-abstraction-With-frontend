@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { IEntryPointABI, SmartAccountABI, ERC20_ABI } from "../utils/abis";
+import { useToast } from "./ToastContext";
 
 const AppContext = createContext();
 
@@ -10,6 +11,7 @@ export const AppProvider = ({ children }) => {
   const [currentView, setCurrentView] = useState("home"); // home | profile | setup | send | paymaster
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
+  const toast = useToast();
   const [eoaAddress, setEoaAddress] = useState(null);
   const [chainId, setChainId] = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem('app-theme') || 'dark');
@@ -198,7 +200,7 @@ export const AppProvider = ({ children }) => {
 
   const connectWallet = async () => {
     if (!window.ethereum) {
-      alert("MetaMask (window.ethereum) is required!");
+      toast.error("MetaMask (window.ethereum) is required!");
       return;
     }
     setIsConnecting(true);
@@ -223,10 +225,10 @@ export const AppProvider = ({ children }) => {
       }
     } catch (error) {
        if (error.code === 4001) {
-          alert("Transaction rejected by user.");
+          toast.error("Transaction rejected by user.");
        } else {
           console.error(error);
-          alert(error.message || "Failed to connect wallet.");
+          toast.error(error.message || "Failed to connect wallet.");
        }
     } finally {
       setIsConnecting(false);

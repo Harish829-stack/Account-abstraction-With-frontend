@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
+import { useToast } from '../context/ToastContext';
 import { shortenAddress } from '../utils/helpers';
 import { Activity, Clock } from 'lucide-react';
 import { IEntryPointABI } from '../utils/abis';
 
 export default function HistoryView() {
   const { smartAccountAddress, provider, env, pendingUserOps } = useAppContext();
+  const toast = useToast();
   
   const [recentOps, setRecentOps] = useState([]);
   const [loadingOps, setLoadingOps] = useState(false);
@@ -81,9 +83,9 @@ export default function HistoryView() {
                        {op.txHash ? 'Transaction Hash' : 'UserOp Hash'}
                        <button 
                          onClick={() => {
-                            navigator.clipboard.writeText(op.txHash || op.userOpHash);
-                            alert(`${op.txHash ? 'Transaction' : 'UserOp'} Hash copied to clipboard!`);
-                         }}
+                             navigator.clipboard.writeText(op.txHash || op.userOpHash);
+                             toast.success(`${op.txHash ? 'Transaction' : 'UserOp'} Hash copied to clipboard!`);
+                          }}
                          className="text-primary hover:text-white transition-colors"
                          title="Copy Hash"
                        >
