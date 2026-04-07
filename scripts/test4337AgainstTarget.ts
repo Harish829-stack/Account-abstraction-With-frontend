@@ -63,7 +63,7 @@ async function main() {
   const callData = smartAccount.interface.encodeFunctionData("execute", [
     targetAddress!,
     0,
-     targetFunctionData,
+     targetFunctionData, 
   ]);
 
   const nonce = await entryPoint.getNonce(smartAccountAddress, 0);

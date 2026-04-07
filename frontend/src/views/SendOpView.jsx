@@ -25,6 +25,10 @@ export default function SendOpView() {
   const [token, setToken] = useState('ETH'); // ETH or USDC
   const [usePaymaster, setUsePaymaster] = useState(false);
   
+  // Custom Contract Call fields
+  const [functionSig, setFunctionSig] = useState('');
+  const [parameters, setParameters] = useState('');
+
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [callGasLimit, setCallGasLimit] = useState('100000');
   const [verificationGasLimit, setVerificationGasLimit] = useState('120000');
@@ -39,18 +43,17 @@ export default function SendOpView() {
   const buildCalldata = (amountStr) => {
      const saInterface = new ethers.Interface(SmartAccountABI);
      if (token === 'ETH') {
-        const parsedAmount = ethers.parseEther(amountStr);
+        const parsedAmount = ethers.parseEther(amountStr || '0');
         return saInterface.encodeFunctionData("execute", [
            receiver,
            parsedAmount,
            "0x"
         ]);
-     } else {
+     } else if (token === 'USDC') {
         // USDC Token Transfer
         const usdcInterface = new ethers.Interface(ERC20_ABI);
-        const parsedAmount = ethers.parseUnits(amountStr, 6); // USDC has 6 decimals
+        const parsedAmount = ethers.parseUnits(amountStr || '0', 6); // USDC has 6 decimals
         
-        // SmartAccount pulls from EOA -> Receiver
         const innerCall = usdcInterface.encodeFunctionData("transferFrom", [
            eoaAddress,
            receiver,
@@ -62,7 +65,32 @@ export default function SendOpView() {
            0,
            innerCall
         ]);
+     } else if (token === 'CONTRACT_CALL') {
+        try {
+           // Parse function signature and parameters
+           // Example signature: "setValue(uint256)"
+           // Example parameters: "123"
+           const iface = new ethers.Interface([`function ${functionSig}`]);
+           const methodName = functionSig.split('(')[0].trim();
+           
+           // Split parameters by comma and trim
+           const paramsArray = parameters ? parameters.split(',').map(p => p.trim()) : [];
+           
+           // Attempt to encode the call
+           const innerCall = iface.encodeFunctionData(methodName, paramsArray);
+           const parsedAmount = amountStr ? ethers.parseEther(amountStr) : 0n;
+
+           return saInterface.encodeFunctionData("execute", [
+              receiver, // Target contract address
+              parsedAmount,
+              innerCall
+           ]);
+        } catch (err) {
+           console.error("Encoding error:", err);
+           throw new Error("Failed to encode contract call. Check signature and parameters.");
+        }
      }
+     return "0x";
   };
 
   const handleSendOp = async () => {
@@ -197,10 +225,11 @@ export default function SendOpView() {
              >
                <option value="ETH">ETH</option>
                <option value="USDC">USDC</option>
+               <option value="CONTRACT_CALL">Contract Call</option>
              </select>
            </div>
            <div className="flex flex-col gap-1 w-2/3">
-             <label className="text-sm text-muted">Amount</label>
+             <label className="text-sm text-muted">{token === 'CONTRACT_CALL' ? 'Value (ETH)' : 'Amount'}</label>
              <input 
                type="number" 
                className="input-field" 
@@ -211,9 +240,9 @@ export default function SendOpView() {
            </div>
          </div>
 
-         {/* Receiver Address */}
+         {/* Target/Receiver Address */}
          <div className="flex flex-col gap-1">
-            <label className="text-sm text-muted">Receiver Address</label>
+            <label className="text-sm text-muted">{token === 'CONTRACT_CALL' ? 'Target Contract Address' : 'Receiver Address'}</label>
             <input 
               type="text" 
               className="input-field" 
@@ -222,6 +251,34 @@ export default function SendOpView() {
               onChange={(e) => setReceiver(e.target.value)}
             />
          </div>
+
+         {/* Custom Contract Call Details */}
+         {token === 'CONTRACT_CALL' && (
+            <div className="flex flex-col gap-4 p-4 bg-white/5 rounded-md border border-white/10 animate-in fade-in slide-in-from-top-2 duration-300">
+               <div className="flex flex-col gap-1">
+                  <label className="text-sm text-muted">Function Signature</label>
+                  <input 
+                    type="text" 
+                    className="input-field font-mono" 
+                    placeholder="myFunction(address,uint256)" 
+                    value={functionSig}
+                    onChange={(e) => setFunctionSig(e.target.value)}
+                  />
+                  <p className="text-[10px] text-muted italic">Format: methodName(type1,type2)</p>
+               </div>
+               <div className="flex flex-col gap-1">
+                  <label className="text-sm text-muted">Parameters</label>
+                  <input 
+                    type="text" 
+                    className="input-field font-mono" 
+                    placeholder="0x123..., 100" 
+                    value={parameters}
+                    onChange={(e) => setParameters(e.target.value)}
+                  />
+                  <p className="text-[10px] text-muted italic">Comma-separated values</p>
+               </div>
+            </div>
+         )}
 
          {/* Paymaster Toggle */}
          <div className="flex items-center gap-3 p-3 bg-white/5 rounded-md border border-white/5">
@@ -265,7 +322,7 @@ export default function SendOpView() {
 
          <button 
            className="btn btn-primary mt-4" 
-           disabled={pending || !amount || !receiver}
+           disabled={pending || (token !== 'CONTRACT_CALL' && !amount) || !receiver || (token === 'CONTRACT_CALL' && !functionSig)}
            onClick={handleSendOp}
          >
             {pending ? (

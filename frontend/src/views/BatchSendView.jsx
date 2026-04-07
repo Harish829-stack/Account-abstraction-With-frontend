@@ -21,7 +21,7 @@ export default function BatchSendView() {
   const toast = useToast();
 
   const [operations, setOperations] = useState([
-    { receiver: '', amount: '', token: 'ETH' }
+    { receiver: '', amount: '', token: 'ETH', functionSig: '', parameters: '' }
   ]);
   const [usePaymaster, setUsePaymaster] = useState(false);
   
@@ -37,7 +37,7 @@ export default function BatchSendView() {
   const [countdown, setCountdown] = useState(7);
 
   const addOperation = () => {
-    setOperations([...operations, { receiver: '', amount: '', token: 'ETH' }]);
+    setOperations([...operations, { receiver: '', amount: '', token: 'ETH', functionSig: '', parameters: '' }]);
   };
 
   const removeOperation = (index) => {
@@ -66,11 +66,10 @@ export default function BatchSendView() {
         dest.push(op.receiver);
         value.push(parsedAmount);
         func.push("0x");
-      } else {
+      } else if (op.token === 'USDC') {
         // USDC Token Transfer
         const parsedAmount = op.amount ? ethers.parseUnits(op.amount, 6) : 0n;
         
-        // SmartAccount pulls from EOA -> Receiver
         const innerCall = usdcInterface.encodeFunctionData("transferFrom", [
            eoaAddress,
            op.receiver,
@@ -80,6 +79,22 @@ export default function BatchSendView() {
         dest.push(env.USDC_TOKEN);
         value.push(0n);
         func.push(innerCall);
+      } else if (op.token === 'CONTRACT_CALL') {
+        try {
+          const iface = new ethers.Interface([`function ${op.functionSig}`]);
+          const methodName = op.functionSig.split('(')[0].trim();
+          const paramsArray = op.parameters ? op.parameters.split(',').map(p => p.trim()) : [];
+          
+          const innerCall = iface.encodeFunctionData(methodName, paramsArray);
+          const parsedAmount = op.amount ? ethers.parseEther(op.amount) : 0n;
+
+          dest.push(op.receiver);
+          value.push(parsedAmount);
+          func.push(innerCall);
+        } catch (err) {
+          console.error("Batch encoding error:", err);
+          throw new Error(`Failed to encode Operation ${operations.indexOf(op) + 1}. Check signature and parameters.`);
+        }
       }
     }
 
@@ -87,10 +102,13 @@ export default function BatchSendView() {
     return saInterface.encodeFunctionData("executeBatch", [dest, value, func]);
   };
 
-  const isFormValid = () => {
+   const isFormValid = () => {
     for (const op of operations) {
-      if (!op.receiver || !ethers.isAddress(op.receiver) || !op.amount || Number(op.amount) < 0) {
-        return false;
+      if (!op.receiver || !ethers.isAddress(op.receiver)) return false;
+      if (op.token === 'CONTRACT_CALL') {
+        if (!op.functionSig) return false;
+      } else {
+        if (!op.amount || Number(op.amount) < 0) return false;
       }
     }
     return true;
@@ -247,10 +265,11 @@ export default function BatchSendView() {
                        >
                          <option value="ETH">ETH</option>
                          <option value="USDC">USDC</option>
+                         <option value="CONTRACT_CALL">Contract Call</option>
                        </select>
                     </div>
                     <div className="flex flex-col gap-1 w-full sm:w-3/4">
-                       <label className="text-xs text-muted">Amount</label>
+                       <label className="text-xs text-muted">{op.token === 'CONTRACT_CALL' ? 'Value (ETH)' : 'Amount'}</label>
                        <input 
                          type="number" 
                          className="input-field py-2 text-sm" 
@@ -262,7 +281,7 @@ export default function BatchSendView() {
                  </div>
 
                  <div className="flex flex-col gap-1 mt-3">
-                    <label className="text-xs text-muted">Receiver Address</label>
+                    <label className="text-xs text-muted">{op.token === 'CONTRACT_CALL' ? 'Target Contract Address' : 'Receiver Address'}</label>
                     <input 
                       type="text" 
                       className="input-field py-2 text-sm font-mono" 
@@ -271,6 +290,31 @@ export default function BatchSendView() {
                       onChange={(e) => updateOperation(idx, 'receiver', e.target.value)}
                     />
                  </div>
+
+                 {op.token === 'CONTRACT_CALL' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 p-3 bg-white/5 rounded border border-white/5 animate-in fade-in slide-in-from-top-1 duration-200">
+                       <div className="flex flex-col gap-1">
+                          <label className="text-[10px] text-muted uppercase">Function Signature</label>
+                          <input 
+                            type="text" 
+                            className="input-field py-1.5 text-xs font-mono" 
+                            placeholder="func(type1,type2)" 
+                            value={op.functionSig}
+                            onChange={(e) => updateOperation(idx, 'functionSig', e.target.value)}
+                          />
+                       </div>
+                       <div className="flex flex-col gap-1">
+                          <label className="text-[10px] text-muted uppercase">Parameters</label>
+                           <input 
+                            type="text" 
+                            className="input-field py-1.5 text-xs font-mono" 
+                            placeholder="val1, val2" 
+                            value={op.parameters}
+                            onChange={(e) => updateOperation(idx, 'parameters', e.target.value)}
+                          />
+                       </div>
+                    </div>
+                 )}
               </div>
             ))}
          </div>
