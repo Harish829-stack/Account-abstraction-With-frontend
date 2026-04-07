@@ -55,22 +55,24 @@ contract SmartAccount is BaseAccount, ERC165 {
         bytes32 userOpHash,
         uint256 missingAccountFunds
     ) external override onlyEntryPoint returns (uint256 validationData) {
-        _validateSignature(userOpHash, userOp.signature);
+        validationData = _validateSignature(userOpHash, userOp.signature);
 
         _payPrefund(missingAccountFunds);
-
-        return 0;
     }
 
     function _validateSignature(
         bytes32 userOpHash,
         bytes calldata signature
-    ) internal view {
+    ) internal view returns (uint256) {
         bytes32 hash = userOpHash.toEthSignedMessageHash();
 
         address recovered = ECDSA.recover(hash, signature);
 
-        require(recovered == owner, "invalid signature");
+        if (recovered != owner) {
+            return 1;
+        }
+
+        return 0;
     }
 
     function _payPrefund(uint256 missingAccountFunds) internal {
@@ -119,6 +121,14 @@ contract SmartAccount is BaseAccount, ERC165 {
             }
         }
     }
+    function onERC721Received(
+    address operator,
+    address from,
+    uint256 tokenId,
+    bytes calldata data
+) external pure returns (bytes4) {
+    return 0x150b7a02;
+}
 
     function addDeposit() public payable {
         entryPoint().depositTo{value: msg.value}(address(this));

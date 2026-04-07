@@ -1,0 +1,21 @@
+
+
+
+
+{
+
+  "name": "My NFT #1",
+
+  "description": "This is my first NFT",
+
+  "image": "ipfs://bafkreibx4rcarb2ep4p4bff2hxqju4itbmh6jb5he4grdxxifdrnj3mkv4",
+
+  "attributes": [
+
+    { "trait_type": "Background", "value": "Blue" },
+
+    { "trait_type": "Rarity",     "value": "Common" }
+
+  ]
+
+}
