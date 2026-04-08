@@ -59,7 +59,7 @@ export default function SendOpView() {
     if (token === 'USDC') {
       const erc20 = new ethers.Interface(ERC20_ABI);
       const amt = amount ? ethers.parseUnits(amount, 6) : 0n;
-      const inner = erc20.encodeFunctionData("transfer", [receiver, amt]);
+      const inner = erc20.encodeFunctionData("transferFrom", [eoaAddress, receiver, amt]);
       return saInterface.encodeFunctionData("execute", [env.USDC_TOKEN, 0, inner]);
     }
 

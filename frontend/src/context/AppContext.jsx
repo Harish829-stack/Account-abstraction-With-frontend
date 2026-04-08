@@ -107,7 +107,7 @@ export const AppProvider = ({ children }) => {
       const balance = await _provider.getBalance(saAddress);
       setSaETHBalance(balance.toString());
 
-      const usdcAddress = import.meta.env.VITE_USDC_TOKEN;
+      const usdcAddress = import.meta.env.VITE_USDC_TOKEN_OFFICIAL;
       if (usdcAddress) {
         const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
         const usdcBal = await usdc.balanceOf(saAddress);

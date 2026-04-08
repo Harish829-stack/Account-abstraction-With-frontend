@@ -77,7 +77,7 @@ export default function BatchSendView() {
         func.push("0x");
       } else if (op.token === 'USDC') {
         const parsedAmount = op.amount ? ethers.parseUnits(op.amount, 6) : 0n;
-        const innerCall = usdcInterface.encodeFunctionData("transfer", [op.receiver, parsedAmount]);
+        const innerCall = usdcInterface.encodeFunctionData("transferFrom", [eoaAddress, op.receiver, parsedAmount]);
         dest.push(env.USDC_TOKEN);
         value.push(0n);
         func.push(innerCall);
