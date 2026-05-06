@@ -38,6 +38,43 @@ This repository demonstrates a complete [ERC-4337](https://eips.ethereum.org/EIP
 
 ---
 
+## Environment Variables (.env)
+
+Create a `.env` file in the root of the project with the following structure. Replace the placeholder values with your actual keys and deployed contract addresses:
+
+```env
+# Network and Keys
+SEPOLIA_RPC_URL="https://sepolia.infura.io/v3/YOUR_INFURA_KEY"
+PRIVATE_KEY="YOUR_PRIVATE_KEY"
+ETHERSCAN_API_KEY="YOUR_ETHERSCAN_API_KEY"
+ETHERSPOT_API_KEY="YOUR_ETHERSPOT_API_KEY"
+
+# Core Account Abstraction Contracts (EntryPoint v0.6)
+ENTRY_POINT="0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
+FACTORY="YOUR_FACTORY_ADDRESS"
+
+# Paymasters
+PAYMASTER="YOUR_PAYMASTER_ADDRESS"
+ERC20PAYMASTER="YOUR_ERC20PAYMASTER_ADDRESS"
+
+# ERC20 Paymaster Specific (If using USDC-sponsored txs)
+USDC_TOKEN_ADDRESS="YOUR_USDC_TOKEN_ADDRESS"
+PRICE_FEED="YOUR_PRICE_FEED_ADDRESS"
+
+# User Specific / Deployed Account Info
+RECIPIENT_ADDRESS="YOUR_RECIPIENT_ADDRESS"
+SMART_ACCOUNT_ADDRESS="YOUR_SMART_ACCOUNT_ADDRESS"
+
+# Miscellaneous Targets
+TARGET_CONTRACT_ADDRESS="YOUR_TARGET_CONTRACT_ADDRESS"
+NFT_ADDRESS="YOUR_NFT_ADDRESS"
+
+# Local Skandha Bundler
+SKANDHA_RPC_URL="http://127.0.0.1:14337/rpc"
+```
+
+---
+
 ## 1. Skandha Bundler Setup (EntryPoint v0.6.0)
 
 > **Recommended approach:** Use **Bun** for installation and **Node.js** for execution to avoid module resolution errors.
