@@ -10,13 +10,13 @@ import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '.
 export default function ProfileView() {
   const { eoaAddress, eoaETHBalance, eoaUSDCBalance, smartAccountAddress, paymasterAddress, signer, provider, env, loadEOABalances, refreshAllData } = useAppContext();
   const toast = useToast();
-  
+
   const [copied, setCopied] = useState(false);
   const [pmAllowance, setPmAllowance] = useState('0');
-  
+
 
   const [inputPmAllowance, setInputPmAllowance] = useState('');
-  
+
   const [pendingSa, setPendingSa] = useState(false);
   const [pendingPm, setPendingPm] = useState(false);
 
@@ -54,10 +54,10 @@ export default function ProfileView() {
     setPendingPm(true);
     try {
       const parsedAmount = amountStr ? ethers.parseUnits(amountStr, 6) : 0n;
-      
+
       const erc20 = new ethers.Interface(ERC20_ABI);
       const inner = erc20.encodeFunctionData("approve", [paymasterAddress, parsedAmount]);
-      
+
       const saInterface = new ethers.Interface(SmartAccountABI);
       const callData = saInterface.encodeFunctionData("execute", [usdcAddress, 0, inner]);
 
@@ -70,7 +70,7 @@ export default function ProfileView() {
         nonce: toHex(nonce),
         initCode: "0x",
         callData: callData,
-        callGasLimit: toHex(150000), 
+        callGasLimit: toHex(150000),
         verificationGasLimit: toHex(150000),
         preVerificationGas: toHex(50000),
         maxFeePerGas: toHex(fee.maxFeePerGas),
@@ -89,21 +89,21 @@ export default function ProfileView() {
 
       toast.info("Sending UserOp to approve Paymaster...");
       const opHash = await sendUserOperation(userOp);
-      
+
       // Wait for receipt
       let receiptResult = null;
       for (let i = 0; i < 15; i++) {
-         await new Promise(r => setTimeout(r, 1000));
-         receiptResult = await getUserOpReceipt(opHash);
-         if (receiptResult?.receipt) break;
+        await new Promise(r => setTimeout(r, 1000));
+        receiptResult = await getUserOpReceipt(opHash);
+        if (receiptResult?.receipt) break;
       }
-      
+
       if (receiptResult?.receipt) {
-         await fetchAllowances();
-         setInputPmAllowance('');
-         toast.success("Paymaster approved by Smart Account!");
+        await fetchAllowances();
+        setInputPmAllowance('');
+        toast.success("Paymaster approved by Smart Account!");
       } else {
-         toast.error("UserOp might still be pending or failed.");
+        toast.error("UserOp might still be pending or failed.");
       }
     } catch (err) {
       if (err.code === 4001) toast.error("Transaction rejected by user");
@@ -119,18 +119,18 @@ export default function ProfileView() {
       <div className="glass-card flex flex-col gap-4">
         <div className="flex justify-between items-center mb-0">
           <h2 className="flex items-center gap-2 text-gradient m-0"><Wallet size={24} /> EOA Profile</h2>
-          <button 
+          <button
             className="p-1.5 rounded-full hover:bg-white/10 transition-all text-muted hover:text-white"
             onClick={async () => {
-               await refreshAllData();
-               await fetchAllowances();
+              await refreshAllData();
+              await fetchAllowances();
             }}
             title="Refresh profile"
           >
             <RotateCcw size={18} />
           </button>
         </div>
-        
+
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white/5 p-4 rounded-md border border-white/10">
           <div>
             <div className="text-sm text-muted mb-1">Externally Owned Account</div>
@@ -141,7 +141,7 @@ export default function ProfileView() {
               </button>
             </div>
           </div>
-          
+
           <div className="mt-4 sm:mt-0 flex flex-col gap-2 min-w-[200px]">
             <div className="flex justify-between items-center border-b border-light pb-2">
               <span className="text-sm text-muted">ETH Balance</span>
@@ -187,16 +187,16 @@ export default function ProfileView() {
                 </td>
                 <td>
                   <div className="flex items-center gap-2">
-                    <input 
-                      type="number" 
-                      className="input-field py-1 px-2 text-sm w-24" 
-                      placeholder="Amount" 
+                    <input
+                      type="number"
+                      className="input-field py-1 px-2 text-sm w-24"
+                      placeholder="Amount"
                       value={inputPmAllowance}
                       onChange={(e) => setInputPmAllowance(e.target.value)}
                       disabled={!paymasterAddress || pendingPm}
                     />
-                    <button 
-                      className="btn btn-primary py-1 px-3 text-sm" 
+                    <button
+                      className="btn btn-primary py-1 px-3 text-sm"
                       disabled={!paymasterAddress || !inputPmAllowance || pendingPm}
                       title={!paymasterAddress ? "Set up paymaster first" : ""}
                       onClick={() => handleApprovePM(inputPmAllowance)}
@@ -206,8 +206,8 @@ export default function ProfileView() {
                   </div>
                 </td>
                 <td>
-                  <button 
-                    className="btn btn-danger py-1 px-3 text-sm" 
+                  <button
+                    className="btn btn-danger py-1 px-3 text-sm"
                     disabled={!paymasterAddress || pendingPm}
                     onClick={() => handleApprovePM("0")}
                   >
