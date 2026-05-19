@@ -4,7 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { shortenAddress, formatNum } from '../utils/helpers';
 import { SmartAccountFactoryABI, SmartAccountABI } from '../utils/abis';
-import { PlusCircle, Link as LinkIcon, AlertTriangle, ArrowRight, Shield, Download, RotateCcw, Coins, Landmark, ChevronRight } from 'lucide-react';
+import { PlusCircle, Link as LinkIcon, AlertTriangle, ArrowRight, Shield, Download, RotateCcw, Coins, Landmark, ChevronRight, ArrowDownCircle } from 'lucide-react';
 import Stepper from '../components/Stepper';
 
 
@@ -27,7 +27,7 @@ export default function AccountSetupView() {
 
   // Stepper State
   const [currentStep, setCurrentStep] = useState(1);
-  const steps = ["Deploy / Connect", "Fund ETH", "Approve USDC", "EntryPoint"];
+  const steps = ["Deploy / Connect", "Fund ETH", "Pull USDC", "EntryPoint"];
 
   // Option A State
   const [salt, setSalt] = useState('');
@@ -229,19 +229,19 @@ export default function AccountSetupView() {
     }
   };
 
-  const handleApproveUSDC = async () => {
+  const handlePullUSDC = async () => {
     if (!smartAccountAddress || !approveAmount || !signer || !env.USDC_TOKEN) return;
     setApproving(true);
     try {
-      const usdc = new ethers.Contract(env.USDC_TOKEN, ["function approve(address spender, uint256 amount) public returns (bool)"], signer);
-      const tx = await usdc.approve(smartAccountAddress, ethers.parseUnits(approveAmount, 6));
+      const usdc = new ethers.Contract(env.USDC_TOKEN, ["function transfer(address to, uint256 amount) public returns (bool)"], signer);
+      const tx = await usdc.transfer(smartAccountAddress, ethers.parseUnits(approveAmount, 6));
       await tx.wait();
       await refreshAllData();
-      toast.success("USDC approval successful!");
+      toast.success("USDC pulled to Smart Account successfully!");
       setCurrentStep(4);
     } catch (err) {
       if (err.code === 4001) toast.error("Transaction rejected by user");
-      else toast.error(err.reason || err.message || "Approval failed");
+      else toast.error(err.reason || err.message || "Failed to pull USDC");
     } finally {
       setApproving(false);
     }
@@ -350,13 +350,23 @@ export default function AccountSetupView() {
                  />
               </div>
 
-              <div className="flex items-center gap-2 mt-2">
+              <div className="flex flex-col sm:flex-row items-center gap-2 mt-2">
                  <button 
-                    className="btn btn-primary w-full" 
+                    className="btn btn-primary flex-1" 
                     onClick={handleDeploy} 
                     disabled={deploying || !salt || !!smartAccountAddress}
                  >
-                   {deploying ? "Deploying..." : "Deploy Smart Account"}
+                   {deploying ? "Deploying..." : "Deploy"}
+                 </button>
+                 <button 
+                    className="btn btn-secondary flex-1" 
+                    onClick={() => {
+                      setConnectAddress(predictedAddress);
+                      toast.success("Address filled in Connect section!");
+                    }} 
+                    disabled={!predictedAddress || !!smartAccountAddress}
+                 >
+                   Connect with Salt
                  </button>
               </div>
 
@@ -446,14 +456,14 @@ export default function AccountSetupView() {
         {/* STEP 3: Approve USDC */}
         {currentStep === 3 && (
           <div className="glass-card max-w-2xl mx-auto animate-fade-in">
-             <h3 className="flex items-center gap-2 text-gradient mb-2"><Shield size={24} /> Step 3: Approve USDC Usage</h3>
+             <h3 className="flex items-center gap-2 text-gradient mb-2"><ArrowDownCircle size={24} /> Step 3: Fund Smart Account (Pull USDC)</h3>
              <p className="text-sm text-muted mb-6">
-               In order for your Smart Account to manage and trade USDC from your wallet, you must grant it permission (approval).
+               Transfer USDC directly from your EOA to your Smart Account to use it for operations and gas fees.
              </p>
 
              <div className="flex flex-col gap-4 p-6 bg-white/5 rounded-xl border border-white/10">
                 <div className="flex flex-col gap-1">
-                  <label className="text-sm text-muted">Approval Limit (USDC)</label>
+                  <label className="text-sm text-muted">Amount (USDC)</label>
                   <div className="flex gap-2">
                     <input 
                         type="number" 
@@ -464,10 +474,10 @@ export default function AccountSetupView() {
                     />
                     <button 
                       className="btn btn-primary"
-                      onClick={handleApproveUSDC}
+                      onClick={handlePullUSDC}
                       disabled={approving || !approveAmount}
                     >
-                      {approving ? "Approving..." : "Approve Smart Account"}
+                      {approving ? "Pulling..." : "Pull USDC"}
                     </button>
                   </div>
                 </div>

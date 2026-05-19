@@ -9,27 +9,24 @@ import HistoryView from './views/HistoryView';
 import BatchSendView from './views/BatchSendView';
 
 function App() {
-  const { currentView } = useAppContext();
+  const { currentView, eoaAddress } = useAppContext();
+  const isConnected = !!eoaAddress;
 
   return (
     <div className="container min-h-screen py-6 animate-fade-in">
-      {currentView === "home" ? (
-        <HomeView />
-      ) : (
-        <>
-          <Navbar />
-          <main className="animate-fade-in">
-            {currentView === "profile" && <ProfileView />}
-            {currentView === "setup" && <AccountSetupView />}
-            {currentView === "send" && <SendOpView />}
-            {currentView === "batch-send" && <BatchSendView />}
-            {currentView === "paymaster" && <PaymasterView />}
-            {currentView === "history" && <HistoryView />}
-          </main>
-        </>
-      )}
+      {isConnected && <Navbar />}
+      <main className="animate-fade-in">
+        {currentView === "home" && <HomeView />}
+        {currentView === "profile" && <ProfileView />}
+        {currentView === "setup" && <AccountSetupView />}
+        {currentView === "send" && <SendOpView />}
+        {currentView === "batch-send" && <BatchSendView />}
+        {currentView === "paymaster" && <PaymasterView />}
+        {currentView === "history" && <HistoryView />}
+      </main>
     </div>
   );
 }
 
 export default App;
+

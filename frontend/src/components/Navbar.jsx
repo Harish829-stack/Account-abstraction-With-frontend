@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAppContext } from '../context/AppContext';
 import { shortenAddress } from '../utils/helpers';
-import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, Sun, Moon } from 'lucide-react';
+import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, Sun, Moon, LayoutDashboard } from 'lucide-react';
 
 export default function Navbar() {
   const { eoaAddress, smartAccountAddress, disconnect, currentView, setCurrentView, theme, setTheme } = useAppContext();
@@ -61,6 +61,7 @@ export default function Navbar() {
 
       {/* Navigation Tabs */}
       <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2" style={{ borderBottom: '1px solid var(--border-light)' }}>
+         <NavItem viewId="home" icon={<LayoutDashboard size={18} />} label="Dashboard" />
          <NavItem viewId="profile" icon={<User size={18} />} label="EOA Profile" />
          <NavItem viewId="setup" icon={<Settings size={18} />} label="Account Setup" />
          <NavItem viewId="paymaster" icon={<DollarSign size={18} />} label="Paymaster" />

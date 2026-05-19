@@ -3,7 +3,8 @@ import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { ERC20PaymasterABI, IEntryPointABI, ERC20_ABI, SmartAccountABI } from '../utils/abis';
 import pmArtifact from '../utils/ERC20Paymaster.json';
-import { shortenAddress, formatNum } from '../utils/helpers';
+import { shortenAddress, formatNum, toHex } from '../utils/helpers';
+import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
 import { useToast } from '../context/ToastContext';
 import { DollarSign, ShieldAlert, ArrowDownCircle, ArrowUpCircle, Lock, Unlock, PlayCircle, CheckCircle, RotateCcw, ChevronRight, Info } from 'lucide-react';
 import Stepper from '../components/Stepper';
@@ -51,6 +52,22 @@ export default function PaymasterView() {
   // Approve State
   const [approveAmount, setApproveAmount] = useState('10');
   const [approving, setApproving] = useState(false);
+  const [pmAllowance, setPmAllowance] = useState('0');
+
+  const fetchPmAllowance = async () => {
+    if (!signer || !dToken || !smartAccountAddress || !paymasterAddress) return;
+    try {
+      const usdc = new ethers.Contract(dToken, ["function allowance(address owner, address spender) view returns (uint256)"], provider);
+      const allowance = await usdc.allowance(smartAccountAddress, paymasterAddress);
+      setPmAllowance(ethers.formatUnits(allowance, pmTokenDecimals || 6));
+    } catch (err) {
+      console.error("Error fetching pm allowance:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchPmAllowance();
+  }, [smartAccountAddress, paymasterAddress, provider, dToken]);
 
   // Auto-redirect
   useEffect(() => {
@@ -153,67 +170,73 @@ export default function PaymasterView() {
   );
 
   const handleApprovePaymaster = async () => {
-    console.log("[Approve-V3] Starting approval flow...");
+    console.log("[Approve-V3] Starting approval flow via Smart Account...");
     if (!smartAccountAddress || !approveAmount || !signer || !paymasterAddress || !dToken) {
       toast.error("Missing inputs: Smart Account, Paymaster, or Token address.");
       return;
     }
     setApproving(true);
     try {
-      // 1. Check EOA ETH Balance (MetaMask wallet)
-      const balance = await provider.getBalance(eoaAddress);
-      console.log("[Approve-V3] EOA Balance:", ethers.formatEther(balance));
-      if (balance === 0n) {
-          toast.error("Your EOA (MetaMask) has 0 ETH! You need ETH to pay for gas.");
-          setApproving(false);
-          return;
-      }
+      const parsedAmount = ethers.parseUnits(approveAmount, pmTokenDecimals || 6);
+      
+      const erc20 = new ethers.Interface(ERC20_ABI);
+      const inner = erc20.encodeFunctionData("approve", [paymasterAddress, parsedAmount]);
+      
+      const saInterface = new ethers.Interface(SmartAccountABI);
+      const callData = saInterface.encodeFunctionData("execute", [dToken, 0, inner]);
 
-      // 2. Check if Smart Account is deployed
-      console.log("[Approve-V3] Verifying deployment for:", smartAccountAddress);
-      const code = await provider.getCode(smartAccountAddress);
-      if (code === "0x") {
-          toast.error("Smart Account NOT detected on-chain. Deploy it first!");
-          setApproving(false);
-          return;
-      }
+      const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
+      const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
+      const fee = await provider.getFeeData();
 
-      console.log("[Approve-V3] Initializing contracts...");
-      
-      const tokenContract = new ethers.Contract(dToken, ERC20_ABI, signer);
-      const amountToApprove = ethers.parseUnits(approveAmount, pmTokenDecimals);
-      
-      console.log("[Approve-V3] Dispatching approve() transaction from EOA...");
-      
+      const userOp = {
+        sender: smartAccountAddress,
+        nonce: toHex(nonce),
+        initCode: "0x",
+        callData: callData,
+        callGasLimit: toHex(150000), 
+        verificationGasLimit: toHex(150000),
+        preVerificationGas: toHex(50000),
+        maxFeePerGas: toHex(fee.maxFeePerGas),
+        maxPriorityFeePerGas: toHex(fee.maxPriorityFeePerGas),
+        paymasterAndData: "0x", // SA pays gas in ETH for its own approval
+        signature: "0x"
+      };
+
       try {
-        const tx = await tokenContract.approve(paymasterAddress, amountToApprove);
-        console.log("[Approve-V3] Transaction Hash:", tx.hash);
-        
-        await tx.wait();
-        await refreshAllData();
-        toast.success("Success! Paymaster is approved.");
+        const est = await estimateUserOperationGas(userOp);
+        userOp.callGasLimit = toHex(est.callGasLimit);
+        userOp.verificationGasLimit = toHex(est.verificationGasLimit);
+        userOp.preVerificationGas = toHex(BigInt(est.preVerificationGas) + 5000n);
       } catch (err) {
-        console.error("[Approve-V3] Execution failed during estimateGas or sending:", err);
-        throw err; // rethrow to be caught by outer catch
+        console.warn("Estimation failed, using defaults", err);
+      }
+
+      const hash = await entryPoint.getUserOpHash(userOp);
+      userOp.signature = await signer.signMessage(ethers.getBytes(hash));
+
+      toast.info("Sending UserOp to approve Paymaster...");
+      const opHash = await sendUserOperation(userOp);
+      
+      // Wait for receipt
+      let receiptResult = null;
+      for (let i = 0; i < 15; i++) {
+         await new Promise(r => setTimeout(r, 1000));
+         receiptResult = await getUserOpReceipt(opHash);
+         if (receiptResult?.receipt) break;
+      }
+      
+      if (receiptResult?.receipt) {
+         await refreshAllData();
+         await fetchPmAllowance();
+         toast.success("Paymaster approved by Smart Account!");
+         setCurrentStep(3); // Move to next step
+      } else {
+         toast.error("UserOp might still be pending or failed.");
       }
     } catch (err) {
-      console.error("[Approve-V3] FINAL CATCH ERROR:", err);
-      
-      let errorMessage = "Unknown Error";
-      if (err.reason) errorMessage = err.reason;
-      else if (err.message) errorMessage = err.message;
-      else if (typeof err === 'string') errorMessage = err;
-      
-      if (err.data) {
-          console.log("[Approve-V3] Revert Data:", err.data);
-          errorMessage += ` (Data: ${err.data})`;
-      }
-      
-      if (err.code === "CALL_EXCEPTION") {
-          errorMessage = "Execution Reverted. Check ownership and ETH balance.";
-      }
-
-      toast.error("FAILED: " + errorMessage);
+      if (err.code === 4001) toast.error("Transaction rejected by user");
+      else toast.error(err.reason || err.message || "Failed to approve Paymaster");
     } finally {
       setApproving(false);
     }
@@ -274,7 +297,7 @@ export default function PaymasterView() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 z-10 relative">
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 z-10 relative">
               <div className="glass-stat-card group">
                 <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">EP Deposit</span>
                 <span className="font-bold text-xl text-gradient-primary">{formatNum(pmDeposit, 18)}</span>
@@ -290,6 +313,10 @@ export default function PaymasterView() {
               <div className="glass-stat-card group">
                 <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">PM {pmTokenSymbol}</span>
                 <span className="font-bold text-xl text-gradient-secondary truncate">{pmUSDCBalance}</span>
+              </div>
+              <div className="glass-stat-card group">
+                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">Approved</span>
+                <span className="font-bold text-xl text-gradient-secondary truncate">{pmAllowance}</span>
               </div>
               <div className="glass-stat-card group">
                 <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">Token</span>
@@ -391,6 +418,8 @@ export default function PaymasterView() {
                  <span>
                     <b>Why approval?</b> The Paymaster needs permission to take USDC from your wallet to pay for your Smart Account's transaction gas. 
                     This enables "gasless" transactions where you pay in USDC instead of ETH.
+                    <br/><br/>
+                    <b className="text-white">Current Approved Amount:</b> {pmAllowance} {pmTokenSymbol || 'Tokens'}
                  </span>
                </p>
             </div>
@@ -404,7 +433,7 @@ export default function PaymasterView() {
                 onChange={e=>setApproveAmount(e.target.value)} 
               />
               <button className="btn btn-primary" onClick={handleApprovePaymaster} disabled={approving || !approveAmount}>
-                {approving ? "Approving..." : "Approve from EOA"}
+                {approving ? "Approving..." : "Approve from Smart Account"}
               </button>
             </div>
 

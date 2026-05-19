@@ -2,24 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { shortenAddress, formatNum } from '../utils/helpers';
-import { Copy, Wallet, CheckCircle2, ShieldAlert, RotateCcw } from 'lucide-react';
-import { ERC20_ABI } from '../utils/abis';
+import { shortenAddress, formatNum, toHex } from '../utils/helpers';
+import { Copy, Wallet, CheckCircle2, ShieldAlert, RotateCcw, ArrowDownCircle } from 'lucide-react';
+import { ERC20_ABI, SmartAccountABI, IEntryPointABI } from '../utils/abis';
+import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
 
 export default function ProfileView() {
   const { eoaAddress, eoaETHBalance, eoaUSDCBalance, smartAccountAddress, paymasterAddress, signer, provider, env, loadEOABalances, refreshAllData } = useAppContext();
   const toast = useToast();
   
   const [copied, setCopied] = useState(false);
-  const [saAllowance, setSaAllowance] = useState('0');
   const [pmAllowance, setPmAllowance] = useState('0');
   
-  const [inputSaAllowance, setInputSaAllowance] = useState('');
+
   const [inputPmAllowance, setInputPmAllowance] = useState('');
   
   const [pendingSa, setPendingSa] = useState(false);
   const [pendingPm, setPendingPm] = useState(false);
-
 
   const usdcAddress = import.meta.env.VITE_USDC_TOKEN;
 
@@ -31,15 +30,12 @@ export default function ProfileView() {
   };
 
   const fetchAllowances = async () => {
-    if (!signer || !usdcAddress || !eoaAddress) return;
+    if (!signer || !usdcAddress || !smartAccountAddress) return;
     try {
-      const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, signer);
-      if (smartAccountAddress) {
-        const allowance1 = await usdc.allowance(eoaAddress, smartAccountAddress);
-        setSaAllowance(allowance1.toString());
-      }
+      const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, provider);
       if (paymasterAddress) {
-        const allowance2 = await usdc.allowance(eoaAddress, paymasterAddress);
+        // Fetch allowance that the Smart Account gave to the Paymaster
+        const allowance2 = await usdc.allowance(smartAccountAddress, paymasterAddress);
         setPmAllowance(allowance2.toString());
       }
     } catch (err) {
@@ -47,41 +43,73 @@ export default function ProfileView() {
     }
   };
 
-
   useEffect(() => {
     fetchAllowances();
-  }, [smartAccountAddress, paymasterAddress, eoaAddress, signer]);
+  }, [smartAccountAddress, paymasterAddress, signer]);
 
 
-  const handleApprove = async (spenderType, amountStr) => {
-    if (!signer || !usdcAddress) return;
-    const isSa = spenderType === 'SA';
-    const setPending = isSa ? setPendingSa : setPendingPm;
-    const spenderParams = isSa ? smartAccountAddress : paymasterAddress;
 
-    setPending(true);
+  const handleApprovePM = async (amountStr) => {
+    if (!signer || !usdcAddress || !smartAccountAddress || !paymasterAddress) return;
+    setPendingPm(true);
     try {
-      const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, signer);
-      
-      // Amount provided is in USDC (6 decimals). 
-      // If amountStr is empty/invalid, default to 0. 0 means Revoke exactly.
       const parsedAmount = amountStr ? ethers.parseUnits(amountStr, 6) : 0n;
       
-      const tx = await usdc.approve(spenderParams, parsedAmount);
-      await tx.wait();
+      const erc20 = new ethers.Interface(ERC20_ABI);
+      const inner = erc20.encodeFunctionData("approve", [paymasterAddress, parsedAmount]);
       
-      await fetchAllowances();
-      if(eoaAddress) {
-         await loadEOABalances(eoaAddress, signer.provider);
+      const saInterface = new ethers.Interface(SmartAccountABI);
+      const callData = saInterface.encodeFunctionData("execute", [usdcAddress, 0, inner]);
+
+      const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
+      const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
+      const fee = await provider.getFeeData();
+
+      const userOp = {
+        sender: smartAccountAddress,
+        nonce: toHex(nonce),
+        initCode: "0x",
+        callData: callData,
+        callGasLimit: toHex(150000), 
+        verificationGasLimit: toHex(150000),
+        preVerificationGas: toHex(50000),
+        maxFeePerGas: toHex(fee.maxFeePerGas),
+        maxPriorityFeePerGas: toHex(fee.maxPriorityFeePerGas),
+        paymasterAndData: "0x", // SA pays gas in ETH for its own approval
+        signature: "0x"
+      };
+
+      const est = await estimateUserOperationGas(userOp);
+      userOp.callGasLimit = toHex(est.callGasLimit);
+      userOp.verificationGasLimit = toHex(est.verificationGasLimit);
+      userOp.preVerificationGas = toHex(BigInt(est.preVerificationGas) + 5000n);
+
+      const hash = await entryPoint.getUserOpHash(userOp);
+      userOp.signature = await signer.signMessage(ethers.getBytes(hash));
+
+      toast.info("Sending UserOp to approve Paymaster...");
+      const opHash = await sendUserOperation(userOp);
+      
+      // Wait for receipt
+      let receiptResult = null;
+      for (let i = 0; i < 15; i++) {
+         await new Promise(r => setTimeout(r, 1000));
+         receiptResult = await getUserOpReceipt(opHash);
+         if (receiptResult?.receipt) break;
       }
-      // Reset input
-      if(isSa) setInputSaAllowance(''); else setInputPmAllowance('');
-      toast.success("Approval transaction successful!");
+      
+      if (receiptResult?.receipt) {
+         await fetchAllowances();
+         setInputPmAllowance('');
+         toast.success("Paymaster approved by Smart Account!");
+      } else {
+         toast.error("UserOp might still be pending or failed.");
+      }
     } catch (err) {
       if (err.code === 4001) toast.error("Transaction rejected by user");
-      else toast.error(err.reason || err.message || "Failed to approve");
+      else toast.error(err.reason || err.message || "Failed to approve Paymaster");
     } finally {
-      setPending(false);
+      setPendingPm(false);
     }
   };
 
@@ -127,10 +155,11 @@ export default function ProfileView() {
         </div>
       </div>
 
+
       {/* Allowances Card */}
       <div className="glass-card">
-        <h2 className="flex items-center gap-2 text-gradient mb-4"><ShieldAlert size={24} /> Token Allowances (USDC)</h2>
-        <p className="text-sm text-muted mb-4">Manage the amounts your Smart Account and Paymaster are allowed to pull from your EOA.</p>
+        <h2 className="flex items-center gap-2 text-gradient mb-4"><ShieldAlert size={24} /> Paymaster Approval</h2>
+        <p className="text-sm text-muted mb-4">Approve the Paymaster to pull USDC from your Smart Account's balance for gas fees (Requires ETH in SA for this first UserOp).</p>
 
         <div className="overflow-x-auto">
           <table className="styled-table">
@@ -143,50 +172,6 @@ export default function ProfileView() {
               </tr>
             </thead>
             <tbody>
-              {/* Smart Account Row */}
-              <tr>
-                <td>
-                  <div className="font-medium">Smart Account</div>
-                  {smartAccountAddress ? (
-                    <div className="text-xs text-muted">{shortenAddress(smartAccountAddress)}</div>
-                  ) : (
-                    <div className="text-xs text-red-400">Not Setup</div>
-                  )}
-                </td>
-                <td>
-                  <span className="font-bold">{formatNum(saAllowance, 6)}</span>
-                </td>
-                <td>
-                  <div className="flex items-center gap-2">
-                    <input 
-                      type="number" 
-                      className="input-field py-1 px-2 text-sm w-24" 
-                      placeholder="Amount" 
-                      value={inputSaAllowance}
-                      onChange={(e) => setInputSaAllowance(e.target.value)}
-                      disabled={!smartAccountAddress || pendingSa}
-                    />
-                    <button 
-                      className="btn btn-primary py-1 px-3 text-sm" 
-                      disabled={!smartAccountAddress || !inputSaAllowance || pendingSa}
-                      title={!smartAccountAddress ? "Set up smart account first" : ""}
-                      onClick={() => handleApprove("SA", inputSaAllowance)}
-                    >
-                      {pendingSa ? '...' : 'Update'}
-                    </button>
-                  </div>
-                </td>
-                <td>
-                  <button 
-                    className="btn btn-danger py-1 px-3 text-sm" 
-                    disabled={!smartAccountAddress || pendingSa}
-                    onClick={() => handleApprove("SA", "0")}
-                  >
-                    Revoke
-                  </button>
-                </td>
-              </tr>
-
               {/* Paymaster Row */}
               <tr>
                 <td>
@@ -214,9 +199,9 @@ export default function ProfileView() {
                       className="btn btn-primary py-1 px-3 text-sm" 
                       disabled={!paymasterAddress || !inputPmAllowance || pendingPm}
                       title={!paymasterAddress ? "Set up paymaster first" : ""}
-                      onClick={() => handleApprove("PM", inputPmAllowance)}
+                      onClick={() => handleApprovePM(inputPmAllowance)}
                     >
-                      {pendingPm ? '...' : 'Update'}
+                      {pendingPm ? '...' : 'Approve'}
                     </button>
                   </div>
                 </td>
@@ -224,7 +209,7 @@ export default function ProfileView() {
                   <button 
                     className="btn btn-danger py-1 px-3 text-sm" 
                     disabled={!paymasterAddress || pendingPm}
-                    onClick={() => handleApprove("PM", "0")}
+                    onClick={() => handleApprovePM("0")}
                   >
                     Revoke
                   </button>
@@ -234,7 +219,6 @@ export default function ProfileView() {
           </table>
         </div>
       </div>
-
 
     </div>
   );

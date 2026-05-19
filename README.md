@@ -226,6 +226,18 @@ This script constructs and sends a standard UserOperation **without** a Paymaste
 
 ---
 
+## 6. Calling External Contracts (e.g., Uniswap V3)
+
+You can use the Smart Account to interact with external contracts like Uniswap V3. Here are the details for making a contract call to the Uniswap V3 Router:
+
+- **Uniswap V3 Router Address**: `0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E`
+- **Function Signature**: `exactInputSingle((address,address,uint24,address,uint256,uint256,uint160))`
+- **Parameters**: `[["0xfff9976782d46cc05630d1f6ebab18b2324d6b14","0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",3000,"Your_reciver_address",3000000000000000,0,0]]`
+
+To execute this, you would use the `CONTRACT_CALL` option in the frontend or construct a UserOperation that calls the Smart Account's `execute` function targeting the Uniswap V3 Router with the encoded calldata.
+
+---
+
 ## Contract: CustomPaymaster.sol
 
 The Paymaster uses a **nested hashing mechanism** to avoid Solidity's "Stack too deep" compiler errors when encoding the large `UserOperation` struct.

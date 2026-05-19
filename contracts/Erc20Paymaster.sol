@@ -271,10 +271,9 @@ contract ERC20Paymaster is IPaymaster, Ownable {
 
         // Pre-charge tokens based on max possible gas cost
         uint256 tokenAmount = _getTokenAmount(maxCost);
-        address ownerLoc = ISmartAccount(userOp.sender).owner();
-        token.safeTransferFrom(ownerLoc, address(this), tokenAmount);
+        token.safeTransferFrom(userOp.sender, address(this), tokenAmount);
 
-        context = abi.encode(ownerLoc, tokenAmount);
+        context = abi.encode(userOp.sender, tokenAmount);
 
         // validationData = 0 means: sig valid, no time range restrictions
         return (context, 0);

@@ -59,7 +59,7 @@ export default function SendOpView() {
     if (token === 'USDC') {
       const erc20 = new ethers.Interface(ERC20_ABI);
       const amt = amount ? ethers.parseUnits(amount, 6) : 0n;
-      const inner = erc20.encodeFunctionData("transferFrom", [eoaAddress, receiver, amt]);
+      const inner = erc20.encodeFunctionData("transfer", [receiver, amt]);
       return saInterface.encodeFunctionData("execute", [env.USDC_TOKEN, 0, inner]);
     }
 
@@ -191,6 +191,9 @@ export default function SendOpView() {
           addPendingUserOp(opHash, receiptResult.receipt.transactionHash);
           refreshAllData();
           toast.success("Confirmed!");
+        } else {
+          addPendingUserOp(opHash, 'failed');
+          toast.error("Operation failed or timed out.");
         }
         setWaitingForTx(false);
       }, 7000);
