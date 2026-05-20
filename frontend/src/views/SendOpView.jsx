@@ -97,7 +97,29 @@ export default function SendOpView() {
     try {
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
-      const fee = await provider.getFeeData();
+
+      // Robust fee calculation bypassing eth_maxPriorityFeePerGas
+      let maxFeePerGas = 20000000000n;
+      let maxPriorityFeePerGas = 1500000000n;
+      try {
+        const block = await provider.getBlock("latest");
+        if (block && block.baseFeePerGas) {
+          maxFeePerGas = block.baseFeePerGas * 2n + maxPriorityFeePerGas;
+        } else {
+          const fee = await provider.getFeeData();
+          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
+          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        }
+      } catch (feeErr) {
+        console.warn("Failed to get EIP-1559 fees via block, using getFeeData fallback:", feeErr);
+        try {
+          const fee = await provider.getFeeData();
+          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
+          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        } catch (e) {
+          console.error("Failed to load fee fallback:", e);
+        }
+      }
 
       const userOp = {
         sender: smartAccountAddress,
@@ -107,8 +129,8 @@ export default function SendOpView() {
         callGasLimit: toHex(callGasLimit),
         verificationGasLimit: toHex(verificationGasLimit),
         preVerificationGas: toHex(preVerificationGas),
-        maxFeePerGas: toHex(fee.maxFeePerGas),
-        maxPriorityFeePerGas: toHex(fee.maxPriorityFeePerGas),
+        maxFeePerGas: toHex(maxFeePerGas),
+        maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
         paymasterAndData: usePaymaster ? (paymasterAddress || "0x") : "0x",
         signature: "0x"
       };
@@ -144,7 +166,29 @@ export default function SendOpView() {
     try {
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
-      const fee = await provider.getFeeData();
+
+      // Robust fee calculation bypassing eth_maxPriorityFeePerGas
+      let maxFeePerGas = 20000000000n;
+      let maxPriorityFeePerGas = 1500000000n;
+      try {
+        const block = await provider.getBlock("latest");
+        if (block && block.baseFeePerGas) {
+          maxFeePerGas = block.baseFeePerGas * 2n + maxPriorityFeePerGas;
+        } else {
+          const fee = await provider.getFeeData();
+          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
+          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        }
+      } catch (feeErr) {
+        console.warn("Failed to get EIP-1559 fees via block, using getFeeData fallback:", feeErr);
+        try {
+          const fee = await provider.getFeeData();
+          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
+          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        } catch (e) {
+          console.error("Failed to load fee fallback:", e);
+        }
+      }
 
       const userOp = {
         sender: smartAccountAddress,
@@ -154,8 +198,8 @@ export default function SendOpView() {
         callGasLimit: toHex(callGasLimit),
         verificationGasLimit: toHex(verificationGasLimit),
         preVerificationGas: toHex(preVerificationGas),
-        maxFeePerGas: toHex(fee.maxFeePerGas),
-        maxPriorityFeePerGas: toHex(fee.maxPriorityFeePerGas),
+        maxFeePerGas: toHex(maxFeePerGas),
+        maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
         paymasterAndData: "0x",
         signature: "0x"
       };
@@ -165,8 +209,6 @@ export default function SendOpView() {
          userOp.paymasterAndData = paymasterAddress;
       }
 
-      // We use the values already in state (which might have been auto-filled or manually edited)
-      // but ensure they are in hex for the bundler
       userOp.callGasLimit = toHex(callGasLimit);
       userOp.verificationGasLimit = toHex(verificationGasLimit);
       userOp.preVerificationGas = toHex(preVerificationGas);
@@ -177,30 +219,39 @@ export default function SendOpView() {
       const opHash = await sendUserOperation(userOp);
       setUserOpHashResult(opHash);
       addPendingUserOp(opHash);
-      toast.success("UserOperation sent!");
+      toast.success("UserOperation accepted by bundler!");
 
       setWaitingForTx(true);
-      setCountdown(7);
-      const timer = setInterval(() => setCountdown(c => c > 0 ? c - 1 : 0), 1000);
-
-      setTimeout(async () => {
-        clearInterval(timer);
-        const receiptResult = await getUserOpReceipt(opHash);
-        if (receiptResult?.receipt) {
-          setTxHashResult(receiptResult.receipt.transactionHash);
-          addPendingUserOp(opHash, receiptResult.receipt.transactionHash);
-          refreshAllData();
-          toast.success("Confirmed!");
-        } else {
-          addPendingUserOp(opHash, 'failed');
-          toast.error("Operation failed or timed out.");
+      
+      let attempts = 0;
+      const maxAttempts = 24; // query up to 60 seconds (24 * 2.5s)
+      
+      const interval = setInterval(async () => {
+        attempts++;
+        try {
+          const receiptResult = await getUserOpReceipt(opHash);
+          if (receiptResult && receiptResult.receipt) {
+            clearInterval(interval);
+            setTxHashResult(receiptResult.receipt.transactionHash);
+            addPendingUserOp(opHash, receiptResult.receipt.transactionHash);
+            await refreshAllData();
+            toast.success("Transaction Confirmed on-chain!");
+            setWaitingForTx(false);
+            setPending(false);
+          } else if (attempts >= maxAttempts) {
+            clearInterval(interval);
+            addPendingUserOp(opHash, 'failed');
+            toast.error("Transaction confirmation pending. Check hash on Etherscan.");
+            setWaitingForTx(false);
+            setPending(false);
+          }
+        } catch (pollErr) {
+          console.error("Receipt polling error:", pollErr);
         }
-        setWaitingForTx(false);
-      }, 7000);
+      }, 2500);
 
     } catch (err) {
-      toast.error(err.message);
-    } finally {
+      toast.error(err.reason || err.message || "Failed to execute operation");
       setPending(false);
     }
   };
@@ -321,7 +372,7 @@ export default function SendOpView() {
          <div className="flex gap-3 mt-4">
             <button 
               className="btn btn-secondary flex-1" 
-              disabled={pending || isEstimating || !receiver}
+              disabled={pending || waitingForTx || isEstimating || !receiver}
               onClick={handleEstimateGas}
             >
                {isEstimating ? (
@@ -333,11 +384,11 @@ export default function SendOpView() {
             </button>
             <button 
               className="btn btn-primary flex-2" 
-              disabled={pending || isEstimating || !receiver}
+              disabled={pending || waitingForTx || isEstimating || !receiver}
               onClick={handleSendOp}
               style={{ flex: 2 }}
             >
-               {pending ? "Bundling..." : "Sign & Send"}
+               {pending ? "Signing & Sending..." : waitingForTx ? "Executing on-chain..." : "Sign & Execute Operation"}
             </button>
          </div>
 
@@ -346,7 +397,7 @@ export default function SendOpView() {
              <h4 className="text-secondary mb-1">UserOperation Sent!</h4>
              <p className="text-xs break-all text-muted font-mono mb-2">{userOpHashResult}</p>
              {waitingForTx && (
-                <p className="text-xs text-yellow-400 italic">Waiting for on-chain inclusion... {countdown}s</p>
+                <p className="text-xs text-yellow-400 italic">Waiting for on-chain inclusion (polling)...</p>
              )}
              {txHashResult && (
                <a 

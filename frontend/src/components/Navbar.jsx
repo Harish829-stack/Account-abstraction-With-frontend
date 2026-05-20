@@ -11,7 +11,7 @@ export default function Navbar() {
   const NavItem = ({ viewId, icon, label, disabled = false }) => {
     const isActive = currentView === viewId;
     return (
-      <button 
+      <button
         className={`btn ${isActive ? 'btn-primary' : 'btn-secondary'} whitespace-nowrap`}
         style={{ padding: '0.5rem 1.25rem', opacity: disabled ? 0.4 : 1, filter: disabled ? 'grayscale(100%)' : 'none' }}
         onClick={() => !disabled && setCurrentView(viewId)}
@@ -19,8 +19,8 @@ export default function Navbar() {
         disabled={disabled}
       >
         <span className="flex items-center gap-2">
-           {icon}
-           <span className="text-sm">{label}</span>
+          {icon}
+          <span className="text-sm">{label}</span>
         </span>
       </button>
     );
@@ -40,16 +40,16 @@ export default function Navbar() {
             </div>
           )}
         </div>
-        
+
         <div className="flex items-center gap-4">
           <div className="text-sm text-muted hidden sm:block">
             EOA: {shortenAddress(eoaAddress)}
           </div>
-          <button 
-             className="btn btn-secondary flex items-center justify-center p-2 rounded-full border border-white/10 hover:bg-white/5" 
-             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-             title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
-             style={{ padding: '0.4rem', borderRadius: '50%' }}
+          <button
+            className="btn btn-secondary flex items-center justify-center p-2 rounded-full border border-white/10 hover:bg-white/5"
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+            style={{ padding: '0.4rem', borderRadius: '50%' }}
           >
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           </button>
@@ -61,13 +61,13 @@ export default function Navbar() {
 
       {/* Navigation Tabs */}
       <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2" style={{ borderBottom: '1px solid var(--border-light)' }}>
-         <NavItem viewId="home" icon={<LayoutDashboard size={18} />} label="Dashboard" />
-         <NavItem viewId="profile" icon={<User size={18} />} label="EOA Profile" />
-         <NavItem viewId="setup" icon={<Settings size={18} />} label="Account Setup" />
-         <NavItem viewId="paymaster" icon={<DollarSign size={18} />} label="Paymaster" />
-         <NavItem viewId="send" icon={<Send size={18} />} label="Send Ops" disabled={!smartAccountAddress} />
-         <NavItem viewId="batch-send" icon={<Send size={18} />} label="Batch Ops" disabled={!smartAccountAddress} />
-         <NavItem viewId="history" icon={<Clock size={18} />} label="UserOp History" disabled={!smartAccountAddress} />
+        <NavItem viewId="home" icon={<LayoutDashboard size={18} />} label="Dashboard" />
+        <NavItem viewId="profile" icon={<User size={18} />} label="EOA Profile" />
+        <NavItem viewId="setup" icon={<Settings size={18} />} label="Account Setup" />
+        <NavItem viewId="paymaster" icon={<DollarSign size={18} />} label="Paymaster" />
+        <NavItem viewId="send" icon={<Send size={18} />} label="Send Ops" disabled={!smartAccountAddress} />
+        <NavItem viewId="batch-send" icon={<Send size={18} />} label="Batch Ops" disabled={!smartAccountAddress} />
+        <NavItem viewId="history" icon={<Clock size={18} />} label="UserOp History" disabled={!smartAccountAddress} />
       </div>
     </>
   );

@@ -115,7 +115,29 @@ export default function BatchSendView() {
     try {
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
-      const fee = await provider.getFeeData();
+
+      // Robust fee calculation bypassing eth_maxPriorityFeePerGas
+      let maxFeePerGas = 20000000000n;
+      let maxPriorityFeePerGas = 1500000000n;
+      try {
+        const block = await provider.getBlock("latest");
+        if (block && block.baseFeePerGas) {
+          maxFeePerGas = block.baseFeePerGas * 2n + maxPriorityFeePerGas;
+        } else {
+          const fee = await provider.getFeeData();
+          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
+          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        }
+      } catch (feeErr) {
+        console.warn("Failed to get EIP-1559 fees via block, using getFeeData fallback:", feeErr);
+        try {
+          const fee = await provider.getFeeData();
+          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
+          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        } catch (e) {
+          console.error("Failed to load fee fallback:", e);
+        }
+      }
 
       const userOp = {
         sender: smartAccountAddress,
@@ -125,8 +147,8 @@ export default function BatchSendView() {
         callGasLimit: toHex(callGasLimit),
         verificationGasLimit: toHex(verificationGasLimit),
         preVerificationGas: toHex(preVerificationGas),
-        maxFeePerGas: toHex(fee.maxFeePerGas),
-        maxPriorityFeePerGas: toHex(fee.maxPriorityFeePerGas),
+        maxFeePerGas: toHex(maxFeePerGas),
+        maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
         paymasterAndData: usePaymaster ? (paymasterAddress || "0x") : "0x",
         signature: "0x"
       };
@@ -158,7 +180,29 @@ export default function BatchSendView() {
     try {
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
-      const fee = await provider.getFeeData();
+
+      // Robust fee calculation bypassing eth_maxPriorityFeePerGas
+      let maxFeePerGas = 20000000000n;
+      let maxPriorityFeePerGas = 1500000000n;
+      try {
+        const block = await provider.getBlock("latest");
+        if (block && block.baseFeePerGas) {
+          maxFeePerGas = block.baseFeePerGas * 2n + maxPriorityFeePerGas;
+        } else {
+          const fee = await provider.getFeeData();
+          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
+          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        }
+      } catch (feeErr) {
+        console.warn("Failed to get EIP-1559 fees via block, using getFeeData fallback:", feeErr);
+        try {
+          const fee = await provider.getFeeData();
+          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
+          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        } catch (e) {
+          console.error("Failed to load fee fallback:", e);
+        }
+      }
 
       const userOp = {
         sender: smartAccountAddress,
@@ -168,8 +212,8 @@ export default function BatchSendView() {
         callGasLimit: toHex(callGasLimit),
         verificationGasLimit: toHex(verificationGasLimit),
         preVerificationGas: toHex(preVerificationGas),
-        maxFeePerGas: toHex(fee.maxFeePerGas),
-        maxPriorityFeePerGas: toHex(fee.maxPriorityFeePerGas),
+        maxFeePerGas: toHex(maxFeePerGas),
+        maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
         paymasterAndData: "0x",
         signature: "0x"
       };
@@ -179,7 +223,6 @@ export default function BatchSendView() {
          userOp.paymasterAndData = paymasterAddress;
       }
 
-      // Use the values already in state
       userOp.callGasLimit = toHex(callGasLimit);
       userOp.verificationGasLimit = toHex(verificationGasLimit);
       userOp.preVerificationGas = toHex(preVerificationGas);
@@ -190,27 +233,39 @@ export default function BatchSendView() {
       const opHash = await sendUserOperation(userOp);
       setUserOpHashResult(opHash);
       addPendingUserOp(opHash);
-      toast.success("Batch UserOperation sent!");
+      toast.success("Batch UserOperation accepted by bundler!");
 
       setWaitingForTx(true);
-      setCountdown(7);
-      const timer = setInterval(() => setCountdown(c => c > 0 ? c - 1 : 0), 1000);
-
-      setTimeout(async () => {
-        clearInterval(timer);
-        const receiptResult = await getUserOpReceipt(opHash);
-        if (receiptResult?.receipt) {
-          setTxHashResult(receiptResult.receipt.transactionHash);
-          addPendingUserOp(opHash, receiptResult.receipt.transactionHash);
-          refreshAllData();
-          toast.success("Batch confirmed!");
+      
+      let attempts = 0;
+      const maxAttempts = 24; // query up to 60 seconds (24 * 2.5s)
+      
+      const interval = setInterval(async () => {
+        attempts++;
+        try {
+          const receiptResult = await getUserOpReceipt(opHash);
+          if (receiptResult && receiptResult.receipt) {
+            clearInterval(interval);
+            setTxHashResult(receiptResult.receipt.transactionHash);
+            addPendingUserOp(opHash, receiptResult.receipt.transactionHash);
+            await refreshAllData();
+            toast.success("Batch Confirmed on-chain!");
+            setWaitingForTx(false);
+            setPending(false);
+          } else if (attempts >= maxAttempts) {
+            clearInterval(interval);
+            addPendingUserOp(opHash, 'failed');
+            toast.error("Batch confirmation pending. Check hash on Etherscan.");
+            setWaitingForTx(false);
+            setPending(false);
+          }
+        } catch (pollErr) {
+          console.error("Batch receipt polling error:", pollErr);
         }
-        setWaitingForTx(false);
-      }, 7000);
+      }, 2500);
 
     } catch (err) {
-      toast.error(err.message);
-    } finally {
+      toast.error(err.reason || err.message || "Failed to execute batch operation");
       setPending(false);
     }
   };
@@ -362,7 +417,7 @@ export default function BatchSendView() {
          <div className="flex gap-3 mt-4">
             <button 
               className="btn btn-secondary flex-1" 
-              disabled={pending || isEstimating || operations.some(op => !op.receiver)}
+              disabled={pending || waitingForTx || isEstimating || operations.some(op => !op.receiver)}
               onClick={handleEstimateGas}
             >
                {isEstimating ? (
@@ -374,11 +429,11 @@ export default function BatchSendView() {
             </button>
             <button 
               className="btn btn-primary flex-2" 
-              disabled={pending || isEstimating || operations.some(op => !op.receiver)}
+              disabled={pending || waitingForTx || isEstimating || operations.some(op => !op.receiver)}
               onClick={handleSendBatchOp}
               style={{ flex: 2 }}
             >
-               {pending ? "Bundling..." : "Sign & Execute Batch"}
+               {pending ? "Signing & Sending..." : waitingForTx ? "Executing Batch..." : "Sign & Execute Batch"}
             </button>
          </div>
 
@@ -387,7 +442,7 @@ export default function BatchSendView() {
              <h4 className="text-secondary mb-1">Batch Operation Sent!</h4>
              <p className="text-xs break-all text-muted font-mono mb-2">{userOpHashResult}</p>
              {waitingForTx && (
-                <p className="text-xs text-yellow-400 italic">Waiting for on-chain inclusion... {countdown}s</p>
+                <p className="text-xs text-yellow-400 italic">Waiting for on-chain inclusion (polling)...</p>
              )}
              {txHashResult && (
                <a 

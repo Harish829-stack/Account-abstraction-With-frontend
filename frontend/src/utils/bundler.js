@@ -9,7 +9,7 @@ export async function estimateUserOperationGas(userOp) {
 
   // Create a copy for estimation
   const opToEstimate = { ...userOp };
-  
+
   // Provide dummy signature for estimation
   if (!opToEstimate.signature || opToEstimate.signature === "0x") {
     opToEstimate.signature = "0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c";
@@ -34,7 +34,7 @@ export async function estimateUserOperationGas(userOp) {
     return data.result;
   } catch (error) {
     if (error.response && error.response.data && error.response.data.error) {
-       throw new Error(error.response.data.error.message);
+      throw new Error(error.response.data.error.message);
     }
     throw error;
   }
@@ -68,7 +68,7 @@ export async function sendUserOperation(userOp) {
     return data.result; // This is the userOpHash
   } catch (error) {
     if (error.response && error.response.data && error.response.data.error) {
-       throw new Error(error.response.data.error.message);
+      throw new Error(error.response.data.error.message);
     }
     throw error;
   }

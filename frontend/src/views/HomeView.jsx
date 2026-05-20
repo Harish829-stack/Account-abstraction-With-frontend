@@ -138,12 +138,12 @@ function ConnectedDashboard() {
       toast.error("Connect Smart Account first!");
       return;
     }
-    
+
     if (!paymasterAddress) {
       toast.error("Paymaster address not found! Please set up Paymaster first.");
       return;
     }
-    
+
     if (parseFloat(saETHBalance || "0") < parseFloat(swapAmount || "0.001")) {
       toast.error("Not enough ETH in Smart Account to swap!");
       return;
@@ -152,7 +152,7 @@ function ConnectedDashboard() {
     setSwapping(true);
     try {
       const amtIn = ethers.parseEther(swapAmount || "0.001");
-      
+
       // Uniswap V3 exactInputSingle interface
       const swapIface = new ethers.Interface([
         "function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)"
@@ -208,9 +208,9 @@ function ConnectedDashboard() {
 
       toast.info("Sending UserOp to swap ETH for USDC...");
       const opHash = await sendUserOperation(userOp);
-      
+
       toast.success(`Swap UserOp sent! Hash: ${shortenAddress(opHash)}`);
-      
+
       // Wait for receipt
       setTimeout(async () => {
         const receiptResult = await getUserOpReceipt(opHash);

@@ -34,6 +34,7 @@ export default function AccountSetupView() {
   const [predictedAddress, setPredictedAddress] = useState('');
   const [deploying, setDeploying] = useState(false);
   const [predicting, setPredicting] = useState(false);
+  const [predictionError, setPredictionError] = useState(null);
 
   // Option B State
   const [connectAddress, setConnectAddress] = useState('');
@@ -64,16 +65,24 @@ export default function AccountSetupView() {
     let active = true;
     const predictAddress = async () => {
       if (!salt || !eoaAddress || !provider) {
-        if (active) setPredictedAddress('');
+        if (active) {
+          setPredictedAddress('');
+          setPredictionError(null);
+        }
         return;
       }
       setPredicting(true);
+      if (active) setPredictionError(null);
       try {
         const factory = new ethers.Contract(env.FACTORY, SmartAccountFactoryABI, provider);
         const predicted = await factory.getFunction("getAddress")(eoaAddress, salt);
         if (active) setPredictedAddress(predicted);
       } catch (err) {
         console.error("Failed to predict:", err);
+        if (active) {
+          setPredictedAddress('');
+          setPredictionError(err.message || err.toString());
+        }
       } finally {
         if (active) setPredicting(false);
       }
@@ -371,8 +380,24 @@ export default function AccountSetupView() {
               </div>
 
               {predictedAddress && (
-                 <div className="mt-2 p-3 bg-white/5 border border-white/10 rounded-md text-sm text-center">
-                    Predicted: <span className="font-mono text-primary">{predictedAddress}</span>
+                 <div className="mt-2 p-3 bg-white/5 border border-white/10 rounded-md text-sm text-center animate-fade-in">
+                    Predicted: <span className="font-mono text-primary font-bold">{predictedAddress}</span>
+                 </div>
+              )}
+
+              {predictionError && (
+                 <div className="mt-2 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-sm flex flex-col gap-2 animate-fade-in">
+                    <div className="flex items-center gap-2 text-red-400 font-bold">
+                      <AlertTriangle size={16} />
+                      <span>Failed to predict address</span>
+                    </div>
+                    <p className="text-xs text-muted mb-1 leading-relaxed">
+                      The Factory contract could not be reached at <b>{env.FACTORY}</b>. This usually means:
+                    </p>
+                    <ul className="text-xs text-muted list-disc pl-4 space-y-1">
+                      <li>Your wallet is connected to the wrong network (please check that MetaMask is on Sepolia).</li>
+                      <li>The Factory contract address is incorrect or not deployed on this network.</li>
+                    </ul>
                  </div>
               )}
             </div>

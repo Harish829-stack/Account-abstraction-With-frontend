@@ -59,14 +59,14 @@ export const AppProvider = ({ children }) => {
 
   const addPendingUserOp = (hash, txHash) => {
     setPendingUserOps(prev => {
-       const existingIdx = prev.findIndex(op => (typeof op === 'string' ? op === hash : op.userOpHash === hash));
-       if (existingIdx >= 0) {
-          // update existing
-          const newOps = [...prev];
-          newOps[existingIdx] = { userOpHash: hash, txHash: txHash || newOps[existingIdx].txHash };
-          return newOps;
-       }
-       return [{ userOpHash: hash, txHash }, ...prev].slice(0, 10); // Keep last 10 locally sent
+      const existingIdx = prev.findIndex(op => (typeof op === 'string' ? op === hash : op.userOpHash === hash));
+      if (existingIdx >= 0) {
+        // update existing
+        const newOps = [...prev];
+        newOps[existingIdx] = { userOpHash: hash, txHash: txHash || newOps[existingIdx].txHash };
+        return newOps;
+      }
+      return [{ userOpHash: hash, txHash }, ...prev].slice(0, 10); // Keep last 10 locally sent
     });
   };
 
@@ -123,7 +123,7 @@ export const AppProvider = ({ children }) => {
         const owner = await saContract.owner();
         setSaOwner(owner);
       } catch (e) {
-         setSaOwner("Unknown (Error fetching owner)");
+        setSaOwner("Unknown (Error fetching owner)");
       }
     } catch (err) {
       console.error("Error loading SA details:", err);
@@ -178,14 +178,14 @@ export const AppProvider = ({ children }) => {
     if (eoaAddress) refreshes.push(loadEOABalances(eoaAddress, provider));
     if (smartAccountAddress) refreshes.push(loadSmartAccountDetails(smartAccountAddress, provider));
     if (paymasterAddress) refreshes.push(loadPaymasterDetails(paymasterAddress, provider));
-    
+
     await Promise.all(refreshes);
   };
 
   // Real-time block listener
   useEffect(() => {
     if (!provider) return;
-    
+
     console.log("[AppContext] Subscribing to block events for real-time updates");
     const onBlock = () => {
       console.log("[AppContext] New block mined, refreshing all balances...");
@@ -208,7 +208,7 @@ export const AppProvider = ({ children }) => {
       await window.ethereum.request({ method: "eth_requestAccounts" });
       const browserProvider = new ethers.BrowserProvider(window.ethereum);
       const network = await browserProvider.getNetwork();
-      
+
       setProvider(browserProvider);
       setChainId(Number(network.chainId));
 
@@ -223,12 +223,12 @@ export const AppProvider = ({ children }) => {
       // Stay on home to show the dashboard
 
     } catch (error) {
-       if (error.code === 4001) {
-          toast.error("Transaction rejected by user.");
-       } else {
-          console.error(error);
-          toast.error(error.message || "Failed to connect wallet.");
-       }
+      if (error.code === 4001) {
+        toast.error("Transaction rejected by user.");
+      } else {
+        console.error(error);
+        toast.error(error.message || "Failed to connect wallet.");
+      }
     } finally {
       setIsConnecting(false);
     }
@@ -239,8 +239,51 @@ export const AppProvider = ({ children }) => {
     setSigner(null);
     setEoaAddress(null);
     setSmartAccountAddress(null);
+    setChainId(null);
     setCurrentView("home");
   };
+
+  const switchNetwork = async () => {
+    if (!window.ethereum) {
+      toast.error("MetaMask is required to switch networks!");
+      return;
+    }
+    const hexChainId = "0x" + expectedChainId.toString(16);
+    try {
+      await window.ethereum.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: hexChainId }],
+      });
+    } catch (switchError) {
+      if (switchError.code === 4902) {
+        try {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: hexChainId,
+                chainName: "Sepolia Test Network",
+                nativeCurrency: {
+                  name: "Sepolia Ether",
+                  symbol: "ETH",
+                  decimals: 18,
+                },
+                rpcUrls: ["https://sepolia.infura.io/v3/a710f8c2379a44fda67fce69cf197679"],
+                blockExplorerUrls: ["https://sepolia.etherscan.io"],
+              },
+            ],
+          });
+        } catch (addError) {
+          console.error("Failed to add network:", addError);
+          toast.error("Failed to add Sepolia network to MetaMask.");
+        }
+      } else {
+        console.error("Failed to switch network:", switchError);
+        toast.error("Failed to switch network in MetaMask.");
+      }
+    }
+  };
+
 
   useEffect(() => {
     if (window.ethereum) {
@@ -255,10 +298,10 @@ export const AppProvider = ({ children }) => {
       const handleChainChanged = () => {
         window.location.reload();
       };
-      
+
       window.ethereum.on('accountsChanged', handleAccountsChanged);
       window.ethereum.on('chainChanged', handleChainChanged);
-      
+
       return () => {
         if (window.ethereum.removeListener) {
           window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
@@ -270,9 +313,9 @@ export const AppProvider = ({ children }) => {
 
   // Sync smart account dynamically whenever it changes
   useEffect(() => {
-     if (smartAccountAddress) {
-       loadSmartAccountDetails(smartAccountAddress);
-     }
+    if (smartAccountAddress) {
+      loadSmartAccountDetails(smartAccountAddress);
+    }
   }, [smartAccountAddress]);
 
   const value = {
@@ -282,18 +325,18 @@ export const AppProvider = ({ children }) => {
     eoaETHBalance, eoaUSDCBalance,
     smartAccountAddress, setSmartAccountAddress,
     saETHBalance, saUSDCBalance, saEntryPointDeposit, saOwner,
-    paymasterAddress, setPaymasterAddress, 
+    paymasterAddress, setPaymasterAddress,
     pmETHBalance, pmUSDCBalance, pmDeposit, pmStake, pmUnstakeDelay, pmTokenSymbol, pmTokenDecimals,
-    connectWallet, disconnect, isConnecting,
+    connectWallet, disconnect, isConnecting, switchNetwork,
     loadEOABalances, loadSmartAccountDetails, loadPaymasterDetails, refreshAllData,
     pendingUserOps, addPendingUserOp,
     env: {
-       ENTRY_POINT: import.meta.env.VITE_ENTRY_POINT,
-       FACTORY: import.meta.env.VITE_FACTORY,
-       USDC_TOKEN: import.meta.env.VITE_USDC_TOKEN,
-       PRICE_FEED: import.meta.env.VITE_PRICE_FEED,
-       SKANDHA_RPC_URL: import.meta.env.VITE_SKANDHA_RPC_URL,
-       VERIFYING_SIGNER: import.meta.env.VITE_VERIFYING_SIGNER,
+      ENTRY_POINT: import.meta.env.VITE_ENTRY_POINT,
+      FACTORY: import.meta.env.VITE_FACTORY,
+      USDC_TOKEN: import.meta.env.VITE_USDC_TOKEN,
+      PRICE_FEED: import.meta.env.VITE_PRICE_FEED,
+      SKANDHA_RPC_URL: import.meta.env.VITE_SKANDHA_RPC_URL,
+      VERIFYING_SIGNER: import.meta.env.VITE_VERIFYING_SIGNER,
     }
   };
 
