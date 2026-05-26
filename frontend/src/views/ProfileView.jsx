@@ -8,7 +8,7 @@ import { ERC20_ABI, SmartAccountABI, IEntryPointABI } from '../utils/abis';
 import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
 
 export default function ProfileView() {
-  const { eoaAddress, eoaETHBalance, eoaUSDCBalance, smartAccountAddress, paymasterAddress, signer, provider, env, loadEOABalances, refreshAllData } = useAppContext();
+  const { eoaAddress, eoaETHBalance, eoaUSDCBalance, smartAccountAddress, paymasterAddress, signer, provider, env, loadEOABalances, refreshAllData, saETHBalance, saEntryPointDeposit } = useAppContext();
   const toast = useToast();
 
   const [copied, setCopied] = useState(false);
@@ -53,17 +53,6 @@ export default function ProfileView() {
     if (!signer || !usdcAddress || !smartAccountAddress || !paymasterAddress) return;
     setPendingPm(true);
     try {
-      const parsedAmount = amountStr ? ethers.parseUnits(amountStr, 6) : 0n;
-
-      const erc20 = new ethers.Interface(ERC20_ABI);
-      const inner = erc20.encodeFunctionData("approve", [paymasterAddress, parsedAmount]);
-
-      const saInterface = new ethers.Interface(SmartAccountABI);
-      const callData = saInterface.encodeFunctionData("execute", [usdcAddress, 0, inner]);
-
-      const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
-      const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
-      
       // Robust EIP-1559 gas fee estimation for public bundlers
       let maxFeePerGas = 25000000000n; // 25 Gwei fallback
       let maxPriorityFeePerGas = 1500000000n; // 1.5 Gwei fallback
@@ -86,6 +75,36 @@ export default function ProfileView() {
           console.error("Failed to load fee fallback:", e);
         }
       }
+
+      // EntryPoint gas prefund (maxCost) validation check
+      const totalGasLimit = 150000n + 150000n + 50000n; // callGasLimit + verificationGasLimit + preVerificationGas
+      const requiredPrefundWei = totalGasLimit * maxFeePerGas;
+      const requiredPrefundEth = parseFloat(ethers.formatEther(requiredPrefundWei));
+
+      const saBalanceEth = parseFloat(saETHBalance || "0");
+      const saDepositEth = parseFloat(ethers.formatEther(saEntryPointDeposit || "0"));
+      const totalAvailableEth = saBalanceEth + saDepositEth;
+
+      console.log(`[Profile-Prefund-Check] Required max prefund: ${requiredPrefundEth.toFixed(5)} ETH. Available: ${totalAvailableEth.toFixed(5)} ETH.`);
+
+      if (totalAvailableEth < requiredPrefundEth) {
+        toast.error(
+          `Insufficient ETH for prefund! The EntryPoint requires your Smart Account to have at least ${requiredPrefundEth.toFixed(4)} ETH to cover the worst-case gas cost of this transaction (based on current network fee of ${ethers.formatUnits(maxFeePerGas, "gwei")} Gwei). You currently have ${totalAvailableEth.toFixed(4)} ETH. Please deposit more ETH into your Smart Account first.`
+        );
+        setPendingPm(false);
+        return;
+      }
+
+      const parsedAmount = amountStr ? ethers.parseUnits(amountStr, 6) : 0n;
+
+      const erc20 = new ethers.Interface(ERC20_ABI);
+      const inner = erc20.encodeFunctionData("approve", [paymasterAddress, parsedAmount]);
+
+      const saInterface = new ethers.Interface(SmartAccountABI);
+      const callData = saInterface.encodeFunctionData("execute", [usdcAddress, 0, inner]);
+
+      const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
+      const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
 
       const userOp = {
         sender: smartAccountAddress,
