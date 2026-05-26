@@ -110,6 +110,7 @@ function ConnectedDashboard() {
   // Swap state
   const [swapAmount, setSwapAmount] = useState('0.001');
   const [swapping, setSwapping] = useState(false);
+  const [usePmForSwap, setUsePmForSwap] = useState(false);
 
   // Stats derived from balances
   const eoaUSDC = parseFloat(ethers.formatUnits(eoaUSDCBalance || '0', 6));
@@ -140,7 +141,7 @@ function ConnectedDashboard() {
       return;
     }
 
-    if (!paymasterAddress) {
+    if (usePmForSwap && !paymasterAddress) {
       toast.error("Paymaster address not found! Please set up Paymaster first.");
       return;
     }
@@ -190,7 +191,7 @@ function ConnectedDashboard() {
         preVerificationGas: toHex(50000),
         maxFeePerGas: toHex(fee.maxFeePerGas),
         maxPriorityFeePerGas: toHex(fee.maxPriorityFeePerGas),
-        paymasterAndData: paymasterAddress, // Paymaster pays gas in USDC
+        paymasterAndData: usePmForSwap ? paymasterAddress : "0x",
         signature: "0x"
       };
 
@@ -431,7 +432,21 @@ function ConnectedDashboard() {
                 {swapping ? '...' : 'ETH→USDC'}
               </button>
             </div>
-            <p className="text-xs text-muted mt-1">Via Smart Account → {shortenAddress(UNISWAP_ROUTER)}</p>
+            
+            <div className="flex items-center gap-2 mt-2">
+              <input 
+                 type="checkbox" 
+                 id="pmSwapToggle" 
+                 className="w-3 h-3 accent-primary"
+                 checked={usePmForSwap}
+                 onChange={(e) => setUsePmForSwap(e.target.checked)}
+              />
+              <label htmlFor="pmSwapToggle" className="text-xs text-muted cursor-pointer hover:text-white transition-colors">
+                 Sponsor gas with Paymaster
+              </label>
+            </div>
+
+            <p className="text-xs text-muted mt-2">Via Smart Account → {shortenAddress(UNISWAP_ROUTER)}</p>
           </div>
         </div>
       </div>
