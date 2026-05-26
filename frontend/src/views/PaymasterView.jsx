@@ -14,7 +14,8 @@ export default function PaymasterView() {
   const { 
     provider, signer, eoaAddress, smartAccountAddress, paymasterAddress, setPaymasterAddress, refreshAllData, env,
     pmETHBalance, pmUSDCBalance, pmDeposit, pmStake, pmUnstakeDelay, pmTokenSymbol, pmTokenDecimals, loadPaymasterDetails,
-    saETHBalance, saUSDCBalance, saEntryPointDeposit
+    saETHBalance, saUSDCBalance, saEntryPointDeposit,
+    trackOp, setCurrentView
   } = useAppContext();
   const toast = useToast();
 
@@ -53,6 +54,7 @@ export default function PaymasterView() {
   const [approveAmount, setApproveAmount] = useState('10');
   const [approving, setApproving] = useState(false);
   const [pmAllowance, setPmAllowance] = useState('0');
+  const [lastOpHash, setLastOpHash] = useState('');
 
   const fetchPmAllowance = async () => {
     if (!signer || !dToken || !smartAccountAddress || !paymasterAddress) return;
@@ -258,23 +260,17 @@ export default function PaymasterView() {
 
       toast.info("Sending UserOp to approve Paymaster...");
       const opHash = await sendUserOperation(userOp);
-      
-      // Wait for receipt (polling up to 60 seconds to match public network block times)
-      let receiptResult = null;
-      for (let i = 0; i < 24; i++) {
-         await new Promise(r => setTimeout(r, 2500));
-         receiptResult = await getUserOpReceipt(opHash);
-         if (receiptResult?.receipt) break;
-      }
-      
-      if (receiptResult?.receipt) {
-         await refreshAllData();
-         await fetchPmAllowance();
-         toast.success("Paymaster approved by Smart Account!");
-         setCurrentStep(3); // Move to next step
-      } else {
-         toast.error("UserOp confirmation pending. Check your transaction on Etherscan.");
-      }
+
+      // Fire and forget — global tracker handles confirmation in background
+      trackOp(opHash, 'USDC Approval to Paymaster');
+      setLastOpHash(opHash);
+      toast.withAction(
+        'UserOp submitted to bundler!',
+        'View in History →',
+        () => setCurrentView('history'),
+        'info'
+      );
+      setCurrentStep(3); // Optimistically advance stepper
     } catch (err) {
       if (err.code === 4001) toast.error("Transaction rejected by user");
       else toast.error(err.reason || err.message || "Failed to approve Paymaster");
@@ -478,6 +474,23 @@ export default function PaymasterView() {
               </button>
             </div>
 
+            {lastOpHash && (
+              <div className="mt-4 p-4 rounded-xl border" style={{
+                background: 'rgba(139, 92, 246, 0.08)',
+                borderColor: 'rgba(139, 92, 246, 0.3)',
+              }}>
+                <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>UserOperation Submitted</span>
+                <p className="font-mono text-xs break-all text-muted mt-2 mb-3" title={lastOpHash}>{lastOpHash}</p>
+                <p className="text-xs text-muted mb-3">Approval is being tracked in the background. The UI is unlocked — you can continue to Fund & Stake.</p>
+                <button
+                  onClick={() => setCurrentView('history')}
+                  className="btn btn-primary py-1.5 px-4 text-xs flex items-center gap-2"
+                >
+                  View TX Status in History →
+                </button>
+              </div>
+            )}
+
             <div className="mt-8 flex justify-end">
                <button className="btn btn-secondary text-sm" onClick={() => setCurrentStep(3)}>
                  Forward to Funding <ChevronRight size={16} />
@@ -485,6 +498,7 @@ export default function PaymasterView() {
             </div>
           </div>
         )}
+
 
         {/* STEP 3: Fund */}
         {currentStep === 3 && (

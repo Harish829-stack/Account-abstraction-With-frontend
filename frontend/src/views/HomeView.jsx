@@ -84,7 +84,8 @@ function ConnectedDashboard() {
     smartAccountAddress, saETHBalance, saUSDCBalance, saEntryPointDeposit,
     paymasterAddress, pmDeposit,
     pendingUserOps,
-    setCurrentView, refreshAllData, signer, provider, env
+    setCurrentView, refreshAllData, signer, provider, env,
+    trackOp
   } = useAppContext();
   const toast = useToast();
   const [refreshing, setRefreshing] = useState(false);
@@ -209,28 +210,14 @@ function ConnectedDashboard() {
       toast.info("Sending UserOp to swap ETH for USDC...");
       const opHash = await sendUserOperation(userOp);
 
-      toast.success(`Swap UserOp sent! Hash: ${shortenAddress(opHash)}`);
-
-      // Wait for receipt (polling up to 60 seconds to match public network block times)
-      let attempts = 0;
-      const maxAttempts = 24;
-      const interval = setInterval(async () => {
-        attempts++;
-        try {
-          const receiptResult = await getUserOpReceipt(opHash);
-          if (receiptResult && receiptResult.receipt) {
-            clearInterval(interval);
-            toast.success("Swap Confirmed!");
-            await refreshAllData();
-            await fetchPmAllowance();
-          } else if (attempts >= maxAttempts) {
-            clearInterval(interval);
-            toast.error("Swap confirmation pending. Check hash on Etherscan.");
-          }
-        } catch (pollErr) {
-          console.error("Receipt polling error:", pollErr);
-        }
-      }, 2500);
+      // Fire and forget — global tracker handles confirmation in background
+      trackOp(opHash, 'ETH → USDC Swap');
+      toast.withAction(
+        'Swap submitted to bundler!',
+        'View in History →',
+        () => setCurrentView('history'),
+        'info'
+      );
 
     } catch (err) {
       if (err.code === 4001) toast.error("Transaction rejected by user");

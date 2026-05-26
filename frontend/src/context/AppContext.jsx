@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import { ethers } from "ethers";
 import { IEntryPointABI, SmartAccountABI, ERC20_ABI } from "../utils/abis";
 import { useToast } from "./ToastContext";
+import { getUserOpReceipt } from "../utils/bundler";
 
 const AppContext = createContext();
 
@@ -56,6 +57,21 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     localStorage.setItem('pendingUserOps', JSON.stringify(pendingUserOps));
   }, [pendingUserOps]);
+
+  // --- Global Background Transaction Tracker ---
+  // Each entry: { opHash, label, submittedAt, status: 'pending' | 'confirmed' | 'dropped' }
+  const [trackedOps, setTrackedOps] = useState([]);
+  const trackedOpsRef = useRef(trackedOps);
+  useEffect(() => { trackedOpsRef.current = trackedOps; }, [trackedOps]);
+
+  // Call this right after sendUserOperation() — instantly unblocks the view
+  const trackOp = useCallback((opHash, label = 'UserOperation') => {
+    setTrackedOps(prev => [
+      { opHash, label, submittedAt: Date.now(), status: 'pending' },
+      ...prev.filter(op => op.opHash !== opHash)
+    ]);
+    addPendingUserOp(opHash);
+  }, []);
 
   const addPendingUserOp = (hash, txHash) => {
     setPendingUserOps(prev => {
@@ -198,6 +214,86 @@ export const AppProvider = ({ children }) => {
     };
   }, [provider, eoaAddress, smartAccountAddress, paymasterAddress]);
 
+  // Global background poller — polls every 3s for all pending tracked ops
+  const setCurrentViewRef = useRef(null);
+  useEffect(() => { setCurrentViewRef.current = setCurrentView; }, [setCurrentView]);
+
+  // Store refs for provider and entryPoint so the interval (created once) can access latest values
+  const providerRef = useRef(null);
+  useEffect(() => { providerRef.current = provider; }, [provider]);
+
+  useEffect(() => {
+    const POLL_INTERVAL_MS = 3000;
+    const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+    const markConfirmed = (opHash, txHash, label) => {
+      setTrackedOps(prev => prev.map(o =>
+        o.opHash === opHash ? { ...o, status: 'confirmed' } : o
+      ));
+      addPendingUserOp(opHash, txHash);
+      toast.withAction(
+        `✅ "${label}" confirmed on-chain!`,
+        'View in History →',
+        () => setCurrentViewRef.current && setCurrentViewRef.current('history')
+      );
+      refreshAllData();
+    };
+
+    const interval = setInterval(async () => {
+      const pendingOps = trackedOpsRef.current.filter(op => op.status === 'pending');
+      if (pendingOps.length === 0) return;
+
+      for (const op of pendingOps) {
+        const age = Date.now() - op.submittedAt;
+
+        // Timeout: drop after 5 minutes
+        if (age > TIMEOUT_MS) {
+          setTrackedOps(prev => prev.map(o =>
+            o.opHash === op.opHash ? { ...o, status: 'dropped' } : o
+          ));
+          toast.error(`"${op.label}" may have been dropped by the bundler. Check JiffyScan with hash: ${op.opHash.slice(0, 10)}...`);
+          continue;
+        }
+
+        try {
+          // Step 1: Try the bundler's eth_getUserOperationReceipt API first (fast path)
+          const result = await getUserOpReceipt(op.opHash);
+          if (result && result.receipt) {
+            markConfirmed(op.opHash, result.receipt.transactionHash, op.label);
+            continue;
+          }
+
+          // Step 2: Bundler returned null — fall back to querying EntryPoint logs on-chain
+          // This handles the case where the bundler has pruned the op from its mempool
+          // but the tx was actually mined on-chain.
+          const _provider = providerRef.current;
+          const entryPointAddress = import.meta.env.VITE_ENTRY_POINT;
+          if (_provider && entryPointAddress) {
+            try {
+              const epContract = new ethers.Contract(entryPointAddress, IEntryPointABI, _provider);
+              const currentBlock = await _provider.getBlockNumber();
+              // Search last 500 blocks (approx 100 min on Sepolia)
+              const fromBlock = Math.max(0, currentBlock - 500);
+              const filter = epContract.filters.UserOperationEvent(op.opHash);
+              const events = await epContract.queryFilter(filter, fromBlock, 'latest');
+              if (events.length > 0) {
+                const txHash = events[0].transactionHash;
+                console.log(`[Tracker] Found op ${op.opHash.slice(0, 10)}... via on-chain fallback! TxHash: ${txHash}`);
+                markConfirmed(op.opHash, txHash, op.label);
+              }
+            } catch (onChainErr) {
+              console.warn(`[Tracker] On-chain fallback check failed for ${op.opHash.slice(0, 10)}...:`, onChainErr);
+            }
+          }
+        } catch (err) {
+          console.warn(`[Tracker] Error polling receipt for ${op.opHash}:`, err);
+        }
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, []); // runs once, uses refs to avoid stale closures
+
   const connectWallet = async () => {
     if (!window.ethereum) {
       toast.error("MetaMask (window.ethereum) is required!");
@@ -330,6 +426,7 @@ export const AppProvider = ({ children }) => {
     connectWallet, disconnect, isConnecting, switchNetwork,
     loadEOABalances, loadSmartAccountDetails, loadPaymasterDetails, refreshAllData,
     pendingUserOps, addPendingUserOp,
+    trackedOps, trackOp,
     env: {
       ENTRY_POINT: import.meta.env.VITE_ENTRY_POINT,
       FACTORY: import.meta.env.VITE_FACTORY,

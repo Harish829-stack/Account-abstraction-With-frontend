@@ -8,7 +8,7 @@ import { ERC20_ABI, SmartAccountABI, IEntryPointABI } from '../utils/abis';
 import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
 
 export default function ProfileView() {
-  const { eoaAddress, eoaETHBalance, eoaUSDCBalance, smartAccountAddress, paymasterAddress, signer, provider, env, loadEOABalances, refreshAllData, saETHBalance, saEntryPointDeposit } = useAppContext();
+  const { eoaAddress, eoaETHBalance, eoaUSDCBalance, smartAccountAddress, paymasterAddress, signer, provider, env, loadEOABalances, refreshAllData, saETHBalance, saEntryPointDeposit, trackOp, setCurrentView } = useAppContext();
   const toast = useToast();
 
   const [copied, setCopied] = useState(false);
@@ -19,6 +19,7 @@ export default function ProfileView() {
 
   const [pendingSa, setPendingSa] = useState(false);
   const [pendingPm, setPendingPm] = useState(false);
+  const [lastOpHash, setLastOpHash] = useState('');
 
   const usdcAddress = import.meta.env.VITE_USDC_TOKEN;
 
@@ -131,21 +132,16 @@ export default function ProfileView() {
       toast.info("Sending UserOp to approve Paymaster...");
       const opHash = await sendUserOperation(userOp);
 
-      // Wait for receipt (polling up to 60 seconds to match public network block times)
-      let receiptResult = null;
-      for (let i = 0; i < 24; i++) {
-        await new Promise(r => setTimeout(r, 2500));
-        receiptResult = await getUserOpReceipt(opHash);
-        if (receiptResult?.receipt) break;
-      }
-
-      if (receiptResult?.receipt) {
-        await fetchAllowances();
-        setInputPmAllowance('');
-        toast.success("Paymaster approved by Smart Account!");
-      } else {
-        toast.error("UserOp confirmation pending. Check your transaction on Etherscan.");
-      }
+      // Fire and forget — global tracker handles confirmation in background
+      trackOp(opHash, 'USDC Allowance Update');
+      setLastOpHash(opHash);
+      toast.withAction(
+        'UserOp submitted to bundler!',
+        'View in History →',
+        () => setCurrentView('history'),
+        'info'
+      );
+      setInputPmAllowance('');
     } catch (err) {
       if (err.code === 4001) toast.error("Transaction rejected by user");
       else toast.error(err.reason || err.message || "Failed to approve Paymaster");
@@ -259,6 +255,23 @@ export default function ProfileView() {
             </tbody>
           </table>
         </div>
+
+        {lastOpHash && (
+          <div className="mt-4 p-4 rounded-xl border" style={{
+            background: 'rgba(139, 92, 246, 0.08)',
+            borderColor: 'rgba(139, 92, 246, 0.3)',
+          }}>
+            <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>UserOperation Submitted</span>
+            <p className="font-mono text-xs break-all text-muted mt-2 mb-3" title={lastOpHash}>{lastOpHash}</p>
+            <p className="text-xs text-muted mb-3">Your allowance update is being tracked in the background. The UI is fully unlocked.</p>
+            <button
+              onClick={() => setCurrentView('history')}
+              className="btn btn-primary py-1.5 px-4 text-xs flex items-center gap-2"
+            >
+              View TX Status in History →
+            </button>
+          </div>
+        )}
       </div>
 
     </div>

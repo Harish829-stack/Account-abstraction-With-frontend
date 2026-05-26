@@ -62,7 +62,6 @@ export default function Navbar() {
       {/* Navigation Tabs */}
       <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-2" style={{ borderBottom: '1px solid var(--border-light)' }}>
         <NavItem viewId="home" icon={<LayoutDashboard size={18} />} label="Dashboard" />
-        <NavItem viewId="profile" icon={<User size={18} />} label="EOA Profile" />
         <NavItem viewId="setup" icon={<Settings size={18} />} label="Account Setup" />
         <NavItem viewId="paymaster" icon={<DollarSign size={18} />} label="Paymaster" />
         <NavItem viewId="send" icon={<Send size={18} />} label="Send Ops" disabled={!smartAccountAddress} />

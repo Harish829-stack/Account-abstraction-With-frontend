@@ -9,7 +9,7 @@ import { IEntryPointABI } from '../utils/abis';
 export default function HistoryView() {
   const { smartAccountAddress, provider, env, pendingUserOps } = useAppContext();
   const toast = useToast();
-  
+
   const [recentOps, setRecentOps] = useState([]);
   const [loadingOps, setLoadingOps] = useState(false);
 
@@ -19,15 +19,25 @@ export default function HistoryView() {
     try {
       const epContract = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const filter = epContract.filters.UserOperationEvent(null, smartAccountAddress);
-      
+
       const blockNum = await provider.getBlockNumber();
       const events = await epContract.queryFilter(filter, Math.max(0, blockNum - 20000), "latest");
-      
-      const last5 = events.slice(-5).reverse();
-      const formattedOps = last5.map(e => ({
-        userOpHash: e.args[0],
-        status: e.args[4] ? 'Success' : 'Reverted',
-        txHash: e.transactionHash
+
+      const last10 = events.slice(-10).reverse();
+      const formattedOps = await Promise.all(last10.map(async (e) => {
+        let timestamp = null;
+        try {
+          const block = await provider.getBlock(e.blockNumber);
+          if (block) timestamp = block.timestamp * 1000;
+        } catch (err) {
+          console.warn("Could not fetch block timestamp", err);
+        }
+        return {
+          userOpHash: e.args[0],
+          status: e.args[4] ? 'Success' : 'Reverted',
+          txHash: e.transactionHash,
+          timestamp
+        };
       }));
       setRecentOps(formattedOps);
     } catch (err) {
@@ -41,79 +51,95 @@ export default function HistoryView() {
     fetchRecentOps();
   }, [smartAccountAddress, provider, env.ENTRY_POINT]);
 
+  const timeAgo = (ms) => {
+    if (!ms) return '';
+    const diff = Date.now() - ms;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    if (days > 0) return `${days}d ago`;
+    if (hours > 0) return `${hours}h ago`;
+    if (minutes > 0) return `${minutes}m ago`;
+    if (Math.floor(diff / 1000) > 10) return `${Math.floor(diff / 1000)}s ago`;
+    return 'Just now';
+  };
+
   const displayOps = [
     ...recentOps
-  ].slice(0, 5);
+  ].slice(0, 10);
 
   return (
     <div className="flex flex-col gap-6 max-w-4xl mx-auto pb-10">
-      
+
       <div className="glass-card flex items-center justify-between p-4 bg-white/5 border-white/10 mb-2">
-         <div className="flex items-center gap-3 text-gradient">
-            <Clock size={24} />
-            <h2 className="m-0 text-xl">UserOp History</h2>
-         </div>
+        <div className="flex items-center gap-3 text-gradient">
+          <Clock size={24} />
+          <h2 className="m-0 text-xl">UserOp History</h2>
+        </div>
       </div>
 
       {!smartAccountAddress ? (
-         <div className="glass-card text-center p-8">
-            <p className="text-muted text-sm border border-red-500/30 px-3 py-1 rounded-md bg-red-500/5 inline-block">
-               Please connect or deploy a Smart Account to view its UserOp History.
-            </p>
-         </div>
+        <div className="glass-card text-center p-8">
+          <p className="text-muted text-sm border border-red-500/30 px-3 py-1 rounded-md bg-red-500/5 inline-block">
+            Please connect or deploy a Smart Account to view its UserOp History.
+          </p>
+        </div>
       ) : (
         <div className="glass-card">
           <div className="flex items-center justify-between mb-4">
-             <h2 className="flex items-center gap-2 text-gradient"><Activity size={24} /> Recent Transactions</h2>
-             <button className="btn btn-secondary py-1 text-xs" onClick={fetchRecentOps} disabled={loadingOps}>
-               {loadingOps ? 'Refreshing...' : 'Refresh'}
-             </button>
+            <h2 className="flex items-center gap-2 text-gradient"><Activity size={24} /> Recent Transactions</h2>
+            <button className="btn btn-secondary py-1 text-xs" onClick={fetchRecentOps} disabled={loadingOps}>
+              {loadingOps ? 'Refreshing...' : 'Refresh'}
+            </button>
           </div>
-          
+
           {loadingOps && displayOps.length === 0 ? (
-             <div className="text-sm text-muted">Loading recent operations...</div>
+            <div className="text-sm text-muted">Loading recent operations...</div>
           ) : displayOps.length === 0 ? (
-             <div className="text-sm text-muted">No recent UserOperations found for this Smart Account.</div>
+            <div className="text-sm text-muted">No recent UserOperations found for this Smart Account.</div>
           ) : (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3">
               {displayOps.map((op, idx) => (
-                <div key={idx} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white/5 p-3 rounded-md border border-white/10 transition-colors hover:bg-white/10">
-                  <div className="flex flex-col w-full sm:w-auto overflow-hidden pr-4">
-                    <span className="text-xs text-muted mb-1 flex items-center gap-2">
-                       {op.txHash ? 'Transaction Hash' : 'UserOp Hash'}
-                       <button 
-                         onClick={() => {
-                             navigator.clipboard.writeText(op.txHash || op.userOpHash);
-                             toast.success(`${op.txHash ? 'Transaction' : 'UserOp'} Hash copied to clipboard!`);
-                          }}
-                         className="text-primary hover:text-white transition-colors"
-                         title="Copy Hash"
-                       >
-                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                       </button>
-                    </span>
-                    <span className="font-mono text-xs sm:text-sm truncate w-full" title={op.txHash || op.userOpHash}>
-                       {op.txHash || op.userOpHash}
-                    </span>
+                <div key={idx} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-black/20 p-4 rounded-xl border border-white/5 transition-all hover:border-white/10 hover:bg-white/5 group">
+                  <div className="flex flex-col w-full sm:w-auto overflow-hidden pr-4 gap-1">
+                    <div className="flex items-center gap-2 mb-1">
+                       <span className="text-xs font-bold text-white tracking-wide">On-Chain Transaction</span>
+                       {op.timestamp && <span className="text-[10px] text-muted bg-white/5 px-2 py-0.5 rounded-full">{timeAgo(op.timestamp)}</span>}
+                    </div>
+                    <div className="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-lg border border-white/5 w-fit">
+                      <span className="font-mono text-xs text-muted truncate max-w-[200px] sm:max-w-[300px]" title={op.txHash || op.userOpHash}>
+                        {op.txHash || op.userOpHash}
+                      </span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(op.txHash || op.userOpHash);
+                          toast.success(`${op.txHash ? 'Transaction' : 'UserOp'} Hash copied!`);
+                        }}
+                        className="text-muted hover:text-white transition-colors"
+                        title="Copy Hash"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4 mt-3 sm:mt-0 whitespace-nowrap">
+                  <div className="flex items-center gap-3 mt-4 sm:mt-0 whitespace-nowrap">
 
                     {op.status === 'Success' && (
-                       <span className="text-xs font-bold text-green-400 bg-green-400/10 px-2 py-1 rounded-full border border-green-400/20">Success</span>
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-green-400 bg-green-400/10 px-3 py-1.5 rounded-lg border border-green-400/20">Success</span>
                     )}
                     {op.status === 'Reverted' && (
-                       <span className="text-xs font-bold text-red-400 bg-red-400/10 px-2 py-1 rounded-full border border-red-400/20">Reverted</span>
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-red-400 bg-red-400/10 px-3 py-1.5 rounded-lg border border-red-400/20">Reverted</span>
                     )}
-                    
+
                     <div className="flex items-center gap-2">
-                       <a 
-                          href={`https://sepolia.etherscan.io/tx/${op.txHash}`} 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="btn btn-secondary py-1 px-3 text-xs"
-                       >
-                         Etherscan
-                       </a>
+                      <a
+                        href={`https://sepolia.etherscan.io/tx/${op.txHash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-secondary py-1.5 px-3 text-xs opacity-80 group-hover:opacity-100 transition-opacity"
+                      >
+                        Etherscan
+                      </a>
                     </div>
                   </div>
                 </div>
