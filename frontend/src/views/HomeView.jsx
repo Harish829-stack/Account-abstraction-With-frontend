@@ -211,15 +211,26 @@ function ConnectedDashboard() {
 
       toast.success(`Swap UserOp sent! Hash: ${shortenAddress(opHash)}`);
 
-      // Wait for receipt
-      setTimeout(async () => {
-        const receiptResult = await getUserOpReceipt(opHash);
-        if (receiptResult?.receipt) {
-          toast.success("Swap Confirmed!");
-          await refreshAllData();
-          await fetchPmAllowance();
+      // Wait for receipt (polling up to 60 seconds to match public network block times)
+      let attempts = 0;
+      const maxAttempts = 24;
+      const interval = setInterval(async () => {
+        attempts++;
+        try {
+          const receiptResult = await getUserOpReceipt(opHash);
+          if (receiptResult && receiptResult.receipt) {
+            clearInterval(interval);
+            toast.success("Swap Confirmed!");
+            await refreshAllData();
+            await fetchPmAllowance();
+          } else if (attempts >= maxAttempts) {
+            clearInterval(interval);
+            toast.error("Swap confirmation pending. Check hash on Etherscan.");
+          }
+        } catch (pollErr) {
+          console.error("Receipt polling error:", pollErr);
         }
-      }, 7000);
+      }, 2500);
 
     } catch (err) {
       if (err.code === 4001) toast.error("Transaction rejected by user");

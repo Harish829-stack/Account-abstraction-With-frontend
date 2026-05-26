@@ -71,6 +71,13 @@ export default function AccountSetupView() {
         }
         return;
       }
+      if (!env.FACTORY) {
+        if (active) {
+          setPredictedAddress('');
+          setPredictionError('Factory contract address is not set. Check your .env file (VITE_FACTORY).');
+        }
+        return;
+      }
       setPredicting(true);
       if (active) setPredictionError(null);
       try {

@@ -63,7 +63,29 @@ export default function ProfileView() {
 
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
-      const fee = await provider.getFeeData();
+      
+      // Robust EIP-1559 gas fee estimation for public bundlers
+      let maxFeePerGas = 25000000000n; // 25 Gwei fallback
+      let maxPriorityFeePerGas = 1500000000n; // 1.5 Gwei fallback
+      try {
+        const block = await provider.getBlock("latest");
+        if (block && block.baseFeePerGas) {
+          maxFeePerGas = block.baseFeePerGas * 2n + maxPriorityFeePerGas;
+        } else {
+          const fee = await provider.getFeeData();
+          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
+          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        }
+      } catch (feeErr) {
+        console.warn("Failed to get EIP-1559 fees via block, using getFeeData fallback:", feeErr);
+        try {
+          const fee = await provider.getFeeData();
+          maxFeePerGas = fee.maxFeePerGas || maxFeePerGas;
+          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        } catch (e) {
+          console.error("Failed to load fee fallback:", e);
+        }
+      }
 
       const userOp = {
         sender: smartAccountAddress,
@@ -73,8 +95,8 @@ export default function ProfileView() {
         callGasLimit: toHex(150000),
         verificationGasLimit: toHex(150000),
         preVerificationGas: toHex(50000),
-        maxFeePerGas: toHex(fee.maxFeePerGas),
-        maxPriorityFeePerGas: toHex(fee.maxPriorityFeePerGas),
+        maxFeePerGas: toHex(maxFeePerGas),
+        maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
         paymasterAndData: "0x", // SA pays gas in ETH for its own approval
         signature: "0x"
       };
@@ -90,10 +112,10 @@ export default function ProfileView() {
       toast.info("Sending UserOp to approve Paymaster...");
       const opHash = await sendUserOperation(userOp);
 
-      // Wait for receipt
+      // Wait for receipt (polling up to 60 seconds to match public network block times)
       let receiptResult = null;
-      for (let i = 0; i < 15; i++) {
-        await new Promise(r => setTimeout(r, 1000));
+      for (let i = 0; i < 24; i++) {
+        await new Promise(r => setTimeout(r, 2500));
         receiptResult = await getUserOpReceipt(opHash);
         if (receiptResult?.receipt) break;
       }
@@ -103,7 +125,7 @@ export default function ProfileView() {
         setInputPmAllowance('');
         toast.success("Paymaster approved by Smart Account!");
       } else {
-        toast.error("UserOp might still be pending or failed.");
+        toast.error("UserOp confirmation pending. Check your transaction on Etherscan.");
       }
     } catch (err) {
       if (err.code === 4001) toast.error("Transaction rejected by user");
