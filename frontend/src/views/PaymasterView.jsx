@@ -450,7 +450,7 @@ export default function PaymasterView() {
           <div className="glass-card max-w-2xl mx-auto animate-fade-in border-secondary/30">
             <h3 className="mb-2 flex items-center gap-2 text-secondary"><CheckCircle size={28} /> Step 2: Approve Paymaster</h3>
             <div className="bg-secondary/5 border border-secondary/10 p-4 rounded-lg mb-6">
-               <p className="text-sm text-muted mb-0 flex gap-3">
+               <p className="info-callout text-sm text-muted mb-0">
                  <Info className="flex-shrink-0 text-secondary" />
                  <span>
                     <b>Why approval?</b> The Paymaster needs permission to take USDC from your wallet to pay for your Smart Account's transaction gas. 
@@ -506,7 +506,7 @@ export default function PaymasterView() {
              <div className="glass-card border-primary/30">
                 <h3 className="mb-2 flex items-center gap-2 text-primary"><ArrowUpCircle size={28} /> Step 3: Fund & Stake Paymaster</h3>
                 <div className="bg-primary/5 border border-primary/10 p-4 rounded-lg mb-6">
-                   <p className="text-sm text-muted mb-0 flex gap-3">
+                   <p className="info-callout text-sm text-muted mb-0">
                      <Info className="flex-shrink-0 text-primary" />
                      <span>
                         <b>Admin Only:</b> This section is essentially for the <b>owner</b> of the paymaster contract. 
