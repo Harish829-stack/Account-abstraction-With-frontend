@@ -64,7 +64,7 @@ function DonutChart({ eoaUSDC, saUSDC }) {
           lineHeight: 1.3,
         }}>
           <div>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'white' }}>{total.toFixed(2)}</div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-main)' }}>{total.toFixed(2)}</div>
             <div style={{ fontSize: '0.6rem' }}>USDC total</div>
           </div>
         </div>
@@ -252,26 +252,20 @@ function ConnectedDashboard() {
       {/* ── Wallet Cards ─────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* EOA Card */}
-        <div
-          className="glass-card flex flex-col gap-4"
-          style={{
-            background: 'linear-gradient(135deg, rgba(124,58,237,0.18) 0%, rgba(17,17,19,0.82) 100%)',
-            borderColor: 'rgba(124,58,237,0.28)',
-          }}
-        >
+        <div className="glass-card wallet-summary-card wallet-summary-card--signer flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(124,58,237,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Wallet size={18} style={{ color: 'var(--primary)' }} />
+              <div className="wallet-summary-card__icon">
+                <Wallet size={18} />
               </div>
               <div>
                 <div className="text-xs text-muted">Signer Wallet</div>
                 <div className="font-mono text-sm font-semibold">{shortenAddress(eoaAddress)}</div>
               </div>
             </div>
-            <div style={{ padding: '2px 10px', background: 'rgba(124,58,237,0.16)', borderRadius: 99, fontSize: '0.7rem', color: 'var(--primary)', border: '1px solid rgba(124,58,237,0.34)' }}>EOA</div>
+            <div className="wallet-summary-card__pill">EOA</div>
           </div>
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
+          <div className="wallet-summary-card__divider" />
           <div className="flex justify-between">
             <div>
               <div className="text-xs text-muted mb-1">ETH</div>
@@ -285,19 +279,11 @@ function ConnectedDashboard() {
         </div>
 
         {/* Smart Account Card */}
-        <div
-          className="glass-card flex flex-col gap-4"
-          style={{
-            background: smartAccountAddress
-              ? 'linear-gradient(135deg, rgba(47,107,255,0.18) 0%, rgba(17,17,19,0.82) 100%)'
-              : 'rgba(255,255,255,0.04)',
-            borderColor: smartAccountAddress ? 'rgba(47,107,255,0.32)' : 'rgba(255,255,255,0.08)',
-          }}
-        >
+        <div className={`glass-card wallet-summary-card ${smartAccountAddress ? 'wallet-summary-card--smart' : 'wallet-summary-card--empty'} flex flex-col gap-4`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div style={{ width: 36, height: 36, borderRadius: '50%', background: smartAccountAddress ? 'rgba(47,107,255,0.2)' : 'rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Box size={18} style={{ color: smartAccountAddress ? 'var(--accent-blue)' : 'var(--color-muted)' }} />
+              <div className="wallet-summary-card__icon">
+                <Box size={18} />
               </div>
               <div>
                 <div className="text-xs text-muted">Smart Vault</div>
@@ -307,11 +293,11 @@ function ConnectedDashboard() {
               </div>
             </div>
             {smartAccountAddress
-              ? <div style={{ padding: '2px 10px', background: 'rgba(57,255,20,0.1)', borderRadius: 99, fontSize: '0.7rem', color: 'var(--secondary)', border: '1px solid rgba(57,255,20,0.28)' }}>Active</div>
+              ? <div className="wallet-summary-card__pill wallet-summary-card__pill--success">Active</div>
               : <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '0.75rem' }} onClick={() => setCurrentView('setup')}>Setup →</button>
             }
           </div>
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
+          <div className="wallet-summary-card__divider" />
           {smartAccountAddress ? (
             <div className="flex justify-between">
               <div>
@@ -344,7 +330,7 @@ function ConnectedDashboard() {
             <span className="ml-auto text-xs text-muted">{checklistPct}%</span>
           </div>
           {/* Progress bar */}
-          <div style={{ background: 'rgba(255,255,255,0.07)', borderRadius: 99, height: 6 }}>
+          <div className="progress-track">
             <div style={{
               width: `${checklistPct}%`, height: '100%', borderRadius: 99,
               background: 'linear-gradient(90deg, var(--primary), var(--accent-blue))',
@@ -412,7 +398,7 @@ function ConnectedDashboard() {
           </button>
 
           {/* Mini Swap Widget */}
-          <div style={{ marginTop: 'auto', paddingTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+          <div className="quick-swap-panel">
             <div className="text-xs text-muted mb-2">⚡ Quick Swap (Uniswap V3)</div>
             <div className="flex gap-2">
               <input
