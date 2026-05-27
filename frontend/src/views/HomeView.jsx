@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { formatNum, shortenAddress, toHex } from '../utils/helpers';
+import { formatNum, shortenAddress, toHex, getEthPriceInUsd } from '../utils/helpers';
 import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
 import { IEntryPointABI, SmartAccountABI } from '../utils/abis';
 import {
@@ -111,6 +111,58 @@ function ConnectedDashboard() {
   const [swapAmount, setSwapAmount] = useState('0.001');
   const [swapping, setSwapping] = useState(false);
   const [usePmForSwap, setUsePmForSwap] = useState(false);
+  const [ethPrice, setEthPrice] = useState(3300);
+  const [estimatedUsdcOutput, setEstimatedUsdcOutput] = useState('0.00');
+  const [isEstimatingOutput, setIsEstimatingOutput] = useState(false);
+
+  useEffect(() => {
+    const loadPrice = async () => {
+      const price = await getEthPriceInUsd(provider, env.PRICE_FEED);
+      setEthPrice(price);
+    };
+    loadPrice();
+  }, [provider]);
+
+  useEffect(() => {
+    const fetchQuote = async () => {
+      if (!provider || !swapAmount || parseFloat(swapAmount) <= 0) {
+        setEstimatedUsdcOutput('0.00');
+        return;
+      }
+      setIsEstimatingOutput(true);
+      try {
+        const QUOTER_V2 = "0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3";
+        const quoter = new ethers.Contract(
+          QUOTER_V2,
+          [
+            "function quoteExactInputSingle((address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96)) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)"
+          ],
+          provider
+        );
+        const amountIn = ethers.parseEther(swapAmount);
+        const params = {
+          tokenIn: WETH_SEPOLIA,
+          tokenOut: env.USDC_TOKEN,
+          amountIn: amountIn,
+          fee: 3000,
+          sqrtPriceLimitX96: 0
+        };
+        const result = await quoter.quoteExactInputSingle.staticCall(params);
+        setEstimatedUsdcOutput(ethers.formatUnits(result.amountOut, 6));
+      } catch (err) {
+        console.warn("Uniswap V3 quote exact input failed, falling back to Chainlink feed:", err);
+        setEstimatedUsdcOutput((parseFloat(swapAmount) * ethPrice).toFixed(2));
+      } finally {
+        setIsEstimatingOutput(false);
+      }
+    };
+
+    const delayDebounceFn = setTimeout(() => {
+      fetchQuote();
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [swapAmount, provider, ethPrice]);
 
   // Stats derived from balances
   const eoaUSDC = parseFloat(ethers.formatUnits(eoaUSDCBalance || '0', 6));
@@ -210,6 +262,7 @@ function ConnectedDashboard() {
 
       toast.info("Sending UserOp to swap ETH for USDC...");
       const opHash = await sendUserOperation(userOp);
+      toast.success("Bundler accepted the transaction!");
 
       // Fire and forget — global tracker handles confirmation in background
       trackOp(opHash, 'ETH → USDC Swap');
@@ -221,6 +274,7 @@ function ConnectedDashboard() {
       );
 
     } catch (err) {
+      toast.error("Bundler rejected the transaction!");
       if (err.code === 4001) toast.error("Transaction rejected by user");
       else toast.error(err.reason || err.message || "Failed to execute swap");
     } finally {
@@ -410,13 +464,22 @@ function ConnectedDashboard() {
                 style={{ fontSize: '0.8rem' }}
               />
               <button
-                className="btn btn-primary text-sm"
+                className={`btn btn-primary text-sm ${swapping ? 'opacity-50 cursor-not-allowed' : ''}`}
                 style={{ padding: '6px 12px', fontSize: '0.75rem' }}
                 onClick={handleQuickSwap}
                 disabled={swapping}
               >
-                {swapping ? '...' : 'ETH→USDC'}
+                {swapping ? 'Swapping...' : 'ETH→USDC'}
               </button>
+            </div>
+            
+            <div className="text-[11px] text-primary/80 mt-1.5 font-medium flex items-center gap-1.5">
+              <span>Output:</span>
+              {isEstimatingOutput ? (
+                <span className="text-muted italic animate-pulse">Estimating...</span>
+              ) : (
+                <span className="text-white font-bold font-mono">{parseFloat(estimatedUsdcOutput || "0").toFixed(2)} USDC</span>
+              )}
             </div>
             
             <div className="flex items-center gap-2 mt-2">

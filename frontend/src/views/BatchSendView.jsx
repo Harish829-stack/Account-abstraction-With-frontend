@@ -4,8 +4,11 @@ import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { SmartAccountABI, ERC20_ABI, IEntryPointABI } from '../utils/abis';
 import { sendUserOperation, estimateUserOperationGas } from '../utils/bundler';
-import { toHex } from '../utils/helpers';
+import { toHex, getEthPriceInUsd, formatNum } from '../utils/helpers';
 import { Layers, Settings, ExternalLink, Plus, Trash2, Send, CheckCircle2, RotateCcw } from 'lucide-react';
+
+const UNISWAP_ROUTER = '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E';
+const WETH_SEPOLIA = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
 
 export default function BatchSendView() {
   const { 
@@ -34,6 +37,7 @@ export default function BatchSendView() {
   const [pending, setPending] = useState(false);
   const [isEstimating, setIsEstimating] = useState(false);
   const [userOpHashResult, setUserOpHashResult] = useState('');
+  const [estimatedFee, setEstimatedFee] = useState(null);
 
   const addOperation = () => {
     setOperations([...operations, { receiver: '', amount: '', token: 'ETH', functionSig: '', parameters: '' }]);
@@ -66,7 +70,7 @@ export default function BatchSendView() {
     const usdcInterface = new ethers.Interface(ERC20_ABI);
 
     for (const op of operations) {
-      if (!ethers.isAddress(op.receiver)) throw new Error("Invalid address in one of the operations");
+      if (op.token !== 'UNISWAP_V3' && !ethers.isAddress(op.receiver)) throw new Error("Invalid address in one of the operations");
       
       if (op.token === 'ETH') {
         const parsedAmount = op.amount ? ethers.parseEther(op.amount) : 0n;
@@ -78,6 +82,26 @@ export default function BatchSendView() {
         const innerCall = usdcInterface.encodeFunctionData("transfer", [op.receiver, parsedAmount]);
         dest.push(env.USDC_TOKEN);
         value.push(0n);
+        func.push(innerCall);
+      } else if (op.token === 'UNISWAP_V3') {
+        const parsedAmount = op.amount ? ethers.parseEther(op.amount) : 0n;
+        const swapIface = new ethers.Interface([
+          "function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)"
+        ]);
+        const params = {
+          tokenIn: WETH_SEPOLIA,
+          tokenOut: env.USDC_TOKEN,
+          fee: 3000,
+          recipient: smartAccountAddress,
+          amountIn: parsedAmount,
+          amountOutMinimum: 0,
+          sqrtPriceLimitX96: 0
+        };
+        const innerCall = swapIface.encodeFunctionData("exactInputSingle", [
+          [params.tokenIn, params.tokenOut, params.fee, params.recipient, params.amountIn, params.amountOutMinimum, params.sqrtPriceLimitX96]
+        ]);
+        dest.push(UNISWAP_ROUTER);
+        value.push(parsedAmount);
         func.push(innerCall);
       } else if (op.token === 'CONTRACT_CALL') {
         try {
@@ -157,6 +181,14 @@ export default function BatchSendView() {
       setVerificationGasLimit(BigInt(est.verificationGasLimit).toString());
       const pvg = (BigInt(est.preVerificationGas) + 10000n).toString();
       setPreVerificationGas(pvg);
+
+      // Compute dual-currency gas fees
+      const totalGas = BigInt(est.callGasLimit) + BigInt(est.verificationGasLimit) + BigInt(pvg);
+      const maxFee = totalGas * BigInt(maxFeePerGas);
+      const ethFee = ethers.formatEther(maxFee);
+      const ethPrice = await getEthPriceInUsd(provider, env.PRICE_FEED);
+      const usdcFee = (parseFloat(ethFee) * ethPrice).toFixed(2);
+      setEstimatedFee({ eth: ethFee, usdc: usdcFee });
       
       toast.success("Batch gas estimated! Advanced settings updated.");
       setShowAdvanced(true);
@@ -228,6 +260,7 @@ export default function BatchSendView() {
       userOp.signature = await signer.signMessage(ethers.getBytes(hash));
 
       const opHash = await sendUserOperation(userOp);
+      toast.success("Bundler accepted the transaction!");
       setUserOpHashResult(opHash);
 
       // Fire and forget — global tracker handles confirmation in background
@@ -235,6 +268,7 @@ export default function BatchSendView() {
 
       setPending(false);
     } catch (err) {
+      toast.error("Bundler rejected the transaction!");
       toast.error(err.reason || err.message || "Failed to execute batch operation");
       setPending(false);
     }
@@ -245,6 +279,7 @@ export default function BatchSendView() {
     setOperations([{ receiver: '', amount: '', token: 'ETH', functionSig: '', parameters: '' }]);
     setUsePaymaster(false);
     setShowAdvanced(false);
+    setEstimatedFee(null);
   };
 
   if (!smartAccountAddress) {
@@ -293,11 +328,12 @@ export default function BatchSendView() {
                            >
                              <option value="ETH">ETH</option>
                              <option value="USDC">USDC</option>
+                             <option value="UNISWAP_V3">Uniswap V3 (ETH → USDC)</option>
                              <option value="CONTRACT_CALL">Contract Call</option>
                            </select>
                         </div>
                         <div className="flex flex-col gap-1 w-full sm:w-3/4">
-                           <label className="text-xs text-muted">Amount / Value</label>
+                           <label className="text-xs text-muted">{op.token === 'CONTRACT_CALL' ? 'Value (ETH)' : op.token === 'UNISWAP_V3' ? 'Swap Amount (ETH)' : 'Amount'}</label>
                            <input 
                              type="number" 
                              className="input-field py-2 text-sm" 
@@ -308,16 +344,18 @@ export default function BatchSendView() {
                         </div>
                      </div>
 
-                     <div className="flex flex-col gap-1 mt-3">
-                        <label className="text-xs text-muted">Target Address</label>
-                        <input 
-                          type="text" 
-                          className="input-field py-2 text-sm font-mono" 
-                          placeholder="0x..." 
-                          value={op.receiver}
-                          onChange={(e) => updateOperation(idx, 'receiver', e.target.value)}
-                        />
-                     </div>
+                     {op.token !== 'UNISWAP_V3' && (
+                       <div className="flex flex-col gap-1 mt-3">
+                          <label className="text-xs text-muted">Target Address</label>
+                          <input 
+                            type="text" 
+                            className="input-field py-2 text-sm font-mono" 
+                            placeholder="0x..." 
+                            value={op.receiver}
+                            onChange={(e) => updateOperation(idx, 'receiver', e.target.value)}
+                          />
+                       </div>
+                     )}
 
                      {op.token === 'CONTRACT_CALL' && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 p-3 bg-white/5 rounded border border-white/5">
@@ -348,7 +386,7 @@ export default function BatchSendView() {
              </div>
 
              <button 
-               className="btn border border-secondary/50 text-secondary hover:bg-secondary/10 flex justify-center items-center gap-2 py-2 mt-2 border-dashed"
+               className="btn border border-primary/50 text-primary hover:bg-primary/10 flex justify-center items-center gap-2 py-2 mt-2 border-dashed w-full"
                onClick={addOperation}
              >
                <Plus size={18} /> Add Operation
@@ -369,7 +407,7 @@ export default function BatchSendView() {
 
              <div className="mt-2 text-sm">
                 <button 
-                  className="flex items-center gap-1 text-muted hover:text-white transition-colors"
+                  className="flex items-center gap-1 text-primary hover:text-primary-hover font-medium transition-colors"
                   onClick={() => setShowAdvanced(!showAdvanced)}
                 >
                    <Settings size={16} /> Advanced Gas Settings
@@ -392,26 +430,43 @@ export default function BatchSendView() {
                 )}
              </div>
 
+             {estimatedFee && (
+               <div className="mt-3 p-4 bg-white/5 border border-white/10 rounded-xl animate-fade-in flex flex-col gap-2">
+                 <div className="flex justify-between items-center text-xs text-muted">
+                   <span>Estimated Gas Fee ({usePaymaster ? "Paymaster Sponsored" : "Self-Paid"})</span>
+                   <span className="font-semibold text-primary">{usePaymaster ? "Paid in USDC" : "Paid in ETH"}</span>
+                 </div>
+                 <div className="flex justify-between items-baseline">
+                   <span className="text-xl font-bold font-mono text-white">
+                     {usePaymaster ? `${estimatedFee.usdc} USDC` : `${parseFloat(estimatedFee.eth).toFixed(6)} ETH`}
+                   </span>
+                   <span className="text-xs font-mono text-muted">
+                     {usePaymaster ? `~ ${parseFloat(estimatedFee.eth).toFixed(6)} ETH` : `~ ${estimatedFee.usdc} USDC`}
+                   </span>
+                 </div>
+               </div>
+             )}
+
              <div className="flex gap-3 mt-4">
                 <button 
-                  className="btn btn-secondary flex-1" 
-                  disabled={pending || isEstimating || operations.some(op => !op.receiver)}
+                  className={`btn btn-secondary flex-1 ${(pending || isEstimating || operations.some(op => op.token !== 'UNISWAP_V3' && !op.receiver)) ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                  disabled={pending || isEstimating || operations.some(op => op.token !== 'UNISWAP_V3' && !op.receiver)}
                   onClick={handleEstimateGas}
                 >
                    {isEstimating ? (
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center justify-center gap-2">
                          <div className="loader" style={{width: '14px', height: '14px', borderWidth: '2px'}}></div>
                          Estimating...
                       </div>
                    ) : "Estimate Batch Gas"}
                 </button>
                 <button 
-                  className="btn btn-primary flex-2" 
-                  disabled={pending || isEstimating || operations.some(op => !op.receiver)}
+                  className={`btn btn-primary flex-2 ${(pending || isEstimating || operations.some(op => op.token !== 'UNISWAP_V3' && !op.receiver)) ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                  disabled={pending || isEstimating || operations.some(op => op.token !== 'UNISWAP_V3' && !op.receiver)}
                   onClick={handleSendBatchOp}
                   style={{ flex: 2 }}
                 >
-                   {pending ? "Signing & Sending..." : "Sign & Execute Batch"}
+                   {pending ? "Sending Op..." : "Sign & Execute Batch"}
                 </button>
              </div>
 

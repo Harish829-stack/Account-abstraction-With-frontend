@@ -386,7 +386,7 @@ export default function PaymasterView() {
             value={approveAmount} 
             onChange={e=>setApproveAmount(e.target.value)} 
           />
-          <button className="btn btn-primary" onClick={handleApprovePaymaster} disabled={approving || !approveAmount}>
+          <button className={`btn btn-primary ${approving ? 'opacity-50 cursor-not-allowed' : ''}`} onClick={handleApprovePaymaster} disabled={approving || !approveAmount}>
             {approving ? "Approving..." : "Approve from Smart Account"}
           </button>
         </div>

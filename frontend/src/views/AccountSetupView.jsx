@@ -368,7 +368,7 @@ export default function AccountSetupView() {
 
               <div className="flex flex-col sm:flex-row items-center gap-2 mt-2">
                  <button 
-                    className="btn btn-primary flex-1" 
+                    className={`btn btn-primary flex-1 ${deploying ? 'opacity-50 cursor-not-allowed' : ''}`}
                     onClick={handleDeploy} 
                     disabled={deploying || !salt || !!smartAccountAddress}
                  >
@@ -427,11 +427,11 @@ export default function AccountSetupView() {
 
               <div className="mt-auto pt-4 flex gap-2">
                  <button 
-                    className="btn btn-secondary flex-1"
+                    className={`btn btn-secondary flex-1 ${connecting ? 'opacity-50 cursor-not-allowed' : ''}`}
                     onClick={handleConnect}
                     disabled={connecting || !connectAddress || !!smartAccountAddress}
                  >
-                   {connecting ? "Verifying..." : "Connect"}
+                   {connecting ? "Connecting..." : "Connect"}
                  </button>
                  {smartAccountAddress && (
                    <button className="btn btn-danger" onClick={disconnectSA}>
@@ -464,11 +464,11 @@ export default function AccountSetupView() {
                         onChange={(e) => setDepositSAmount(e.target.value)}
                     />
                     <button 
-                      className="btn btn-primary"
+                      className={`btn btn-primary ${pendingSDeposit ? 'opacity-50 cursor-not-allowed' : ''}`}
                       onClick={handleDepositSA}
                       disabled={pendingSDeposit || !depositSAmount}
                     >
-                      {pendingSDeposit ? "Depositing..." : "Deposit ETH"}
+                      {pendingSDeposit ? "Funding..." : "Deposit ETH"}
                     </button>
                   </div>
                 </div>
@@ -505,7 +505,7 @@ export default function AccountSetupView() {
                         onChange={(e) => setApproveAmount(e.target.value)}
                     />
                     <button 
-                      className="btn btn-primary"
+                      className={`btn btn-primary ${approving ? 'opacity-50 cursor-not-allowed' : ''}`}
                       onClick={handlePullUSDC}
                       disabled={approving || !approveAmount}
                     >
@@ -542,11 +542,11 @@ export default function AccountSetupView() {
                           onChange={(e) => setDepositEPAmount(e.target.value)}
                       />
                       <button 
-                        className="btn btn-primary"
+                        className={`btn btn-primary ${pendingEPDeposit ? 'opacity-50 cursor-not-allowed' : ''}`}
                         onClick={handleDepositEP}
                         disabled={pendingEPDeposit || !depositEPAmount}
                       >
-                        {pendingEPDeposit ? "..." : "Deposit to EP"}
+                        {pendingEPDeposit ? "Depositing..." : "Deposit to EP"}
                       </button>
                     </div>
                   </div>
