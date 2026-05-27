@@ -363,253 +363,48 @@ export default function PaymasterView() {
           </div>
         )}
       </div>
-
-      {/* Top Navbar / Stepper View */}
-      <div className="glass-card mb-4 relative overflow-hidden">
-        <div className="flex justify-between items-center mb-8 relative z-10">
-           <h2 className="m-0 text-gradient text-2xl">Paymaster Admin Flow</h2>
+      {/* Paymaster Approval Flow */}
+      <div className="glass-card max-w-2xl mx-auto animate-fade-in border-secondary/30">
+        <h3 className="mb-2 flex items-center gap-2 text-secondary"><CheckCircle size={28} /> Approve Paymaster</h3>
+        <div className="bg-secondary/5 border border-secondary/10 p-4 rounded-lg mb-6">
+           <p className="info-callout text-sm text-muted mb-0">
+             <Info className="flex-shrink-0 text-secondary" />
+             <span>
+                <b>Why approval?</b> The Paymaster needs permission to take USDC from your wallet to pay for your Smart Account's transaction gas. 
+                This enables "gasless" transactions where you pay in USDC instead of ETH.
+                <br/><br/>
+                <b className="text-white">Current Approved Amount:</b> {pmAllowance} {pmTokenSymbol || 'Tokens'}
+             </span>
+           </p>
         </div>
-        <div className="relative z-10">
-          <Stepper 
-            steps={steps} 
-            currentStep={currentStep} 
-            setStep={setCurrentStep} 
-            completedSteps={completedSteps}
-          />
-        </div>
-      </div>
-
-
-      <div className="step-content-area">
         
-        {/* STEP 1: Deploy / Connect */}
-        {currentStep === 1 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in">
-              {/* Deploy custom Paymaster */}
-              <div className="glass-card flex flex-col gap-4">
-                 <h4 className="text-lg font-bold text-gradient flex items-center gap-2"><PlayCircle /> 1.1 Deploy New Paymaster</h4>
-                 <div className="space-y-4">
-                   <div className="flex flex-col gap-1">
-                      <label className="text-xs text-muted font-bold">EntryPoint Address</label>
-                      <input type="text" className="input-field py-1.5 text-sm" value={dEntryPoint} onChange={e=>setDEntryPoint(e.target.value)} />
-                   </div>
-                   <div className="flex flex-col gap-1">
-                      <label className="text-xs text-muted font-bold">USDC Token Address</label>
-                      <input type="text" className="input-field py-1.5 text-sm" value={dToken} onChange={e=>setDToken(e.target.value)} />
-                   </div>
-                   <div className="flex flex-col gap-1">
-                      <label className="text-xs text-muted font-bold">Price Feed (Chainlink) Address</label>
-                      <input type="text" className="input-field py-1.5 text-sm" value={dPriceFeed} onChange={e=>setDPriceFeed(e.target.value)} />
-                   </div>
-    
-                   <div className="pt-2 mt-auto">
-                      <button 
-                         className="btn btn-primary w-full" 
-                         onClick={handleDeploy} 
-                         disabled={deploying || !dEntryPoint || !dToken || !dPriceFeed || !!paymasterAddress}
-                      >
-                         {deploying ? "Deploying..." : "Deploy ERC20Paymaster"}
-                      </button>
-                   </div>
-                 </div>
-              </div>
+        <div className="flex items-center gap-4 p-4 border border-white/5 bg-white/5 rounded-xl">
+          <input 
+            type="number" 
+            className="input-field flex-1" 
+            placeholder={`Amount in ${pmTokenSymbol || 'Tokens'}`} 
+            value={approveAmount} 
+            onChange={e=>setApproveAmount(e.target.value)} 
+          />
+          <button className="btn btn-primary" onClick={handleApprovePaymaster} disabled={approving || !approveAmount}>
+            {approving ? "Approving..." : "Approve from Smart Account"}
+          </button>
+        </div>
 
-              {/* Connect Existing */}
-              <div className="glass-card flex flex-col gap-4">
-                 <h4 className="text-lg font-bold text-gradient flex items-center gap-2"><Lock /> 1.2 Connect Existing</h4>
-                 <div className="flex flex-col gap-1 mb-4">
-                    <label className="text-xs text-muted font-bold">Paymaster Contract Address</label>
-                    <input 
-                      type="text" 
-                      className="input-field py-1.5 text-sm" 
-                      value={connectPmAddress} 
-                      onChange={e=>setConnectPmAddress(e.target.value)} 
-                      placeholder="0x..." 
-                    />
-                 </div>
-                 <div className="mt-auto space-y-2">
-                    <button 
-                      className="btn btn-secondary w-full"
-                      onClick={handleConnectPaymaster}
-                      disabled={connecting || !connectPmAddress || !!paymasterAddress}
-                    >
-                      {connecting ? "Verifying..." : "Connect Paymaster"}
-                    </button>
-                    {paymasterAddress && (
-                      <button className="btn btn-danger w-full text-xs" onClick={() => setPaymasterAddress("")}>
-                        Change Paymaster
-                      </button>
-                    )}
-                 </div>
-              </div>
-          </div>
-        )}
-
-        {/* STEP 2: Approve */}
-        {currentStep === 2 && (
-          <div className="glass-card max-w-2xl mx-auto animate-fade-in border-secondary/30">
-            <h3 className="mb-2 flex items-center gap-2 text-secondary"><CheckCircle size={28} /> Step 2: Approve Paymaster</h3>
-            <div className="bg-secondary/5 border border-secondary/10 p-4 rounded-lg mb-6">
-               <p className="info-callout text-sm text-muted mb-0">
-                 <Info className="flex-shrink-0 text-secondary" />
-                 <span>
-                    <b>Why approval?</b> The Paymaster needs permission to take USDC from your wallet to pay for your Smart Account's transaction gas. 
-                    This enables "gasless" transactions where you pay in USDC instead of ETH.
-                    <br/><br/>
-                    <b className="text-white">Current Approved Amount:</b> {pmAllowance} {pmTokenSymbol || 'Tokens'}
-                 </span>
-               </p>
-            </div>
-            
-            <div className="flex items-center gap-4 p-4 border border-white/5 bg-white/5 rounded-xl">
-              <input 
-                type="number" 
-                className="input-field flex-1" 
-                placeholder={`Amount in ${pmTokenSymbol || 'Tokens'}`} 
-                value={approveAmount} 
-                onChange={e=>setApproveAmount(e.target.value)} 
-              />
-              <button className="btn btn-primary" onClick={handleApprovePaymaster} disabled={approving || !approveAmount}>
-                {approving ? "Approving..." : "Approve from Smart Account"}
-              </button>
-            </div>
-
-            {lastOpHash && (
-              <div className="mt-4 p-4 rounded-xl border" style={{
-                background: 'rgba(139, 92, 246, 0.08)',
-                borderColor: 'rgba(139, 92, 246, 0.3)',
-              }}>
-                <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>UserOperation Submitted</span>
-                <p className="font-mono text-xs break-all text-muted mt-2 mb-3" title={lastOpHash}>{lastOpHash}</p>
-                <p className="text-xs text-muted mb-3">Approval is being tracked in the background. The UI is unlocked — you can continue to Fund & Stake.</p>
-                <button
-                  onClick={() => setCurrentView('history')}
-                  className="btn btn-primary py-1.5 px-4 text-xs flex items-center gap-2"
-                >
-                  View TX Status in History →
-                </button>
-              </div>
-            )}
-
-            <div className="mt-8 flex justify-end">
-               <button className="btn btn-secondary text-sm" onClick={() => setCurrentStep(3)}>
-                 Forward to Funding <ChevronRight size={16} />
-               </button>
-            </div>
-          </div>
-        )}
-
-
-        {/* STEP 3: Fund */}
-        {currentStep === 3 && (
-          <div className="space-y-6 animate-fade-in">
-             <div className="glass-card border-primary/30">
-                <h3 className="mb-2 flex items-center gap-2 text-primary"><ArrowUpCircle size={28} /> Step 3: Fund & Stake Paymaster</h3>
-                <div className="bg-primary/5 border border-primary/10 p-4 rounded-lg mb-6">
-                   <p className="info-callout text-sm text-muted mb-0">
-                     <Info className="flex-shrink-0 text-primary" />
-                     <span>
-                        <b>Admin Only:</b> This section is essentially for the <b>owner</b> of the paymaster contract. 
-                        The paymaster needs a "Deposit" in the EntryPoint to cover users' gas, and a "Stake" to build reputation among bundlers.
-                     </span>
-                   </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="flex flex-col gap-3 p-4 bg-black/20 rounded-md border border-white/5">
-                     <h4 className="text-sm text-gradient">Deposit Gas (ETH)</h4>
-                     <p className="text-xs text-muted m-0">Stored in EntryPoint to pay bundlers.</p>
-                     <input 
-                        type="number" 
-                        className="input-field py-1.5 text-sm" 
-                        placeholder="Amount of ETH" 
-                        value={depositAmount} 
-                        onChange={e=>setDepositAmount(e.target.value)} 
-                     />
-                     <button className="btn btn-secondary text-sm" onClick={handleDeposit} disabled={funding || !depositAmount}>
-                       Deposit ETH
-                     </button>
-                  </div>
-
-                  <div className="flex flex-col gap-3 p-4 bg-black/20 rounded-md border border-white/5">
-                     <h4 className="text-sm text-gradient">Add Stake (ETH)</h4>
-                     <p className="text-xs text-muted m-0">Locked for bundler reputation.</p>
-                     <div className="flex gap-2">
-                       <input 
-                          type="number" 
-                          className="input-field py-1.5 text-sm w-1/2" 
-                          placeholder="ETH Stake" 
-                          value={stakeAmount} 
-                          onChange={e=>setStakeAmount(e.target.value)} 
-                       />
-                       <input 
-                          type="number" 
-                          className="input-field py-1.5 text-sm w-1/2" 
-                          placeholder="Delay (sec)" 
-                          value={unstakeDelay} 
-                          onChange={e=>setUnstakeDelay(e.target.value)} 
-                       />
-                     </div>
-                     <button className="btn btn-secondary text-sm" onClick={handleStake} disabled={funding || !stakeAmount}>
-                       Add Stake
-                     </button>
-                  </div>
-                </div>
-             </div>
-
-             {/* Stats View */}
-             <div className="glass-card bg-white/5 border-white/10">
-               <h4 className="text-sm font-bold mb-4 uppercase tracking-tighter opacity-70">Current Paymaster Stats</h4>
-               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="stat-card">
-                     <span className="text-xs text-muted">EP Deposit</span>
-                     <span className="font-bold text-primary">{formatNum(pmDeposit, 18)} ETH</span>
-                  </div>
-                  <div className="stat-card">
-                     <span className="text-xs text-muted">EP Stake</span>
-                     <span className="font-bold text-primary">{formatNum(pmStake, 18)} ETH</span>
-                  </div>
-                  <div className="stat-card">
-                     <span className="text-xs text-muted">PM Balance</span>
-                     <span className="font-bold text-secondary">{formatNum(pmETHBalance, 18)} ETH</span>
-                  </div>
-                  <div className="stat-card">
-                     <span className="text-xs text-muted">PM {pmTokenSymbol}</span>
-                     <span className="font-bold text-secondary">{pmUSDCBalance}</span>
-                  </div>
-               </div>
-             </div>
-
-             {/* Danger Zone: Withdrawals */}
-             <div className="glass-card border-red-500/20 bg-red-500/5">
-                <h4 className="text-sm text-danger font-bold mb-4 flex items-center gap-2"><ShieldAlert size={16}/> Withdrawal Controls</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                   <div className="flex flex-col gap-2">
-                     <label className="text-xs text-muted">Withdraw ETH to</label>
-                     <input type="text" className="input-field py-1 text-xs" placeholder="0x..." value={wEthAddress} onChange={e=>setWEthAddress(e.target.value)} />
-                     <div className="flex gap-2">
-                        <input type="number" className="input-field py-1 text-xs w-full" placeholder="Amt" value={wEthAmount} onChange={e=>setWEthAmount(e.target.value)} />
-                        <button className="btn btn-danger py-1 px-3 text-xs" onClick={handleWithdrawEth}>Run</button>
-                     </div>
-                   </div>
-                   <div className="flex flex-col gap-2">
-                     <label className="text-xs text-muted">Withdraw Fees (USDC) to</label>
-                     <input type="text" className="input-field py-1 text-xs" placeholder="0x..." value={wUsdcAddress} onChange={e=>setWUsdcAddress(e.target.value)} />
-                     <div className="flex gap-2">
-                        <input type="number" className="input-field py-1 text-xs w-full" placeholder="Amt" value={wUsdcAmount} onChange={e=>setWUsdcAmount(e.target.value)} />
-                        <button className="btn btn-danger py-1 px-3 text-xs" onClick={handleWithdrawUsdc}>Run</button>
-                     </div>
-                   </div>
-                   <div className="flex flex-col gap-2">
-                     <label className="text-xs text-muted">Unlock & Stake Action</label>
-                     <button className="btn btn-secondary py-1 text-xs" onClick={handleUnlockStake}>Unlock Timer</button>
-                     <div className="flex gap-2">
-                        <input type="text" className="input-field py-1 text-xs w-full" placeholder="To" value={wStakeAddress} onChange={e=>setWStakeAddress(e.target.value)} />
-                        <button className="btn btn-danger py-1 px-3 text-xs" onClick={handleWithdrawStake}>Unstake</button>
-                     </div>
-                   </div>
-                </div>
-             </div>
+        {lastOpHash && (
+          <div className="mt-4 p-4 rounded-xl border" style={{
+            background: 'rgba(139, 92, 246, 0.08)',
+            borderColor: 'rgba(139, 92, 246, 0.3)',
+          }}>
+            <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>UserOperation Submitted</span>
+            <p className="font-mono text-xs break-all text-muted mt-2 mb-3" title={lastOpHash}>{lastOpHash}</p>
+            <p className="text-xs text-muted mb-3">Approval is being tracked in the background. The UI is unlocked — you can continue using the application.</p>
+            <button
+              onClick={() => setCurrentView('history')}
+              className="btn btn-primary py-1.5 px-4 text-xs flex items-center gap-2"
+            >
+              View TX Status in History →
+            </button>
           </div>
         )}
       </div>

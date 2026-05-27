@@ -54,6 +54,44 @@ export const AppProvider = ({ children }) => {
     }
   });
 
+  const [recentOps, setRecentOps] = useState([]);
+  const [loadingOps, setLoadingOps] = useState(false);
+
+  const fetchRecentOps = async (saAddress = smartAccountAddress, _provider = provider) => {
+    if (!saAddress || !_provider) return;
+    setLoadingOps(true);
+    try {
+      const entryPointAddress = import.meta.env.VITE_ENTRY_POINT;
+      const epContract = new ethers.Contract(entryPointAddress, IEntryPointABI, _provider);
+      const filter = epContract.filters.UserOperationEvent(null, saAddress);
+
+      const blockNum = await _provider.getBlockNumber();
+      const events = await epContract.queryFilter(filter, Math.max(0, blockNum - 20000), "latest");
+
+      const last10 = events.slice(-10).reverse();
+      const formattedOps = await Promise.all(last10.map(async (e) => {
+        let timestamp = null;
+        try {
+          const block = await _provider.getBlock(e.blockNumber);
+          if (block) timestamp = block.timestamp * 1000;
+        } catch (err) {
+          console.warn("Could not fetch block timestamp", err);
+        }
+        return {
+          userOpHash: e.args[0],
+          status: e.args[4] ? 'Success' : 'Reverted',
+          txHash: e.transactionHash,
+          timestamp
+        };
+      }));
+      setRecentOps(formattedOps);
+    } catch (err) {
+      console.error("Error fetching UserOps:", err);
+    } finally {
+      setLoadingOps(false);
+    }
+  };
+
   useEffect(() => {
     localStorage.setItem('pendingUserOps', JSON.stringify(pendingUserOps));
   }, [pendingUserOps]);
@@ -192,7 +230,10 @@ export const AppProvider = ({ children }) => {
     // Run in parallel for speed
     const refreshes = [];
     if (eoaAddress) refreshes.push(loadEOABalances(eoaAddress, provider));
-    if (smartAccountAddress) refreshes.push(loadSmartAccountDetails(smartAccountAddress, provider));
+    if (smartAccountAddress) {
+      refreshes.push(loadSmartAccountDetails(smartAccountAddress, provider));
+      refreshes.push(fetchRecentOps(smartAccountAddress, provider));
+    }
     if (paymasterAddress) refreshes.push(loadPaymasterDetails(paymasterAddress, provider));
 
     await Promise.all(refreshes);
@@ -232,7 +273,7 @@ export const AppProvider = ({ children }) => {
       ));
       addPendingUserOp(opHash, txHash);
       toast.withAction(
-        `✅ "${label}" confirmed on-chain!`,
+        `"${label}" confirmed on-chain!`,
         'View in History →',
         () => setCurrentViewRef.current && setCurrentViewRef.current('history')
       );
@@ -411,6 +452,7 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     if (smartAccountAddress) {
       loadSmartAccountDetails(smartAccountAddress);
+      fetchRecentOps(smartAccountAddress);
     }
   }, [smartAccountAddress]);
 
@@ -427,6 +469,7 @@ export const AppProvider = ({ children }) => {
     loadEOABalances, loadSmartAccountDetails, loadPaymasterDetails, refreshAllData,
     pendingUserOps, addPendingUserOp,
     trackedOps, trackOp,
+    recentOps, loadingOps, fetchRecentOps,
     env: {
       ENTRY_POINT: import.meta.env.VITE_ENTRY_POINT,
       FACTORY: import.meta.env.VITE_FACTORY,

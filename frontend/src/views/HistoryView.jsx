@@ -7,49 +7,8 @@ import { Activity, Clock } from 'lucide-react';
 import { IEntryPointABI } from '../utils/abis';
 
 export default function HistoryView() {
-  const { smartAccountAddress, provider, env, pendingUserOps } = useAppContext();
+  const { smartAccountAddress, provider, env, pendingUserOps, recentOps, loadingOps, fetchRecentOps } = useAppContext();
   const toast = useToast();
-
-  const [recentOps, setRecentOps] = useState([]);
-  const [loadingOps, setLoadingOps] = useState(false);
-
-  const fetchRecentOps = async () => {
-    if (!smartAccountAddress || !provider || !env.ENTRY_POINT) return;
-    setLoadingOps(true);
-    try {
-      const epContract = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
-      const filter = epContract.filters.UserOperationEvent(null, smartAccountAddress);
-
-      const blockNum = await provider.getBlockNumber();
-      const events = await epContract.queryFilter(filter, Math.max(0, blockNum - 20000), "latest");
-
-      const last10 = events.slice(-10).reverse();
-      const formattedOps = await Promise.all(last10.map(async (e) => {
-        let timestamp = null;
-        try {
-          const block = await provider.getBlock(e.blockNumber);
-          if (block) timestamp = block.timestamp * 1000;
-        } catch (err) {
-          console.warn("Could not fetch block timestamp", err);
-        }
-        return {
-          userOpHash: e.args[0],
-          status: e.args[4] ? 'Success' : 'Reverted',
-          txHash: e.transactionHash,
-          timestamp
-        };
-      }));
-      setRecentOps(formattedOps);
-    } catch (err) {
-      console.error("Error fetching UserOps:", err);
-    } finally {
-      setLoadingOps(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchRecentOps();
-  }, [smartAccountAddress, provider, env.ENTRY_POINT]);
 
   const timeAgo = (ms) => {
     if (!ms) return '';
