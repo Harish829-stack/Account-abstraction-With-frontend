@@ -82,6 +82,16 @@
   padding: 0;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
+@supports not (scrollbar-gutter: stable) {
+  body {
+    overflow-y: scroll;
+  }
+}
+
 body {
   font-family: var(--font-body);
   background:
@@ -548,9 +558,8 @@ body.light-theme .wallet-disconnect {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  overflow-x: auto;
+  overflow-x: hidden;
   overscroll-behavior-x: contain;
-  scroll-snap-type: x proximity;
   padding: 0 0 0.9rem;
   scrollbar-width: none;
 }
@@ -569,8 +578,8 @@ body.light-theme .wallet-disconnect {
   background: rgba(255, 255, 255, 0.035);
   color: var(--text-muted);
   cursor: pointer;
-  scroll-snap-align: start;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 body.light-theme .wallet-nav-item {
@@ -584,14 +593,14 @@ body.light-theme .wallet-nav-item {
   border-color: rgba(124, 58, 237, 0.74);
   background: linear-gradient(135deg, var(--primary), #8b3ff6);
   color: white;
-  box-shadow: 0 16px 38px rgba(124, 58, 237, 0.25);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 body.light-theme .wallet-nav-item.is-active {
   color: #ffffff;
   border-color: rgba(111, 53, 232, 0.72);
   background: linear-gradient(135deg, #7c3aed, #6f35e8);
-  box-shadow: 0 16px 34px rgba(111, 53, 232, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .wallet-nav-item:disabled {
@@ -1191,6 +1200,8 @@ body.light-theme .text-muted {
 
   .wallet-nav-scroll {
     gap: 0.65rem;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
     padding-right: 1.15rem;
   }
 
@@ -1198,6 +1209,7 @@ body.light-theme .text-muted {
     min-width: auto;
     min-height: 3.05rem;
     padding: 0 1.1rem;
+    scroll-snap-align: start;
   }
 
   .wallet-nav-item__inner {
