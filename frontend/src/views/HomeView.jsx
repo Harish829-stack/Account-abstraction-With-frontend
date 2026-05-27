@@ -44,8 +44,8 @@ function DonutChart({ eoaUSDC, saUSDC }) {
   const saPct = (saUSDC / total) * 100;
   // conic-gradient donut
   const gradient = `conic-gradient(
-    #957C3D 0% ${eoaPct}%,
-    #B59A5C ${eoaPct}% 100%
+    var(--primary) 0% ${eoaPct}%,
+    var(--accent-blue) ${eoaPct}% 100%
   )`;
   return (
     <div className="flex flex-col items-center gap-3">
@@ -70,8 +70,8 @@ function DonutChart({ eoaUSDC, saUSDC }) {
         </div>
       </div>
       <div className="flex gap-4 text-xs">
-        <span className="flex items-center gap-1"><span style={{ width: 10, height: 10, borderRadius: 2, background: '#957C3D', display: 'inline-block' }} />EOA {eoaPct.toFixed(0)}%</span>
-        <span className="flex items-center gap-1"><span style={{ width: 10, height: 10, borderRadius: 2, background: '#B59A5C', display: 'inline-block' }} />SA {saPct.toFixed(0)}%</span>
+        <span className="flex items-center gap-1"><span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--primary)', display: 'inline-block' }} />EOA {eoaPct.toFixed(0)}%</span>
+        <span className="flex items-center gap-1"><span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent-blue)', display: 'inline-block' }} />SA {saPct.toFixed(0)}%</span>
       </div>
     </div>
   );
@@ -255,21 +255,21 @@ function ConnectedDashboard() {
         <div
           className="glass-card flex flex-col gap-4"
           style={{
-            background: 'linear-gradient(135deg, rgba(149,124,61,0.12) 0%, rgba(149,124,61,0.04) 100%)',
-            borderColor: 'rgba(149,124,61,0.25)',
+            background: 'linear-gradient(135deg, rgba(124,58,237,0.18) 0%, rgba(17,17,19,0.82) 100%)',
+            borderColor: 'rgba(124,58,237,0.28)',
           }}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(149,124,61,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Wallet size={18} style={{ color: '#957C3D' }} />
+              <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(124,58,237,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Wallet size={18} style={{ color: 'var(--primary)' }} />
               </div>
               <div>
                 <div className="text-xs text-muted">Signer Wallet</div>
                 <div className="font-mono text-sm font-semibold">{shortenAddress(eoaAddress)}</div>
               </div>
             </div>
-            <div style={{ padding: '2px 10px', background: 'rgba(149,124,61,0.15)', borderRadius: 99, fontSize: '0.7rem', color: '#957C3D', border: '1px solid rgba(149,124,61,0.3)' }}>EOA</div>
+            <div style={{ padding: '2px 10px', background: 'rgba(124,58,237,0.16)', borderRadius: 99, fontSize: '0.7rem', color: 'var(--primary)', border: '1px solid rgba(124,58,237,0.34)' }}>EOA</div>
           </div>
           <div style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
           <div className="flex justify-between">
@@ -289,15 +289,15 @@ function ConnectedDashboard() {
           className="glass-card flex flex-col gap-4"
           style={{
             background: smartAccountAddress
-              ? 'linear-gradient(135deg, rgba(181,154,92,0.12) 0%, rgba(181,154,92,0.04) 100%)'
+              ? 'linear-gradient(135deg, rgba(47,107,255,0.18) 0%, rgba(17,17,19,0.82) 100%)'
               : 'rgba(255,255,255,0.04)',
-            borderColor: smartAccountAddress ? 'rgba(181,154,92,0.3)' : 'rgba(255,255,255,0.08)',
+            borderColor: smartAccountAddress ? 'rgba(47,107,255,0.32)' : 'rgba(255,255,255,0.08)',
           }}
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div style={{ width: 36, height: 36, borderRadius: '50%', background: smartAccountAddress ? 'rgba(181,154,92,0.2)' : 'rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Box size={18} style={{ color: smartAccountAddress ? '#B59A5C' : 'var(--color-muted)' }} />
+              <div style={{ width: 36, height: 36, borderRadius: '50%', background: smartAccountAddress ? 'rgba(47,107,255,0.2)' : 'rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Box size={18} style={{ color: smartAccountAddress ? 'var(--accent-blue)' : 'var(--color-muted)' }} />
               </div>
               <div>
                 <div className="text-xs text-muted">Smart Vault</div>
@@ -307,7 +307,7 @@ function ConnectedDashboard() {
               </div>
             </div>
             {smartAccountAddress
-              ? <div style={{ padding: '2px 10px', background: 'rgba(181,154,92,0.15)', borderRadius: 99, fontSize: '0.7rem', color: '#B59A5C', border: '1px solid rgba(181,154,92,0.3)' }}>Active</div>
+              ? <div style={{ padding: '2px 10px', background: 'rgba(57,255,20,0.1)', borderRadius: 99, fontSize: '0.7rem', color: 'var(--secondary)', border: '1px solid rgba(57,255,20,0.28)' }}>Active</div>
               : <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '0.75rem' }} onClick={() => setCurrentView('setup')}>Setup →</button>
             }
           </div>
@@ -339,7 +339,7 @@ function ConnectedDashboard() {
         {/* Setup Checklist */}
         <div className="glass-card flex flex-col gap-4">
           <div className="flex items-center gap-2">
-            <TrendingUp size={18} style={{ color: '#957C3D' }} />
+            <TrendingUp size={18} style={{ color: 'var(--primary)' }} />
             <h3 style={{ fontSize: '1rem', margin: 0 }}>Setup Progress</h3>
             <span className="ml-auto text-xs text-muted">{checklistPct}%</span>
           </div>
@@ -347,7 +347,7 @@ function ConnectedDashboard() {
           <div style={{ background: 'rgba(255,255,255,0.07)', borderRadius: 99, height: 6 }}>
             <div style={{
               width: `${checklistPct}%`, height: '100%', borderRadius: 99,
-              background: 'linear-gradient(90deg, #957C3D, #B59A5C)',
+              background: 'linear-gradient(90deg, var(--primary), var(--accent-blue))',
               transition: 'width 0.5s ease'
             }} />
           </div>
@@ -375,7 +375,7 @@ function ConnectedDashboard() {
         {/* Portfolio Donut Chart */}
         <div className="glass-card flex flex-col items-center justify-center gap-4">
           <div className="flex items-center gap-2 self-start">
-            <BarChart3 size={18} style={{ color: '#957C3D' }} />
+            <BarChart3 size={18} style={{ color: 'var(--primary)' }} />
             <h3 style={{ fontSize: '1rem', margin: 0 }}>USDC Portfolio</h3>
           </div>
           <DonutChart eoaUSDC={eoaUSDC} saUSDC={saUSDC} />
@@ -394,7 +394,7 @@ function ConnectedDashboard() {
         {/* Quick Actions */}
         <div className="glass-card flex flex-col gap-4">
           <div className="flex items-center gap-2">
-            <Zap size={18} style={{ color: '#957C3D' }} />
+            <Zap size={18} style={{ color: 'var(--primary)' }} />
             <h3 style={{ fontSize: '1rem', margin: 0 }}>Quick Actions</h3>
           </div>
 
@@ -466,11 +466,11 @@ function LandingPage() {
           style={{
             display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
             padding: '6px 16px', borderRadius: 99, marginBottom: '1.5rem',
-            background: 'rgba(149,124,61,0.12)', border: '1px solid rgba(149,124,61,0.3)',
-            fontSize: '0.8rem', color: '#957C3D',
+            background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.34)',
+            fontSize: '0.8rem', color: 'var(--primary)',
           }}
         >
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#B59A5C', animation: 'pulse 2s infinite' }} />
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--secondary)', animation: 'pulse 2s infinite' }} />
           Live on Sepolia Testnet
         </div>
         <h1 style={{ fontSize: '3.5rem', marginBottom: '1rem', lineHeight: 1.15 }}>
@@ -496,7 +496,7 @@ function LandingPage() {
       <div className="grid-features">
         {features.map((f, i) => (
           <div key={i} className="glass-card flex flex-col gap-3" style={{ animationDelay: `${i * 0.05}s` }}>
-            <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(149,124,61,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#957C3D' }}>
+            <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(124,58,237,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
               {f.icon}
             </div>
             <h3 style={{ fontSize: '1.05rem', margin: 0 }}>{f.title}</h3>

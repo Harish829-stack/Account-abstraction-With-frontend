@@ -313,7 +313,7 @@ export default function PaymasterView() {
         )}
 
         {paymasterAddress && (
-          <div className="glass-card border border-primary/30 shadow-[0_0_40px_rgba(79,70,229,0.15)] relative overflow-hidden mb-2">
+          <div className="glass-card border border-primary/30 shadow-[0_0_40px_rgba(124,58,237,0.18)] relative overflow-hidden mb-2">
             <div className="absolute top-0 left-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -ml-20 -mt-20 pointer-events-none"></div>
             <div className="flex justify-between items-center bg-primary/10 p-4 rounded-xl border border-primary/20 mb-4 z-10 relative">
               <div className="flex items-center gap-3">
