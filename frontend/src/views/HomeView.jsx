@@ -495,11 +495,13 @@ function LandingPage() {
       <h2 className="text-center mb-6 text-gradient" style={{ fontSize: '1.75rem' }}>Why ERC-4337?</h2>
       <div className="grid-features">
         {features.map((f, i) => (
-          <div key={i} className="glass-card flex flex-col gap-3" style={{ animationDelay: `${i * 0.05}s` }}>
-            <div style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(124,58,237,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
-              {f.icon}
+          <div key={i} className="glass-card feature-card" style={{ animationDelay: `${i * 0.05}s` }}>
+            <div className="feature-card__header">
+              <div className="feature-card__icon">
+                {f.icon}
+              </div>
+              <h3>{f.title}</h3>
             </div>
-            <h3 style={{ fontSize: '1.05rem', margin: 0 }}>{f.title}</h3>
             <p className="text-muted text-sm">{f.description}</p>
           </div>
         ))}
