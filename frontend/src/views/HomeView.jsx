@@ -88,7 +88,7 @@ function ConnectedDashboard() {
     paymasterAddress, pmDeposit,
     pendingUserOps,
     setCurrentView, refreshAllData, signer, provider, env,
-    trackOp, setGlobalLoading
+    trackOp, setGlobalLoading, setSetupStep
   } = useAppContext();
   const toast = useToast();
   const [refreshing, setRefreshing] = useState(false);
@@ -182,7 +182,7 @@ function ConnectedDashboard() {
     { label: 'EOA Wallet Connected', done: !!eoaAddress },
     { label: 'Smart Account Deployed', done: !!smartAccountAddress },
     { label: 'Smart Account Funded (USDC)', done: saUSDC > 0 },
-    { label: 'Paymaster Approved', done: !!pmDeposit && pmDeposit !== '0' },
+    { label: 'Paymaster Approved', done: Number(pmAllowance) > 0 },
   ];
   const checklistPct = Math.round((checklist.filter(c => c.done).length / checklist.length) * 100);
 
@@ -545,7 +545,13 @@ function ConnectedDashboard() {
             <ArrowRight size={15} style={{ opacity:0.7 }} />
           </button>
 
-          <button className="quick-action-btn quick-action-btn--secondary" onClick={() => setCurrentView('setup')}>
+          <button 
+            className="quick-action-btn quick-action-btn--secondary" 
+            onClick={() => {
+              setSetupStep(2); // Step 2 is Fund ETH
+              setCurrentView('setup');
+            }}
+          >
             <div className="quick-action-icon quick-action-icon--secondary"><Wallet size={18} /></div>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:'0.85rem', fontWeight:600, color:'#141827' }}>Fund ETH</div>
@@ -554,7 +560,13 @@ function ConnectedDashboard() {
             <ArrowRight size={15} style={{ color:'var(--text-muted)' }} />
           </button>
 
-          <button className="quick-action-btn quick-action-btn--secondary" onClick={() => setCurrentView('setup')}>
+          <button 
+            className="quick-action-btn quick-action-btn--secondary" 
+            onClick={() => {
+              setSetupStep(3); // Step 3 is Pull USDC
+              setCurrentView('setup');
+            }}
+          >
             <div className="quick-action-icon quick-action-icon--secondary"><Box size={18} /></div>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:'0.85rem', fontWeight:600, color:'#141827' }}>Fund USDC</div>

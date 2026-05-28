@@ -19,16 +19,18 @@ function App() {
     return (
       <div style={{
         position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+        background: 'rgba(244, 241, 255, 0.85)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
       }}>
-        <div className="global-loader-spinner"></div>
-        <h3 style={{ marginTop: '1.5rem', color: '#141827', fontWeight: 800, fontSize: '1.25rem' }}>
-          {txLoadingMessage || 'Processing Transaction...'}
-        </h3>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.5rem', fontWeight: 500 }}>
-          Please wait. Do not close this window.
-        </p>
+        <div className="glass-card flex flex-col items-center justify-center text-center max-w-sm w-full py-8 px-6 shadow-2xl animate-fade-in" style={{ border: '1px solid rgba(111, 53, 232, 0.12)' }}>
+          <div className="global-loader-spinner"></div>
+          <h3 style={{ marginTop: '1.5rem', color: '#141827', fontWeight: 800, fontSize: '1.25rem' }}>
+            {txLoadingMessage || 'Processing Transaction...'}
+          </h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.5rem', fontWeight: 500 }}>
+            Please wait. Do not close this window.
+          </p>
+        </div>
       </div>
     );
   };

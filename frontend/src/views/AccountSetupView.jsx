@@ -22,12 +22,14 @@ export default function AccountSetupView() {
     loadSmartAccountDetails,
     refreshAllData,
     env,
-    setGlobalLoading
+    setGlobalLoading,
+    setupStep,
+    setSetupStep
   } = useAppContext();
   const toast = useToast();
 
   // Stepper State
-  const [currentStep, setCurrentStep] = useState(1);
+  // Stepper State
   const steps = ["Deploy / Connect", "Fund ETH", "Pull USDC", "EntryPoint"];
 
   // Option A State
@@ -146,12 +148,12 @@ export default function AccountSetupView() {
   // Auto-redirect logic
   useEffect(() => {
     if (smartAccountAddress) {
-       if (currentStep === 1) setCurrentStep(2);
+       if (setupStep === 1) setSetupStep(2);
     }
   }, [smartAccountAddress]);
 
   useEffect(() => {
-    if (Number(saETHBalance) > 0 && currentStep === 2) {
+    if (Number(saETHBalance) > 0 && setupStep === 2) {
       // Don't auto-redirect immediately, let user see they have balance
       // But we can hint it
     }
@@ -159,7 +161,7 @@ export default function AccountSetupView() {
 
   const disconnectSA = () => {
     setSmartAccountAddress(null);
-    setCurrentStep(1);
+    setSetupStep(1);
   };
 
 
@@ -266,7 +268,7 @@ export default function AccountSetupView() {
       await tx.wait();
       await refreshAllData();
       toast.success("USDC pulled to Smart Account successfully!");
-      setCurrentStep(4);
+      setSetupStep(4);
     } catch (err) {
       if (err.code === 4001) toast.error("Transaction rejected by user");
       else toast.error(err.reason || err.message || "Failed to pull USDC");
@@ -342,8 +344,8 @@ export default function AccountSetupView() {
         <div className="relative z-10">
           <Stepper 
             steps={steps} 
-            currentStep={currentStep} 
-            setStep={setCurrentStep} 
+            currentStep={setupStep} 
+            setStep={setSetupStep} 
             completedSteps={completedSteps}
           />
         </div>
@@ -356,7 +358,7 @@ export default function AccountSetupView() {
       <div className="step-content-area">
         
         {/* STEP 1: Deploy / Connect */}
-        {currentStep === 1 && (
+        {setupStep === 1 && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
             {/* Option A: Create */}
             <div className={`glass-card flex flex-col gap-4 ${smartAccountAddress ? 'opacity-50' : ''}`}>
@@ -457,7 +459,7 @@ export default function AccountSetupView() {
         )}
 
         {/* STEP 2: Fund ETH */}
-        {currentStep === 2 && (
+        {setupStep === 2 && (
           <div className="glass-card max-w-2xl mx-auto animate-fade-in">
              <h3 className="flex items-center gap-2 text-gradient mb-2"><Coins size={24} /> Step 2: Fund Smart Account</h3>
              <p className="text-sm text-muted mb-6">
@@ -489,7 +491,7 @@ export default function AccountSetupView() {
                 {Number(saETHBalance) > 0 && (
                   <div className="flex items-center justify-between mt-4 p-3 bg-secondary/10 border border-secondary/30 rounded-lg">
                     <span className="text-sm font-medium text-secondary">Balance detected! Safe to proceed.</span>
-                    <button className="btn btn-secondary py-1 px-4 text-sm" onClick={() => setCurrentStep(3)}>
+                    <button className="btn btn-secondary py-1 px-4 text-sm" onClick={() => setSetupStep(3)}>
                       Next Step <ChevronRight size={16} />
                     </button>
                   </div>
@@ -499,7 +501,7 @@ export default function AccountSetupView() {
         )}
 
         {/* STEP 3: Approve USDC */}
-        {currentStep === 3 && (
+        {setupStep === 3 && (
           <div className="glass-card max-w-2xl mx-auto animate-fade-in">
              <h3 className="flex items-center gap-2 text-gradient mb-2"><ArrowDownCircle size={24} /> Step 3: Fund Smart Account (Pull USDC)</h3>
              <p className="text-sm text-muted mb-6">
@@ -534,7 +536,7 @@ export default function AccountSetupView() {
         )}
 
         {/* STEP 4: EntryPoint Deposit */}
-        {currentStep === 4 && (
+        {setupStep === 4 && (
           <div className="glass-card max-w-2xl mx-auto animate-fade-in">
              <h3 className="flex items-center gap-2 text-gradient mb-2"><Landmark size={24} /> Step 4: EntryPoint Deposit</h3>
              <p className="text-sm text-muted mb-6">
@@ -543,21 +545,23 @@ export default function AccountSetupView() {
              </p>
 
              <div className="flex flex-col gap-6">
-               <div className="p-6 bg-white/5 rounded-xl border border-white/10 space-y-4">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-sm text-muted">Amount to Deposit (ETH)</label>
-                    <div className="flex gap-2">
+               <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 shadow-sm">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-bold text-slate-700">Amount to Deposit (ETH)</label>
+                    <div className="flex gap-3 mt-1">
                       <input 
                           type="number" 
-                          className="input-field flex-1" 
+                          className="input-field flex-1 px-4 text-base bg-white border-slate-300" 
                           placeholder="0.005" 
                           value={depositEPAmount}
                           onChange={(e) => setDepositEPAmount(e.target.value)}
+                          style={{ minHeight: '44px' }}
                       />
                       <button 
-                        className={`btn btn-primary ${pendingEPDeposit ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        className={`btn btn-primary px-8 font-semibold ${pendingEPDeposit ? 'opacity-50 cursor-not-allowed' : ''}`}
                         onClick={handleDepositEP}
                         disabled={pendingEPDeposit || !depositEPAmount}
+                        style={{ minHeight: '44px' }}
                       >
                         {pendingEPDeposit ? "Depositing..." : "Deposit to EP"}
                       </button>
@@ -566,33 +570,34 @@ export default function AccountSetupView() {
                </div>
 
                {/* Utils grid */}
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-4 border border-white/5 bg-white/20 rounded-lg">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted mb-3 flex items-center gap-2">
-                      <Download size={14} /> Withdraw from EP
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl shadow-sm flex flex-col justify-between">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-4 flex items-center gap-2">
+                      <Download size={16} /> Withdraw from EP
                     </h4>
-                    <div className="space-y-2">
-                      <input type="text" className="input-field py-1 text-xs" placeholder="To Address" value={withdrawEPTo} onChange={e=>setWithdrawEPTo(e.target.value)} />
-                      <div className="flex gap-2">
-                        <input type="number" className="input-field py-1 text-xs" placeholder="Amount" value={withdrawEPAmount} onChange={e=>setWithdrawEPAmount(e.target.value)} />
-                        <button className="btn btn-secondary py-1 px-3 text-xs" onClick={handleWithdrawEP} disabled={pendingEPWithdraw || !withdrawEPAmount}>Go</button>
+                    <div className="flex flex-col gap-4">
+                      <input type="text" className="input-field w-full px-3 text-sm bg-white border-slate-300" placeholder="To Address" value={withdrawEPTo} onChange={e=>setWithdrawEPTo(e.target.value)} style={{ minHeight: '40px' }} />
+                      <div className="flex gap-3">
+                        <input type="number" className="input-field flex-1 px-3 text-sm bg-white border-slate-300" placeholder="Amount" value={withdrawEPAmount} onChange={e=>setWithdrawEPAmount(e.target.value)} style={{ minHeight: '40px' }} />
+                        <button className="btn btn-secondary px-6 text-sm font-semibold" onClick={handleWithdrawEP} disabled={pendingEPWithdraw || !withdrawEPAmount} style={{ minHeight: '40px' }}>Go</button>
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-4 border border-red-500/20 bg-red-500/5 rounded-lg">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-danger mb-3 flex items-center gap-2">
-                      <AlertTriangle size={14} /> Ownership
+                  <div className="p-5 bg-red-50 border border-red-100 rounded-xl shadow-sm flex flex-col justify-between">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-red-500 mb-4 flex items-center gap-2">
+                      <AlertTriangle size={16} /> Ownership
                     </h4>
-                      <div className="flex gap-2">
-                        <input type="text" className="input-field py-1 text-xs" placeholder="New Owner Address" value={newOwner} onChange={e=>setNewOwner(e.target.value)} />
-                        <button 
-                          className={`btn ${confirmTransfer ? 'btn-primary animate-pulse' : 'btn-danger'} py-1 px-3 text-xs`} 
-                          onClick={handleTransferOwnership} 
-                          disabled={pendingOwnerXfer}
-                        >
-                          {pendingOwnerXfer ? 'Xfer...' : confirmTransfer ? 'Confirm?' : 'Xfer'}
-                        </button>
+                    <div className="flex flex-col gap-4">
+                      <input type="text" className="input-field w-full px-3 text-sm bg-white border-red-200" placeholder="New Owner Address" value={newOwner} onChange={e=>setNewOwner(e.target.value)} style={{ minHeight: '40px' }} />
+                      <button 
+                        className={`btn w-full font-semibold ${confirmTransfer ? 'btn-primary animate-pulse' : 'btn-danger'} text-sm`} 
+                        onClick={handleTransferOwnership} 
+                        disabled={pendingOwnerXfer}
+                        style={{ minHeight: '40px' }}
+                      >
+                        {pendingOwnerXfer ? 'Transferring...' : confirmTransfer ? 'Confirm Transfer?' : 'Transfer Ownership'}
+                      </button>
                     </div>
                   </div>
                </div>

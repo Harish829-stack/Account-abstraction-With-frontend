@@ -17,6 +17,8 @@ export const AppProvider = ({ children }) => {
     }
   });
 
+  const [setupStep, setSetupStep] = useState(1);
+
   useEffect(() => {
     localStorage.setItem('currentView', currentView);
   }, [currentView]);
@@ -535,6 +537,7 @@ export const AppProvider = ({ children }) => {
   const value = {
     isTxLoading, txLoadingMessage, setGlobalLoading,
     currentView, setCurrentView,
+    setupStep, setSetupStep,
     provider, signer, eoaAddress, chainId, expectedChainId,
     eoaETHBalance, eoaUSDCBalance,
     smartAccountAddress, setSmartAccountAddress,

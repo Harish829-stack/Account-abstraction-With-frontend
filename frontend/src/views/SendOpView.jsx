@@ -363,16 +363,16 @@ export default function SendOpView() {
             </div>
 
             {estimatedFee && (
-              <div className="mt-3 p-4 bg-white/5 border border-white/10 rounded-xl animate-fade-in flex flex-col gap-2">
+              <div className="mt-3 p-4 bg-slate-50 border border-slate-200 rounded-xl animate-fade-in flex flex-col gap-2 shadow-sm">
                 <div className="flex justify-between items-center text-xs text-muted">
-                  <span>Estimated Gas Fee ({usePaymaster ? "Paymaster Sponsored" : "Self-Paid"})</span>
+                  <span className="font-bold">Estimated Gas Fee ({usePaymaster ? "Paymaster Sponsored" : "Self-Paid"})</span>
                   <span className="font-semibold text-primary">{usePaymaster ? "Paid in USDC" : "Paid in ETH"}</span>
                 </div>
-                <div className="flex justify-between items-baseline">
-                  <span className="text-xl font-bold font-mono text-white">
+                <div className="flex justify-between items-baseline mt-1">
+                  <span className="text-sm font-bold font-mono text-slate-700">
                     {usePaymaster ? `${estimatedFee.usdc} USDC` : `${parseFloat(estimatedFee.eth).toFixed(6)} ETH`}
                   </span>
-                  <span className="text-xs font-mono text-muted">
+                  <span className="text-sm font-bold font-mono text-slate-500">
                     {usePaymaster ? `~ ${parseFloat(estimatedFee.eth).toFixed(6)} ETH` : `~ ${estimatedFee.usdc} USDC`}
                   </span>
                 </div>

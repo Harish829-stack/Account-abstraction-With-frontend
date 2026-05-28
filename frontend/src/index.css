@@ -1146,27 +1146,21 @@ a:hover {
   min-height: 2.5rem;
   padding: 0 1rem;
   border-radius: 9999px;
-  background: var(--bg-surface-elevated);
-  border: 1px solid var(--border-light);
+  background: rgba(111, 53, 232, 0.08);
+  border: 1px solid rgba(111, 53, 232, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 500;
+  font-weight: 600;
   font-size: 0.8rem;
-  color: var(--text-muted);
+  color: var(--primary);
   transition: all var(--transition-bounce);
-  box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 0 10px rgba(111, 53, 232, 0.1);
   white-space: nowrap;
 }
 
 .step-item.active .step-indicator {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: white;
   transform: scale(1.05);
-  box-shadow: 0 0 20px var(--primary-glow);
-  font-weight: 700;
-  animation: pulse-glow 2s infinite;
 }
 
 @keyframes pulse-glow {
@@ -1176,10 +1170,19 @@ a:hover {
 }
 
 .step-item.completed .step-indicator {
-  background: var(--secondary);
-  border-color: var(--secondary);
-  color: #051205;
-  box-shadow: 0 0 15px var(--secondary-glow);
+  transform: none; /* Reset scale if it was active */
+  animation: none; /* Force no animation */
+}
+
+.step-item:hover .step-indicator {
+  transform: translateY(-2px);
+  background: rgba(111, 53, 232, 0.12);
+  box-shadow: 0 4px 12px rgba(111, 53, 232, 0.15);
+}
+
+.step-item.active:hover .step-indicator {
+  transform: scale(1.05) translateY(-2px);
+  animation: pulse-glow 2s infinite;
 }
 
 .stepper::before {
