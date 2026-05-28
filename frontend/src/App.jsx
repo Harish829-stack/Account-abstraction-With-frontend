@@ -10,9 +10,28 @@ import BatchSendView from './views/BatchSendView';
 import { AlertTriangle } from 'lucide-react';
 
 function App() {
-  const { currentView, eoaAddress, chainId, expectedChainId, switchNetwork } = useAppContext();
+  const { currentView, eoaAddress, chainId, expectedChainId, switchNetwork, isTxLoading, txLoadingMessage } = useAppContext();
   const isConnected = !!eoaAddress;
   const isNetworkMismatch = isConnected && chainId && Number(chainId) !== Number(expectedChainId);
+
+  const renderGlobalLoader = () => {
+    if (!isTxLoading) return null;
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(255,255,255,0.85)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+      }}>
+        <div className="global-loader-spinner"></div>
+        <h3 style={{ marginTop: '1.5rem', color: '#141827', fontWeight: 800, fontSize: '1.25rem' }}>
+          {txLoadingMessage || 'Processing Transaction...'}
+        </h3>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.5rem', fontWeight: 500 }}>
+          Please wait. Do not close this window.
+        </p>
+      </div>
+    );
+  };
 
   return (
     <div className="container min-h-screen py-6 animate-fade-in relative">
@@ -40,14 +59,33 @@ function App() {
 
       {isConnected && <Navbar />}
       <main className="animate-fade-in">
-        {currentView === "home" && <HomeView />}
-        {currentView === "profile" && <ProfileView />}
-        {currentView === "setup" && <AccountSetupView />}
-        {currentView === "send" && <SendOpView />}
-        {currentView === "batch-send" && <BatchSendView />}
-        {currentView === "paymaster" && <PaymasterView />}
-        {currentView === "history" && <HistoryView />}
+        <div style={{ display: currentView === "home" ? "block" : "none" }}>
+          <HomeView />
+        </div>
+        {isConnected && (
+          <>
+            <div style={{ display: currentView === "profile" ? "block" : "none" }}>
+              <ProfileView />
+            </div>
+            <div style={{ display: currentView === "setup" ? "block" : "none" }}>
+              <AccountSetupView />
+            </div>
+            <div style={{ display: currentView === "send" ? "block" : "none" }}>
+              <SendOpView />
+            </div>
+            <div style={{ display: currentView === "batch-send" ? "block" : "none" }}>
+              <BatchSendView />
+            </div>
+            <div style={{ display: currentView === "paymaster" ? "block" : "none" }}>
+              <PaymasterView />
+            </div>
+            <div style={{ display: currentView === "history" ? "block" : "none" }}>
+              <HistoryView />
+            </div>
+          </>
+        )}
       </main>
+      {renderGlobalLoader()}
     </div>
   );
 }

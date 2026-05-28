@@ -1,4 +1,3 @@
-const { ethers } = require('ethers');
 const bundlerUrl = "https://public.pimlico.io/v2/sepolia/rpc";
 
 async function run() {
