@@ -430,7 +430,7 @@ function ConnectedDashboard() {
                   <p style={{ fontSize:'0.68rem', color:'var(--text-muted)', margin:'2px 0 0' }}>
                     {i === 0 && 'Your EOA wallet has been connected'}
                     {i === 1 && 'Your smart account is now live on-chain'}
-                    {i === 2 && `Successfully funded with ${saUSDC.toFixed(2)} USDC`}
+                    {i === 2 && (saUSDC > 0 ? `Successfully funded with ${saUSDC.toFixed(2)} USDC` : 'Add USDC to enable gasless transactions')}
                     {i === 3 && `Gasless transactions enabled`}
                   </p>
                 </div>
@@ -819,8 +819,18 @@ function ConnectedDashboard() {
                 border:'none', cursor:swapping ? 'not-allowed' : 'pointer', transition:'all 0.2s',
                 opacity: swapping ? 0.7 : 1
               }}
-              onMouseEnter={e => { if (!swapping) e.currentTarget.style.background = 'var(--primary)'; e.currentTarget.style.color = 'white'; }}
-              onMouseLeave={e => { if (!swapping) e.currentTarget.style.background = 'rgba(124,58,237,0.1)'; e.currentTarget.style.color = 'var(--primary)'; }}
+              onMouseEnter={e => { 
+                if (!swapping) {
+                  e.currentTarget.style.background = 'var(--primary)'; 
+                  e.currentTarget.style.color = 'white'; 
+                }
+              }}
+              onMouseLeave={e => { 
+                if (!swapping) {
+                  e.currentTarget.style.background = 'linear-gradient(135deg, rgba(124,58,237,0.1), rgba(124,58,237,0.15))'; 
+                  e.currentTarget.style.color = 'var(--primary)'; 
+                }
+              }}
               onClick={async () => {
                 await handleQuickSwap();
                 if (!swapping) {
