@@ -47,7 +47,7 @@ export default function HistoryView() {
         <div className="glass-card">
           <div className="flex items-center justify-between mb-4">
             <h2 className="flex items-center gap-2 text-gradient"><Activity size={24} /> Recent Transactions</h2>
-            <button className="btn btn-secondary py-1 text-xs" onClick={fetchRecentOps} disabled={loadingOps}>
+            <button className="btn btn-secondary py-1 text-xs" onClick={() => fetchRecentOps()} disabled={loadingOps}>
               {loadingOps ? 'Refreshing...' : 'Refresh'}
             </button>
           </div>
@@ -59,13 +59,13 @@ export default function HistoryView() {
           ) : (
             <div className="flex flex-col gap-3">
               {displayOps.map((op, idx) => (
-                <div key={idx} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-black/20 p-4 rounded-xl border border-white/5 transition-all hover:border-white/10 hover:bg-white/5 group">
+                <div key={idx} className="glass-history-card flex flex-col sm:flex-row justify-between items-start sm:items-center group">
                   <div className="flex flex-col w-full sm:w-auto overflow-hidden pr-4 gap-1">
                     <div className="flex items-center gap-2 mb-1">
-                       <span className="text-xs font-bold text-white tracking-wide">On-Chain Transaction</span>
-                       {op.timestamp && <span className="text-[10px] text-muted bg-white/5 px-2 py-0.5 rounded-full">{timeAgo(op.timestamp)}</span>}
+                       <span className="text-xs font-bold tracking-wide">On-Chain Transaction</span>
+                       {op.timestamp && <span className="text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded-full">{timeAgo(op.timestamp)}</span>}
                     </div>
-                    <div className="flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-lg border border-white/5 w-fit">
+                    <div className="flex items-center gap-2 bg-primary/5 px-3 py-1.5 rounded-lg border border-primary/10 w-fit">
                       <span className="font-mono text-xs text-muted truncate max-w-[200px] sm:max-w-[300px]" title={op.txHash || op.userOpHash}>
                         {op.txHash || op.userOpHash}
                       </span>
@@ -74,7 +74,7 @@ export default function HistoryView() {
                           navigator.clipboard.writeText(op.txHash || op.userOpHash);
                           toast.success(`${op.txHash ? 'Transaction' : 'UserOp'} Hash copied!`);
                         }}
-                        className="text-muted hover:text-white transition-colors"
+                        className="text-muted hover:text-primary transition-colors"
                         title="Copy Hash"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>

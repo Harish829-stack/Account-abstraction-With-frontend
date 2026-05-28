@@ -1,36 +1,31 @@
-import axios from "axios";
+const { ethers } = require('ethers');
+const bundlerUrl = "https://public.pimlico.io/v2/sepolia/rpc";
 
 async function run() {
-    const rpcUrl = "http://127.0.0.1:14337/rpc"; // or wherever it is
-    const entryPoint = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789";
-    const smartAccountAddress = "0xD73e74C58C6593B1070bA4561b2fbd2746b3d29b"; // from env
-    const paymasterAddress = "0x21C6A7B49080e077B8703518504c98f7A5BF4eec";
+  const op = {
+    sender: "0x99374D278d4CFc212E8202729ad326b79d2dcF6b",
+    nonce: "0x1",
+    initCode: "0x",
+    callData: "0x",
+    callGasLimit: "0x10000",
+    verificationGasLimit: "0x10000",
+    preVerificationGas: "0x10000",
+    maxFeePerGas: "0x10000",
+    maxPriorityFeePerGas: "0x10000",
+    paymasterAndData: "0x",
+    signature: "0x"
+  };
 
-    const userOp = {
-        sender: smartAccountAddress,
-        nonce: "0x00", // Just dummy for estimation
-        initCode: "0x",
-        callData: "0x", // Empty call data
-        callGasLimit: "0x7a120", // 500k
-        verificationGasLimit: "0x7a120", // 500k
-        preVerificationGas: "0x186a0", // 100k
-        maxFeePerGas: "0x3b9aca00", // 1 Gwei
-        maxPriorityFeePerGas: "0x3b9aca00", // 1 Gwei
-        paymasterAndData: paymasterAddress,
-        signature: "0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c"
-    };
-
-    console.log("Estimating with limits...");
-    try {
-        const res = await axios.post(rpcUrl, {
-            jsonrpc: "2.0",
-            id: 1,
-            method: "eth_estimateUserOperationGas",
-            params: [userOp, entryPoint]
-        });
-        console.log("With Limits:", JSON.stringify(res.data, null, 2));
-    } catch (e) {
-        console.log("Error:", e.response?.data || e.message);
-    }
+  const response = await fetch(bundlerUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "eth_estimateUserOperationGas",
+      params: [op, "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"]
+    })
+  });
+  console.log(await response.json());
 }
 run();

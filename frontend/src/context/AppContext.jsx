@@ -9,27 +9,45 @@ const AppContext = createContext();
 export const useAppContext = () => useContext(AppContext);
 
 export const AppProvider = ({ children }) => {
-  const [currentView, setCurrentView] = useState("home"); // home | profile | setup | send | paymaster
+  const [currentView, setCurrentView] = useState(() => {
+    try {
+      return localStorage.getItem('currentView') || 'home';
+    } catch {
+      return 'home';
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('currentView', currentView);
+  }, [currentView]);
+
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
   const toast = useToast();
   const [eoaAddress, setEoaAddress] = useState(null);
   const [chainId, setChainId] = useState(null);
-  const [theme, setTheme] = useState(() => localStorage.getItem('app-theme') || 'dark');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  useEffect(() => {
-    localStorage.setItem('app-theme', theme);
-    if (theme === 'light') {
-      document.body.classList.add('light-theme');
-    } else {
-      document.body.classList.remove('light-theme');
-    }
-  }, [theme]);
 
   const [eoaETHBalance, setEoaETHBalance] = useState("0");
   const [eoaUSDCBalance, setEoaUSDCBalance] = useState("0");
 
-  const [smartAccountAddress, setSmartAccountAddress] = useState(null);
+  const [smartAccountAddress, setSmartAccountAddress] = useState(() => {
+    try {
+      return localStorage.getItem('smartAccountAddress') || null;
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    if (smartAccountAddress) {
+      localStorage.setItem('smartAccountAddress', smartAccountAddress);
+    } else {
+      localStorage.removeItem('smartAccountAddress');
+    }
+  }, [smartAccountAddress]);
+
   const [saETHBalance, setSaETHBalance] = useState("0");
   const [saUSDCBalance, setSaUSDCBalance] = useState("0");
   const [saEntryPointDeposit, setSaEntryPointDeposit] = useState("0");
@@ -45,6 +63,14 @@ export const AppProvider = ({ children }) => {
   const [pmTokenDecimals, setPmTokenDecimals] = useState(6);
 
   const [isConnecting, setIsConnecting] = useState(false);
+  
+  const [isTxLoading, setIsTxLoading] = useState(false);
+  const [txLoadingMessage, setTxLoadingMessage] = useState("");
+
+  const setGlobalLoading = useCallback((isLoading, message = "") => {
+    setIsTxLoading(isLoading);
+    setTxLoadingMessage(message);
+  }, []);
 
   const [pendingUserOps, setPendingUserOps] = useState(() => {
     try {
@@ -237,7 +263,21 @@ export const AppProvider = ({ children }) => {
     if (paymasterAddress) refreshes.push(loadPaymasterDetails(paymasterAddress, provider));
 
     await Promise.all(refreshes);
+    setRefreshTrigger(prev => prev + 1);
   };
+
+  // Fetch details immediately whenever provider or addresses change
+  useEffect(() => {
+    if (provider) {
+      refreshAllData();
+    }
+  }, [provider, eoaAddress, smartAccountAddress, paymasterAddress]);
+
+  // Ref for latest refreshAllData to avoid stale closures in the block listener
+  const refreshAllDataRef = useRef(refreshAllData);
+  useEffect(() => {
+    refreshAllDataRef.current = refreshAllData;
+  }, [refreshAllData]);
 
   // Real-time block listener
   useEffect(() => {
@@ -246,14 +286,16 @@ export const AppProvider = ({ children }) => {
     console.log("[AppContext] Subscribing to block events for real-time updates");
     const onBlock = () => {
       console.log("[AppContext] New block mined, refreshing all balances...");
-      refreshAllData();
+      if (refreshAllDataRef.current) {
+        refreshAllDataRef.current();
+      }
     };
 
     provider.on("block", onBlock);
     return () => {
       provider.off("block", onBlock);
     };
-  }, [provider, eoaAddress, smartAccountAddress, paymasterAddress]);
+  }, [provider]);
 
   // Global background poller — polls every 3s for all pending tracked ops
   const setCurrentViewRef = useRef(null);
@@ -340,8 +382,10 @@ export const AppProvider = ({ children }) => {
       toast.error("MetaMask (window.ethereum) is required!");
       return;
     }
+    setGlobalLoading(true, "Connecting Wallet...");
     setIsConnecting(true);
     try {
+      localStorage.removeItem('userDisconnected');
       await window.ethereum.request({ method: "eth_requestAccounts" });
       const browserProvider = new ethers.BrowserProvider(window.ethereum);
       const network = await browserProvider.getNetwork();
@@ -368,10 +412,12 @@ export const AppProvider = ({ children }) => {
       }
     } finally {
       setIsConnecting(false);
+      setGlobalLoading(false);
     }
   };
 
   const disconnect = () => {
+    localStorage.setItem('userDisconnected', 'true');
     setProvider(null);
     setSigner(null);
     setEoaAddress(null);
@@ -448,6 +494,36 @@ export const AppProvider = ({ children }) => {
     }
   }, []);
 
+  // On mount, auto-connect if already authorized in MetaMask
+  useEffect(() => {
+    const autoConnect = async () => {
+      if (localStorage.getItem('userDisconnected') === 'true') return;
+      if (window.ethereum) {
+        try {
+          const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+          if (accounts.length > 0) {
+            const browserProvider = new ethers.BrowserProvider(window.ethereum);
+            const network = await browserProvider.getNetwork();
+
+            setProvider(browserProvider);
+            setChainId(Number(network.chainId));
+
+            const _signer = await browserProvider.getSigner();
+            setSigner(_signer);
+
+            const address = await _signer.getAddress();
+            setEoaAddress(address);
+
+            await loadEOABalances(address, browserProvider);
+          }
+        } catch (e) {
+          console.error("Auto-connect failed", e);
+        }
+      }
+    };
+    autoConnect();
+  }, []);
+
   // Sync smart account dynamically whenever it changes
   useEffect(() => {
     if (smartAccountAddress) {
@@ -457,7 +533,7 @@ export const AppProvider = ({ children }) => {
   }, [smartAccountAddress]);
 
   const value = {
-    theme, setTheme,
+    isTxLoading, txLoadingMessage, setGlobalLoading,
     currentView, setCurrentView,
     provider, signer, eoaAddress, chainId, expectedChainId,
     eoaETHBalance, eoaUSDCBalance,
@@ -466,7 +542,7 @@ export const AppProvider = ({ children }) => {
     paymasterAddress, setPaymasterAddress,
     pmETHBalance, pmUSDCBalance, pmDeposit, pmStake, pmUnstakeDelay, pmTokenSymbol, pmTokenDecimals,
     connectWallet, disconnect, isConnecting, switchNetwork,
-    loadEOABalances, loadSmartAccountDetails, loadPaymasterDetails, refreshAllData,
+    loadEOABalances, loadSmartAccountDetails, loadPaymasterDetails, refreshAllData, refreshTrigger,
     pendingUserOps, addPendingUserOp,
     trackedOps, trackOp,
     recentOps, loadingOps, fetchRecentOps,

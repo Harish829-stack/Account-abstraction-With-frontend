@@ -15,7 +15,7 @@ export default function PaymasterView() {
     provider, signer, eoaAddress, smartAccountAddress, paymasterAddress, setPaymasterAddress, refreshAllData, env,
     pmETHBalance, pmUSDCBalance, pmDeposit, pmStake, pmUnstakeDelay, pmTokenSymbol, pmTokenDecimals, loadPaymasterDetails,
     saETHBalance, saUSDCBalance, saEntryPointDeposit,
-    trackOp, setCurrentView
+    trackOp, setCurrentView, setGlobalLoading, refreshTrigger
   } = useAppContext();
   const toast = useToast();
 
@@ -69,7 +69,7 @@ export default function PaymasterView() {
 
   useEffect(() => {
     fetchPmAllowance();
-  }, [smartAccountAddress, paymasterAddress, provider, dToken]);
+  }, [smartAccountAddress, paymasterAddress, provider, dToken, refreshTrigger]);
 
   // Auto-redirect
   useEffect(() => {
@@ -88,6 +88,7 @@ export default function PaymasterView() {
   const handleDeploy = async () => {
     if (!signer || !dEntryPoint || !dToken || !dPriceFeed) return;
     setDeploying(true);
+    setGlobalLoading(true, "Deploying Paymaster...");
     try {
       const pmFactory = new ethers.ContractFactory(pmArtifact.abi, pmArtifact.bytecode, signer);
       
@@ -106,6 +107,7 @@ export default function PaymasterView() {
       else toast.error(err.reason || err.message || "Deployment failed");
     } finally {
       setDeploying(false);
+      setGlobalLoading(false);
     }
   };
 
@@ -115,6 +117,7 @@ export default function PaymasterView() {
       return;
     }
     setConnecting(true);
+    setGlobalLoading(true, "Connecting Paymaster...");
     try {
       const code = await provider.getCode(connectPmAddress);
       if (code === "0x") {
@@ -127,12 +130,14 @@ export default function PaymasterView() {
       toast.error("Error connecting: " + err.message);
     } finally {
       setConnecting(false);
+      setGlobalLoading(false);
     }
   };
 
   const executePmAction = async (actionFn, actionName) => {
     if (!signer || !paymasterAddress) return;
     setFunding(true); setWithdrawing(true);
+    setGlobalLoading(true, `Processing ${actionName}...`);
     try {
        const pmContract = new ethers.Contract(paymasterAddress, ERC20PaymasterABI, signer);
        const tx = await actionFn(pmContract);
@@ -144,6 +149,7 @@ export default function PaymasterView() {
        else toast.error(err.reason || err.message || `${actionName} failed`);
     } finally {
        setFunding(false); setWithdrawing(false);
+       setGlobalLoading(false);
     }
   };
 
@@ -178,6 +184,7 @@ export default function PaymasterView() {
       return;
     }
     setApproving(true);
+    setGlobalLoading(true, "Approving Paymaster via Smart Account...");
     try {
       // Robust EIP-1559 gas fee estimation for public bundlers
       let maxFeePerGas = 25000000000n; // 25 Gwei fallback
@@ -207,7 +214,7 @@ export default function PaymasterView() {
       const requiredPrefundWei = totalGasLimit * maxFeePerGas;
       const requiredPrefundEth = parseFloat(ethers.formatEther(requiredPrefundWei));
 
-      const saBalanceEth = parseFloat(saETHBalance || "0");
+      const saBalanceEth = parseFloat(ethers.formatEther(saETHBalance || "0"));
       const saDepositEth = parseFloat(ethers.formatEther(saEntryPointDeposit || "0"));
       const totalAvailableEth = saBalanceEth + saDepositEth;
 
@@ -215,9 +222,10 @@ export default function PaymasterView() {
 
       if (totalAvailableEth < requiredPrefundEth) {
         toast.error(
-          `Insufficient ETH for prefund! The EntryPoint requires your Smart Account to have at least ${requiredPrefundEth.toFixed(4)} ETH to cover the worst-case gas cost of this transaction (based on current network fee of ${ethers.formatUnits(maxFeePerGas, "gwei")} Gwei). You currently have ${totalAvailableEth.toFixed(4)} ETH. Please deposit more ETH into your Smart Account first.`
+          `Insufficient ETH for prefund! The EntryPoint requires your Smart Account to have at least ${requiredPrefundEth.toFixed(4)} ETH to cover the worst-case gas cost of this transaction. You currently have ${totalAvailableEth.toFixed(4)} ETH total (Balance + Deposit). Please deposit more ETH into your Smart Account first.`
         );
         setApproving(false);
+        setGlobalLoading(false);
         return;
       }
 
@@ -276,6 +284,7 @@ export default function PaymasterView() {
       else toast.error(err.reason || err.message || "Failed to approve Paymaster");
     } finally {
       setApproving(false);
+      setGlobalLoading(false);
     }
   };
 
@@ -391,22 +400,7 @@ export default function PaymasterView() {
           </button>
         </div>
 
-        {lastOpHash && (
-          <div className="mt-4 p-4 rounded-xl border" style={{
-            background: 'rgba(139, 92, 246, 0.08)',
-            borderColor: 'rgba(139, 92, 246, 0.3)',
-          }}>
-            <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>UserOperation Submitted</span>
-            <p className="font-mono text-xs break-all text-muted mt-2 mb-3" title={lastOpHash}>{lastOpHash}</p>
-            <p className="text-xs text-muted mb-3">Approval is being tracked in the background. The UI is unlocked — you can continue using the application.</p>
-            <button
-              onClick={() => setCurrentView('history')}
-              className="btn btn-primary py-1.5 px-4 text-xs flex items-center gap-2"
-            >
-              View TX Status in History →
-            </button>
-          </div>
-        )}
+
       </div>
     </div>
   );

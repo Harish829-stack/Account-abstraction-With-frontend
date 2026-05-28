@@ -20,7 +20,8 @@ export default function SendOpView() {
     refreshAllData,
     env,
     trackOp,
-    setCurrentView
+    setCurrentView,
+    setGlobalLoading
   } = useAppContext();
 
   const toast = useToast();
@@ -198,6 +199,7 @@ export default function SendOpView() {
     }
 
     setPending(true);
+    setGlobalLoading(true, "Sending UserOperation...");
     setUserOpHashResult('');
 
     try {
@@ -260,10 +262,12 @@ export default function SendOpView() {
       trackOp(opHash, 'Send UserOperation');
       setUserOpHashResult(opHash);
       setPending(false);
+      setGlobalLoading(false);
     } catch (err) {
       toast.error("Bundler rejected the transaction!");
       toast.error(err.reason || err.message || "Failed to execute operation");
       setPending(false);
+      setGlobalLoading(false);
     }
   };
 
@@ -337,21 +341,21 @@ export default function SendOpView() {
             </div>
 
             <div className="mt-2 text-sm">
-              <button className="flex items-center gap-1 text-primary hover:text-primary-hover font-medium transition-colors" onClick={() => setShowAdvanced(!showAdvanced)}>
+              <button className="btn-advanced-toggle" onClick={() => setShowAdvanced(!showAdvanced)}>
                 <Settings size={16} /> Advanced Gas Settings
               </button>
               {showAdvanced && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-3 bg-black/20 p-4 rounded-md border border-white/5">
+                <div className="advanced-gas-panel">
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs text-muted">Call Gas</label>
+                    <label>Call Gas</label>
                     <input type="number" className="input-field py-1 text-xs" value={callGasLimit} onChange={e=>setCallGasLimit(e.target.value)} />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs text-muted">Verif Gas</label>
+                    <label>Verif Gas</label>
                     <input type="number" className="input-field py-1 text-xs" value={verificationGasLimit} onChange={e=>setVerificationGasLimit(e.target.value)} />
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs text-muted">PreVerif Gas</label>
+                    <label>PreVerif Gas</label>
                     <input type="number" className="input-field py-1 text-xs" value={preVerificationGas} onChange={e=>setPreVerificationGas(e.target.value)} />
                   </div>
                 </div>
@@ -393,32 +397,7 @@ export default function SendOpView() {
               </button>
             </div>
 
-            {userOpHashResult && (
-              <div className="mt-4 p-4 rounded-xl border animate-fade-in" style={{
-                background: 'rgba(139, 92, 246, 0.08)',
-                borderColor: 'rgba(139, 92, 246, 0.3)',
-              }}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>UserOperation Submitted</span>
-                </div>
-                <p className="font-mono text-xs break-all text-muted mb-3" title={userOpHashResult}>{userOpHashResult}</p>
-                <p className="text-xs text-muted mb-3">Your operation is being tracked in the background. You can continue using the app.</p>
-                <div className="flex items-center gap-3 mt-2">
-                   <button
-                     onClick={() => setCurrentView('history')}
-                     className="btn btn-primary py-1.5 px-4 text-xs flex items-center justify-center gap-2 flex-1"
-                   >
-                     View TX Status in History →
-                   </button>
-                   <button
-                     onClick={resetForm}
-                     className="btn btn-secondary py-1.5 px-4 text-xs flex items-center justify-center gap-2 flex-1"
-                   >
-                     Send Another
-                   </button>
-                </div>
-              </div>
-            )}
+
       </div>
     </div>
   );

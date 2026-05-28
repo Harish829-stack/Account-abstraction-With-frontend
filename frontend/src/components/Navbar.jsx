@@ -1,10 +1,10 @@
 import React from 'react';
 import { useAppContext } from '../context/AppContext';
 import { shortenAddress } from '../utils/helpers';
-import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, Sun, Moon, LayoutDashboard } from 'lucide-react';
+import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, LayoutDashboard } from 'lucide-react';
 
 export default function Navbar() {
-  const { eoaAddress, smartAccountAddress, disconnect, currentView, setCurrentView, theme, setTheme } = useAppContext();
+  const { eoaAddress, smartAccountAddress, disconnect, currentView, setCurrentView } = useAppContext();
 
   if (!eoaAddress) return null;
 
@@ -44,13 +44,7 @@ export default function Navbar() {
           <div className="wallet-eoa">
             EOA: {shortenAddress(eoaAddress)}
           </div>
-          <button
-            className="wallet-icon-button"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
-          >
-            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
+
           <button className="wallet-disconnect" onClick={disconnect}>
             <LogOut size={16} /> Disconnect
           </button>
