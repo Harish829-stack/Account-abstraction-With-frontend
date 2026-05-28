@@ -157,7 +157,7 @@ export default function ProfileView() {
         <div className="flex justify-between items-center mb-0">
           <h2 className="flex items-center gap-2 text-gradient m-0"><Wallet size={24} /> EOA Profile</h2>
           <button
-            className="p-1.5 rounded-full hover:bg-white/10 transition-all text-muted hover:text-white"
+            className="refresh-icon-button"
             onClick={async () => {
               await refreshAllData();
               await fetchAllowances();
@@ -258,10 +258,13 @@ export default function ProfileView() {
 
         {lastOpHash && (
           <div className="mt-4 p-4 rounded-xl border" style={{
-            background: 'rgba(139, 92, 246, 0.08)',
-            borderColor: 'rgba(139, 92, 246, 0.3)',
+            background: 'rgba(111, 53, 232, 0.08)',
+            borderColor: 'rgba(111, 53, 232, 0.24)',
           }}>
-            <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>UserOperation Submitted</span>
+            <div className="flex items-center gap-2">
+              <span className="pending-dot" />
+              <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--primary)' }}>UserOperation Submitted</span>
+            </div>
             <p className="font-mono text-xs break-all text-muted mt-2 mb-3" title={lastOpHash}>{lastOpHash}</p>
             <p className="text-xs text-muted mb-3">Your allowance update is being tracked in the background. The UI is fully unlocked.</p>
             <button

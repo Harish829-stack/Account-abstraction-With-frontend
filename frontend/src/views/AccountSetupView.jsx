@@ -278,7 +278,7 @@ export default function AccountSetupView() {
       
       {/* Details Section (Shown under navbar if connected) */}
       {smartAccountAddress && (
-        <div className="glass-card border border-primary/30 flex flex-col gap-4 mb-2 shadow-[0_0_40px_rgba(124,58,237,0.18)] relative overflow-hidden">
+        <div className="glass-card border border-primary/30 flex flex-col gap-4 mb-2 shadow-[0_0_40px_rgba(91,62,232,0.14)] relative overflow-hidden">
            <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
            {/* Header */}
            <div className="flex justify-between items-center bg-primary/10 p-4 rounded-xl border border-primary/20 z-10">
@@ -291,7 +291,7 @@ export default function AccountSetupView() {
              </div>
              <div className="flex items-center gap-3">
                <button 
-                 className="p-2 rounded-full bg-white/5 border border-white/10 shadow-sm hover:bg-white/10 hover:border-white/20 transition-all text-muted hover:text-white"
+                 className="refresh-icon-button"
                  onClick={refreshAllData}
                  title="Refresh Smart Account data"
                >
@@ -322,8 +322,8 @@ export default function AccountSetupView() {
       )}
 
       {/* Top Navbar / Stepper View */}
-      <div className="glass-card mb-4 relative overflow-hidden">
-        <div className="flex justify-between items-center mb-8 relative z-10">
+      <div className="glass-card setup-stepper-card mb-4 relative overflow-hidden">
+        <div className="flex justify-between items-center relative z-10">
           <h2 className="m-0 text-gradient text-2xl">Account Setup Journey</h2>
         </div>
         <div className="relative z-10">
@@ -522,7 +522,7 @@ export default function AccountSetupView() {
 
         {/* STEP 4: EntryPoint Deposit */}
         {currentStep === 4 && (
-          <div className="glass-card max-w-2xl mx-auto animate-fade-in">
+          <div className="glass-card setup-step-card mx-auto animate-fade-in">
              <h3 className="flex items-center gap-2 text-gradient mb-2"><Landmark size={24} /> Step 4: EntryPoint Deposit</h3>
              <p className="text-sm text-muted mb-6">
                If you don't want to use a Paymaster, you must deposit ETH into the EntryPoint for your Smart Account. 
@@ -530,10 +530,10 @@ export default function AccountSetupView() {
              </p>
 
              <div className="flex flex-col gap-6">
-               <div className="p-6 bg-white/5 rounded-xl border border-white/10 space-y-4">
+               <div className="setup-action-panel">
                   <div className="flex flex-col gap-1">
                     <label className="text-sm text-muted">Amount to Deposit (ETH)</label>
-                    <div className="flex gap-2">
+                    <div className="setup-input-row">
                       <input 
                           type="number" 
                           className="input-field flex-1" 
@@ -553,8 +553,8 @@ export default function AccountSetupView() {
                </div>
 
                {/* Utils grid */}
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-4 border border-white/5 bg-white/20 rounded-lg">
+               <div className="setup-utils-grid">
+                  <div className="setup-mini-panel">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-muted mb-3 flex items-center gap-2">
                       <Download size={14} /> Withdraw from EP
                     </h4>
@@ -567,7 +567,7 @@ export default function AccountSetupView() {
                     </div>
                   </div>
 
-                  <div className="p-4 border border-red-500/20 bg-red-500/5 rounded-lg">
+                  <div className="setup-mini-panel setup-mini-panel--danger">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-danger mb-3 flex items-center gap-2">
                       <AlertTriangle size={14} /> Ownership
                     </h4>

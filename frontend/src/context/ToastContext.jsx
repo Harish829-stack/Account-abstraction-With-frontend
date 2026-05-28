@@ -49,9 +49,9 @@ export function ToastProvider({ children }) {
               <button
                 onClick={() => { toast.action.onClick(); removeToast(toast.id); }}
                 style={{
-                  background: 'rgba(139, 92, 246, 0.2)',
-                  border: '1px solid rgba(139, 92, 246, 0.4)',
-                  color: '#a78bfa',
+                  background: 'rgba(91, 62, 232, 0.12)',
+                  border: '1px solid rgba(91, 62, 232, 0.28)',
+                  color: 'var(--primary)',
                   borderRadius: '6px',
                   padding: '3px 10px',
                   fontSize: '11px',
@@ -65,8 +65,8 @@ export function ToastProvider({ children }) {
                   marginLeft: '8px',
                   transition: 'background 0.2s',
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.4)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.2)'}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(91, 62, 232, 0.18)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(91, 62, 232, 0.12)'}
               >
                 <ExternalLink size={11} />
                 {toast.action.label}

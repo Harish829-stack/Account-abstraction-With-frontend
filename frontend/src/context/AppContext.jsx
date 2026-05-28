@@ -15,7 +15,7 @@ export const AppProvider = ({ children }) => {
   const toast = useToast();
   const [eoaAddress, setEoaAddress] = useState(null);
   const [chainId, setChainId] = useState(null);
-  const [theme, setTheme] = useState(() => localStorage.getItem('app-theme') || 'dark');
+  const [theme, setTheme] = useState('light');
 
   useEffect(() => {
     localStorage.setItem('app-theme', theme);

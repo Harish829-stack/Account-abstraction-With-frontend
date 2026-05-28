@@ -15,42 +15,50 @@ function App() {
   const isNetworkMismatch = isConnected && chainId && Number(chainId) !== Number(expectedChainId);
 
   return (
-    <div className="container min-h-screen py-6 animate-fade-in relative">
-      {isNetworkMismatch && (
-        <div className="network-alert">
-          <div className="network-alert__content">
-            <div className="network-alert__icon">
-              <AlertTriangle size={20} />
+    <>
+      <div className="ambient-background" aria-hidden="true">
+        <span className="ambient-background__bean ambient-background__bean--one" />
+        <span className="ambient-background__bean ambient-background__bean--two" />
+        <span className="ambient-background__steam ambient-background__steam--one" />
+        <span className="ambient-background__steam ambient-background__steam--two" />
+        <span className="ambient-background__glow" />
+      </div>
+      <div className="container min-h-screen py-6 animate-fade-in relative">
+        {isNetworkMismatch && (
+          <div className="network-alert">
+            <div className="network-alert__content">
+              <div className="network-alert__icon">
+                <AlertTriangle size={20} />
+              </div>
+              <div className="network-alert__text">
+                <h4>Network Mismatch</h4>
+                <p>
+                  Connected to Chain ID <b>{chainId}</b>, but this app requires Sepolia (Chain ID <b>{expectedChainId}</b>).
+                </p>
+              </div>
             </div>
-            <div className="network-alert__text">
-              <h4>Network Mismatch</h4>
-              <p>
-                Connected to Chain ID <b>{chainId}</b>, but this app requires Sepolia (Chain ID <b>{expectedChainId}</b>).
-              </p>
-            </div>
+            <button 
+              className="network-alert__action"
+              onClick={switchNetwork}
+            >
+              Switch to Sepolia
+            </button>
           </div>
-          <button 
-            className="network-alert__action"
-            onClick={switchNetwork}
-          >
-            Switch to Sepolia
-          </button>
-        </div>
-      )}
+        )}
 
-      {isConnected && <Navbar />}
-      <main className="animate-fade-in">
-        {currentView === "home" && <HomeView />}
-        {currentView === "profile" && <ProfileView />}
-        {currentView === "setup" && <AccountSetupView />}
-        {currentView === "send" && <SendOpView />}
-        {currentView === "batch-send" && <BatchSendView />}
-        {currentView === "paymaster" && <PaymasterView />}
-        {currentView === "history" && <HistoryView />}
-      </main>
-    </div>
+        {isConnected && <Navbar />}
+        <main key={currentView} className="app-view">
+          {currentView === "home" && <HomeView />}
+          {currentView === "profile" && <ProfileView />}
+          {currentView === "setup" && <AccountSetupView />}
+          {currentView === "send" && <SendOpView />}
+          {currentView === "batch-send" && <BatchSendView />}
+          {currentView === "paymaster" && <PaymasterView />}
+          {currentView === "history" && <HistoryView />}
+        </main>
+      </div>
+    </>
   );
 }
 
 export default App;
-
