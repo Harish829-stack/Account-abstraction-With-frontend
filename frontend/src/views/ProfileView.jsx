@@ -8,7 +8,7 @@ import { ERC20_ABI, SmartAccountABI, IEntryPointABI } from '../utils/abis';
 import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
 
 export default function ProfileView() {
-  const { eoaAddress, eoaETHBalance, eoaUSDCBalance, smartAccountAddress, paymasterAddress, signer, provider, env, loadEOABalances, refreshAllData, saETHBalance, saEntryPointDeposit, trackOp, setCurrentView } = useAppContext();
+  const { eoaAddress, eoaETHBalance, eoaUSDCBalance, smartAccountAddress, paymasterAddress, signer, provider, env, loadEOABalances, refreshAllData, saETHBalance, saEntryPointDeposit, trackOp, setCurrentView, setGlobalLoading, refreshTrigger } = useAppContext();
   const toast = useToast();
 
   const [copied, setCopied] = useState(false);
@@ -46,13 +46,14 @@ export default function ProfileView() {
 
   useEffect(() => {
     fetchAllowances();
-  }, [smartAccountAddress, paymasterAddress, signer]);
+  }, [smartAccountAddress, paymasterAddress, signer, refreshTrigger]);
 
 
 
   const handleApprovePM = async (amountStr) => {
     if (!signer || !usdcAddress || !smartAccountAddress || !paymasterAddress) return;
     setPendingPm(true);
+    setGlobalLoading(true, "Approving Paymaster...");
     try {
       // Robust EIP-1559 gas fee estimation for public bundlers
       let maxFeePerGas = 25000000000n; // 25 Gwei fallback
@@ -82,7 +83,7 @@ export default function ProfileView() {
       const requiredPrefundWei = totalGasLimit * maxFeePerGas;
       const requiredPrefundEth = parseFloat(ethers.formatEther(requiredPrefundWei));
 
-      const saBalanceEth = parseFloat(saETHBalance || "0");
+      const saBalanceEth = parseFloat(ethers.formatEther(saETHBalance || "0"));
       const saDepositEth = parseFloat(ethers.formatEther(saEntryPointDeposit || "0"));
       const totalAvailableEth = saBalanceEth + saDepositEth;
 
@@ -90,9 +91,10 @@ export default function ProfileView() {
 
       if (totalAvailableEth < requiredPrefundEth) {
         toast.error(
-          `Insufficient ETH for prefund! The EntryPoint requires your Smart Account to have at least ${requiredPrefundEth.toFixed(4)} ETH to cover the worst-case gas cost of this transaction (based on current network fee of ${ethers.formatUnits(maxFeePerGas, "gwei")} Gwei). You currently have ${totalAvailableEth.toFixed(4)} ETH. Please deposit more ETH into your Smart Account first.`
+          `Insufficient ETH for prefund! The EntryPoint requires your Smart Account to have at least ${requiredPrefundEth.toFixed(4)} ETH to cover the worst-case gas cost of this transaction. You currently have ${totalAvailableEth.toFixed(4)} ETH total (Balance + Deposit). Please deposit more ETH into your Smart Account first.`
         );
         setPendingPm(false);
+        setGlobalLoading(false);
         return;
       }
 
@@ -121,10 +123,15 @@ export default function ProfileView() {
         signature: "0x"
       };
 
-      const est = await estimateUserOperationGas(userOp);
-      userOp.callGasLimit = toHex(est.callGasLimit);
-      userOp.verificationGasLimit = toHex(est.verificationGasLimit);
-      userOp.preVerificationGas = toHex(BigInt(est.preVerificationGas) + 5000n);
+      // Try to estimate gas
+      try {
+        const est = await estimateUserOperationGas(userOp);
+        userOp.callGasLimit = toHex(est.callGasLimit);
+        userOp.verificationGasLimit = toHex(est.verificationGasLimit);
+        userOp.preVerificationGas = toHex(BigInt(est.preVerificationGas) + 5000n);
+      } catch (err) {
+        console.warn("Estimation failed, using defaults", err);
+      }
 
       const hash = await entryPoint.getUserOpHash(userOp);
       userOp.signature = await signer.signMessage(ethers.getBytes(hash));
@@ -147,6 +154,7 @@ export default function ProfileView() {
       else toast.error(err.reason || err.message || "Failed to approve Paymaster");
     } finally {
       setPendingPm(false);
+      setGlobalLoading(false);
     }
   };
 
@@ -256,22 +264,7 @@ export default function ProfileView() {
           </table>
         </div>
 
-        {lastOpHash && (
-          <div className="mt-4 p-4 rounded-xl border" style={{
-            background: 'rgba(139, 92, 246, 0.08)',
-            borderColor: 'rgba(139, 92, 246, 0.3)',
-          }}>
-            <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>UserOperation Submitted</span>
-            <p className="font-mono text-xs break-all text-muted mt-2 mb-3" title={lastOpHash}>{lastOpHash}</p>
-            <p className="text-xs text-muted mb-3">Your allowance update is being tracked in the background. The UI is fully unlocked.</p>
-            <button
-              onClick={() => setCurrentView('history')}
-              className="btn btn-primary py-1.5 px-4 text-xs flex items-center gap-2"
-            >
-              View TX Status in History →
-            </button>
-          </div>
-        )}
+
       </div>
 
     </div>

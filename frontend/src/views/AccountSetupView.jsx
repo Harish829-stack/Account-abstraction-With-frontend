@@ -21,7 +21,8 @@ export default function AccountSetupView() {
     saOwner,
     loadSmartAccountDetails,
     refreshAllData,
-    env
+    env,
+    setGlobalLoading
   } = useAppContext();
   const toast = useToast();
 
@@ -106,6 +107,7 @@ export default function AccountSetupView() {
   const handleDeploy = async () => {
     if (!salt || !eoaAddress || !signer) return;
     setDeploying(true);
+    setGlobalLoading(true, "Deploying Smart Account...");
     try {
       const factory = new ethers.Contract(env.FACTORY, SmartAccountFactoryABI, signer);
       const tx = await factory.createAccount(eoaAddress, salt);
@@ -118,6 +120,7 @@ export default function AccountSetupView() {
       else toast.error(err.reason || err.message || "Failed to deploy");
     } finally {
       setDeploying(false);
+      setGlobalLoading(false);
     }
   };
 
@@ -164,6 +167,7 @@ export default function AccountSetupView() {
   const handleDepositSA = async () => {
     if (!depositSAmount || !smartAccountAddress || !signer) return;
     setPendingSDeposit(true);
+    setGlobalLoading(true, "Depositing ETH to Smart Account...");
     try {
       const tx = await signer.sendTransaction({
         to: smartAccountAddress,
@@ -178,12 +182,14 @@ export default function AccountSetupView() {
       else toast.error(err.reason || err.message || "Failed to deposit");
     } finally {
       setPendingSDeposit(false);
+      setGlobalLoading(false);
     }
   };
 
   const handleDepositEP = async () => {
     if (!depositEPAmount || !smartAccountAddress || !signer) return;
     setPendingEPDeposit(true);
+    setGlobalLoading(true, "Depositing ETH to EntryPoint...");
     try {
       const saContract = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
       const tx = await saContract.addDeposit({ value: ethers.parseEther(depositEPAmount) });
@@ -196,12 +202,14 @@ export default function AccountSetupView() {
        else toast.error(err.reason || err.message || "Failed to deposit to EntryPoint");
     } finally {
       setPendingEPDeposit(false);
+      setGlobalLoading(false);
     }
   };
 
   const handleWithdrawEP = async () => {
     if (!withdrawEPAmount || !withdrawEPTo || !smartAccountAddress || !signer) return;
     setPendingEPWithdraw(true);
+    setGlobalLoading(true, "Withdrawing ETH from EntryPoint...");
     try {
       const saContract = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
       const tx = await saContract.withdrawDepositTo(withdrawEPTo, ethers.parseEther(withdrawEPAmount));
@@ -215,6 +223,7 @@ export default function AccountSetupView() {
        else toast.error(err.reason || err.message || "Failed to withdraw");
     } finally {
        setPendingEPWithdraw(false);
+       setGlobalLoading(false);
     }
   };
 
@@ -229,6 +238,7 @@ export default function AccountSetupView() {
     }
 
     setPendingOwnerXfer(true);
+    setGlobalLoading(true, "Transferring Ownership...");
     try {
       const saContract = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
       const tx = await saContract.changeOwner(newOwner);
@@ -242,12 +252,14 @@ export default function AccountSetupView() {
        else toast.error(err.reason || err.message || "Failed to transfer ownership");
     } finally {
        setPendingOwnerXfer(false);
+       setGlobalLoading(false);
     }
   };
 
   const handlePullUSDC = async () => {
     if (!smartAccountAddress || !approveAmount || !signer || !env.USDC_TOKEN) return;
     setApproving(true);
+    setGlobalLoading(true, "Pulling USDC to Smart Account...");
     try {
       const usdc = new ethers.Contract(env.USDC_TOKEN, ["function transfer(address to, uint256 amount) public returns (bool)"], signer);
       const tx = await usdc.transfer(smartAccountAddress, ethers.parseUnits(approveAmount, 6));
@@ -260,6 +272,7 @@ export default function AccountSetupView() {
       else toast.error(err.reason || err.message || "Failed to pull USDC");
     } finally {
       setApproving(false);
+      setGlobalLoading(false);
     }
   };
 
