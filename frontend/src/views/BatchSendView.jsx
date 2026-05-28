@@ -271,13 +271,14 @@ export default function BatchSendView() {
 
              <div className="flex flex-col gap-4">
                 {operations.map((op, idx) => (
-                  <div key={idx} className="p-4 bg-black/20 rounded-lg border border-white/5 relative group transition-all hover:border-white/10">
+                  <div key={idx} className="operation-card">
                      <div className="flex justify-between items-center mb-3">
-                        <span className="text-xs font-bold text-muted bg-white/5 px-2 py-1 rounded">Operation {idx + 1}</span>
+                        <span className="operation-card__label">Operation {idx + 1}</span>
                         <button 
                           onClick={() => removeOperation(idx)}
                           disabled={operations.length <= 1}
-                          className="p-1.5 rounded-md text-red-400 hover:bg-red-500/20 disabled:text-gray-600 disabled:cursor-not-allowed"
+                          className="danger-icon-button"
+                          title="Remove operation"
                         >
                           <Trash2 size={16} />
                         </button>
@@ -417,11 +418,12 @@ export default function BatchSendView() {
 
             {userOpHashResult && (
               <div className="mt-4 p-4 rounded-xl border animate-fade-in" style={{
-                background: 'rgba(139, 92, 246, 0.08)',
-                borderColor: 'rgba(139, 92, 246, 0.3)',
+                background: 'rgba(111, 53, 232, 0.08)',
+                borderColor: 'rgba(111, 53, 232, 0.24)',
               }}>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>Batch Operation Submitted</span>
+                  <span className="pending-dot" />
+                  <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--primary)' }}>Batch Operation Submitted</span>
                 </div>
                 <p className="font-mono text-xs break-all text-muted mb-3" title={userOpHashResult}>{userOpHashResult}</p>
                 <p className="text-xs text-muted mb-3">Your operation is being tracked in the background. You can continue using the app.</p>

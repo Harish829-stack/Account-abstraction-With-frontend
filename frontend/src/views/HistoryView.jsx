@@ -94,7 +94,10 @@ export default function HistoryView() {
           </div>
 
           {loadingOps && displayOps.length === 0 ? (
-            <div className="text-sm text-muted">Loading recent operations...</div>
+            <div className="flex flex-col gap-3">
+              <div className="skeleton" style={{ height: '4.5rem' }}>Loading recent operations...</div>
+              <div className="skeleton" style={{ height: '4.5rem' }}>Loading recent operations...</div>
+            </div>
           ) : displayOps.length === 0 ? (
             <div className="text-sm text-muted">No recent UserOperations found for this Smart Account.</div>
           ) : (

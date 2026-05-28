@@ -240,7 +240,7 @@ function ConnectedDashboard() {
           <p className="text-sm text-muted">Your Smart Account Dashboard — Sepolia Testnet</p>
         </div>
         <button
-          className="btn btn-secondary flex items-center gap-2"
+          className="refresh-action-button"
           onClick={handleRefresh}
           disabled={refreshing}
         >
@@ -452,7 +452,7 @@ function LandingPage() {
           style={{
             display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
             padding: '6px 16px', borderRadius: 99, marginBottom: '1.5rem',
-            background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.34)',
+            background: 'rgba(91,62,232,0.08)', border: '1px solid rgba(91,62,232,0.22)',
             fontSize: '0.8rem', color: 'var(--primary)',
           }}
         >

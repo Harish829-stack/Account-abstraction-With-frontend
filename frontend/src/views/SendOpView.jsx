@@ -323,11 +323,12 @@ export default function SendOpView() {
 
             {userOpHashResult && (
               <div className="mt-4 p-4 rounded-xl border animate-fade-in" style={{
-                background: 'rgba(139, 92, 246, 0.08)',
-                borderColor: 'rgba(139, 92, 246, 0.3)',
+                background: 'rgba(111, 53, 232, 0.08)',
+                borderColor: 'rgba(111, 53, 232, 0.24)',
               }}>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>UserOperation Submitted</span>
+                  <span className="pending-dot" />
+                  <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--primary)' }}>UserOperation Submitted</span>
                 </div>
                 <p className="font-mono text-xs break-all text-muted mb-3" title={userOpHashResult}>{userOpHashResult}</p>
                 <p className="text-xs text-muted mb-3">Your operation is being tracked in the background. You can continue using the app.</p>

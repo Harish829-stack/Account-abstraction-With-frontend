@@ -313,7 +313,7 @@ export default function PaymasterView() {
         )}
 
         {paymasterAddress && (
-          <div className="glass-card border border-primary/30 shadow-[0_0_40px_rgba(124,58,237,0.18)] relative overflow-hidden mb-2">
+          <div className="glass-card border border-primary/30 shadow-[0_0_40px_rgba(91,62,232,0.14)] relative overflow-hidden mb-2">
             <div className="absolute top-0 left-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -ml-20 -mt-20 pointer-events-none"></div>
             <div className="flex justify-between items-center bg-primary/10 p-4 rounded-xl border border-primary/20 mb-4 z-10 relative">
               <div className="flex items-center gap-3">
@@ -325,7 +325,7 @@ export default function PaymasterView() {
               </div>
               <div className="flex items-center gap-3">
                 <button 
-                  className="p-2 rounded-full bg-white/5 border border-white/10 shadow-sm hover:bg-white/10 hover:border-white/20 transition-all text-muted hover:text-white"
+                  className="refresh-icon-button"
                   onClick={refreshAllData}
                   title="Refresh Paymaster data"
                 >
@@ -357,7 +357,7 @@ export default function PaymasterView() {
               </div>
               <div className="glass-stat-card group">
                 <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">Token</span>
-                <span className="font-bold text-sm truncate uppercase tracking-widest text-[#94A3B8]">{shortenAddress(dToken)}</span>
+                <span className="font-bold text-sm truncate uppercase tracking-widest text-muted">{shortenAddress(dToken)}</span>
               </div>
             </div>
           </div>
@@ -476,10 +476,13 @@ export default function PaymasterView() {
 
             {lastOpHash && (
               <div className="mt-4 p-4 rounded-xl border" style={{
-                background: 'rgba(139, 92, 246, 0.08)',
-                borderColor: 'rgba(139, 92, 246, 0.3)',
+                background: 'rgba(111, 53, 232, 0.08)',
+                borderColor: 'rgba(111, 53, 232, 0.24)',
               }}>
-                <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>UserOperation Submitted</span>
+                <div className="flex items-center gap-2">
+                  <span className="pending-dot" />
+                  <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--primary)' }}>UserOperation Submitted</span>
+                </div>
                 <p className="font-mono text-xs break-all text-muted mt-2 mb-3" title={lastOpHash}>{lastOpHash}</p>
                 <p className="text-xs text-muted mb-3">Approval is being tracked in the background. The UI is unlocked — you can continue to Fund & Stake.</p>
                 <button
