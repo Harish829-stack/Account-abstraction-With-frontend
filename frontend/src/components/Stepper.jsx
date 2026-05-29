@@ -16,16 +16,20 @@ export default function Stepper({ steps, currentStep, setStep, completedSteps = 
         const isCompleted = completedSteps.includes(stepNumber);
         
         return (
-          <div 
-            key={index} 
-            className={`step-item ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}`}
-            onClick={() => setStep(stepNumber)}
-          >
-            <div className="step-indicator">
-              {isCompleted && <Check size={14} className="mr-1 inline" />}
-              <span>{label}</span>
+          <React.Fragment key={index}>
+            <div 
+              className={`step-item ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}`}
+              onClick={() => setStep(stepNumber)}
+            >
+              <div className="step-indicator">
+                {isCompleted && <Check size={14} className="mr-1 inline" />}
+                <span>{label}</span>
+              </div>
             </div>
-          </div>
+            {index < steps.length - 1 && (
+              <div className="step-connector" />
+            )}
+          </React.Fragment>
         );
 
       })}
