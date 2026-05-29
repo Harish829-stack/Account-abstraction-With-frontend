@@ -41,7 +41,7 @@ function DonutChart({ eoaUSDC, saUSDC }) {
       <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap: 8 }}>
         <div style={{ position: 'relative', width: size, height: size }}>
           <svg width={size} height={size}>
-            <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(111,53,232,0.08)" strokeWidth={strokeWidth} />
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(22, 163, 74,0.08)" strokeWidth={strokeWidth} />
           </svg>
           <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ fontSize:'1.4rem', fontWeight:800, color:'#141827' }}>0.00</span>
@@ -59,12 +59,18 @@ function DonutChart({ eoaUSDC, saUSDC }) {
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap: 10 }}>
       <div className="donut-wrapper" style={{ width: size, height: size, position: 'relative' }}>
         <svg width={size} height={size} style={{ transform:'rotate(-90deg)' }}>
-          {/* Base purple track (represents total balance) */}
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke="#7C3AED" strokeWidth={strokeWidth} />
-          {/* SA segment – blue dot on top */}
+          <defs>
+            <linearGradient id="donutGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#111110" />
+              <stop offset="100%" stopColor="#16a34a" />
+            </linearGradient>
+          </defs>
+          {/* Base track (represents total balance) */}
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="url(#donutGradient)" strokeWidth={strokeWidth} />
+          {/* SA segment */}
           {saPct > 0 && (
             <circle cx={cx} cy={cy} r={r} fill="none"
-              stroke="#3B82F6" strokeWidth={strokeWidth}
+              stroke="#111110" strokeWidth={strokeWidth}
               strokeDasharray={`${saDash} ${circ - saDash}`}
               strokeDashoffset={0}
               strokeLinecap="round" />
@@ -394,8 +400,8 @@ function ConnectedDashboard() {
             </div>
             <span style={{
               padding:'3px 10px', borderRadius:99, fontSize:'0.65rem', fontWeight:700,
-              background:'rgba(34,197,94,0.1)', color:'#22C55E',
-              border:'1px solid rgba(34,197,94,0.22)'
+              background:'rgba(22, 163, 74,0.1)', color:'#16a34a',
+              border:'1px solid rgba(22, 163, 74,0.22)'
             }}>Active</span>
           </div>
 
@@ -453,7 +459,7 @@ function ConnectedDashboard() {
         {/* ─ USDC Portfolio Card ─ */}
         <div className="glass-card flex flex-col gap-4" style={{ paddingBottom:'1.25rem' }}>
           <div className="flex items-center gap-2">
-            <div style={{ width:32, height:32, borderRadius:9, background:'rgba(111,53,232,0.1)', display:'grid', placeItems:'center', color:'var(--primary)', flexShrink:0 }}>
+            <div style={{ width:32, height:32, borderRadius:9, background:'rgba(22, 163, 74,0.1)', display:'grid', placeItems:'center', color:'var(--primary)', flexShrink:0 }}>
               <BarChart3 size={16} />
             </div>
             <h3 style={{ fontSize:'1rem', margin:0, fontWeight:700 }}>USDC Portfolio</h3>
@@ -481,7 +487,7 @@ function ConnectedDashboard() {
               <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:'0.78rem' }}>
                   <div style={{ display:'flex', alignItems:'center', gap:7 }}>
-                    <span style={{ width:10, height:10, borderRadius:3, background:'#7C3AED', display:'inline-block', flexShrink:0 }} />
+                    <span style={{ width:10, height:10, borderRadius:3, background:'#16a34a', display:'inline-block', flexShrink:0 }} />
                     <span style={{ color:'var(--text-muted)' }}>EOA Wallet</span>
                     <span style={{ fontWeight:700, color:'#141827' }}>{eoaPct}%</span>
                   </div>
@@ -489,7 +495,7 @@ function ConnectedDashboard() {
                 </div>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:'0.78rem' }}>
                   <div style={{ display:'flex', alignItems:'center', gap:7 }}>
-                    <span style={{ width:10, height:10, borderRadius:3, background:'#3B82F6', display:'inline-block', flexShrink:0 }} />
+                    <span style={{ width:10, height:10, borderRadius:3, background:'#111110', display:'inline-block', flexShrink:0 }} />
                     <span style={{ color:'var(--text-muted)' }}>Smart Account</span>
                     <span style={{ fontWeight:700, color:'#141827' }}>{saPct}%</span>
                   </div>
@@ -508,17 +514,17 @@ function ConnectedDashboard() {
               <div style={{ display:'flex', gap:8 }}>
                 <div className="portfolio-alloc-card">
                   <div style={{ fontSize:'0.7rem', fontWeight:600, color:'var(--text-muted)' }}>EOA Wallet</div>
-                  <div style={{ fontSize:'1rem', fontWeight:800, color:'#7C3AED' }}>{eoaPct}%</div>
+                  <div style={{ fontSize:'1rem', fontWeight:800, color:'#16a34a' }}>{eoaPct}%</div>
                   <div className="alloc-progress">
-                    <div style={{ width:`${eoaPct}%`, height:'100%', background:'#7C3AED', borderRadius:99 }} />
+                    <div style={{ width:`${eoaPct}%`, height:'100%', background:'#16a34a', borderRadius:99 }} />
                   </div>
                   <div style={{ fontSize:'0.68rem', color:'var(--text-muted)', marginTop:4 }}>${eoaUSDC.toFixed(2)} USDC</div>
                 </div>
                 <div className="portfolio-alloc-card">
                   <div style={{ fontSize:'0.7rem', fontWeight:600, color:'var(--text-muted)' }}>Smart Account</div>
-                  <div style={{ fontSize:'1rem', fontWeight:800, color:'#3B82F6' }}>{saPct}%</div>
+                  <div style={{ fontSize:'1rem', fontWeight:800, color:'#111110' }}>{saPct}%</div>
                   <div className="alloc-progress">
-                    <div style={{ width:`${saPct}%`, height:'100%', background:'#3B82F6', borderRadius:99 }} />
+                    <div style={{ width:`${saPct}%`, height:'100%', background:'#111110', borderRadius:99 }} />
                   </div>
                   <div style={{ fontSize:'0.68rem', color:'var(--text-muted)', marginTop:4 }}>${saUSDC.toFixed(2)} USDC</div>
                 </div>
@@ -530,7 +536,7 @@ function ConnectedDashboard() {
         {/* ─ Quick Actions + Swap Card ─ */}
         <div className="glass-card flex flex-col gap-2" style={{ height:'100%', boxSizing:'border-box', paddingBottom: '1rem' }}>
           <div className="flex items-center gap-2 mb-1">
-            <div style={{ width:32, height:32, borderRadius:9, background:'rgba(111,53,232,0.1)', display:'grid', placeItems:'center', color:'var(--primary)', flexShrink:0 }}>
+            <div style={{ width:32, height:32, borderRadius:9, background:'rgba(22, 163, 74,0.1)', display:'grid', placeItems:'center', color:'var(--primary)', flexShrink:0 }}>
               <Zap size={16} />
             </div>
             <h3 style={{ fontSize:'1rem', margin:0, fontWeight:700 }}>Quick Actions</h3>
@@ -626,7 +632,7 @@ function ConnectedDashboard() {
               padding:'1rem',
               width:'100%',
               maxWidth:440,
-              boxShadow:'0 32px 80px rgba(58,45,120,0.18)',
+              boxShadow:'0 32px 80px rgba(0, 0, 0,0.18)',
               position:'relative'
             }}
           >
@@ -689,7 +695,7 @@ function ConnectedDashboard() {
                     }}>
                       <div style={{
                         display:'flex', alignItems:'center', gap:8, padding:'0.5rem',
-                        borderRadius:8, background:'rgba(124,58,237,0.06)', cursor:'pointer'
+                        borderRadius:8, background:'rgba(22, 163, 74,0.06)', cursor:'pointer'
                       }}>
                         <span style={{ width:24, height:24, borderRadius:'50%', background:'#627EEA', display:'grid', placeItems:'center' }}>
                           <svg viewBox="0 0 32 32" width="14" height="14">
@@ -778,7 +784,7 @@ function ConnectedDashboard() {
                     }}>
                       <div style={{
                         display:'flex', alignItems:'center', gap:8, padding:'0.5rem',
-                        borderRadius:8, background:'rgba(124,58,237,0.06)', cursor:'pointer'
+                        borderRadius:8, background:'rgba(22, 163, 74,0.06)', cursor:'pointer'
                       }}>
                         <span style={{ width:24, height:24, borderRadius:'50%', background:'#2775CA', display:'grid', placeItems:'center' }}>
                           <svg viewBox="0 0 32 32" width="16" height="16">
@@ -802,7 +808,7 @@ function ConnectedDashboard() {
             {/* Paymaster Toggle */}
             <div style={{
               display:'flex', alignItems:'center', gap:10, margin:'1rem 0',
-              padding:'0.85rem 1rem', background:'rgba(111,53,232,0.05)', borderRadius:16, border:'1px solid rgba(111,53,232,0.1)'
+              padding:'0.85rem 1rem', background:'rgba(22, 163, 74,0.05)', borderRadius:16, border:'1px solid rgba(22, 163, 74,0.1)'
             }}>
               <input type="checkbox" id="pmSwapModalToggle" checked={usePmForSwap} onChange={e => setUsePmForSwap(e.target.checked)} style={{ accentColor:'var(--primary)', width:16, height:16 }} />
               <label htmlFor="pmSwapModalToggle" style={{ fontSize:'0.85rem', color:'#141827', cursor:'pointer', flex:1, fontWeight:600 }}>
@@ -813,23 +819,11 @@ function ConnectedDashboard() {
 
             {/* Swap CTA */}
             <button
+              className="btn btn-primary"
               style={{
-                width:'100%', background:'linear-gradient(135deg, rgba(124,58,237,0.1), rgba(124,58,237,0.15))',
-                color:'var(--primary)', fontWeight:700, fontSize:'1.1rem', padding:'1rem', borderRadius:16,
-                border:'none', cursor:swapping ? 'not-allowed' : 'pointer', transition:'all 0.2s',
+                width:'100%', fontWeight:700, fontSize:'1.1rem', padding:'1rem', borderRadius:16,
+                cursor:swapping ? 'not-allowed' : 'pointer', transition:'all 0.2s',
                 opacity: swapping ? 0.7 : 1
-              }}
-              onMouseEnter={e => { 
-                if (!swapping) {
-                  e.currentTarget.style.background = 'var(--primary)'; 
-                  e.currentTarget.style.color = 'white'; 
-                }
-              }}
-              onMouseLeave={e => { 
-                if (!swapping) {
-                  e.currentTarget.style.background = 'linear-gradient(135deg, rgba(124,58,237,0.1), rgba(124,58,237,0.15))'; 
-                  e.currentTarget.style.color = 'var(--primary)'; 
-                }
               }}
               onClick={async () => {
                 await handleQuickSwap();
@@ -867,7 +861,7 @@ function LandingPage() {
           style={{
             display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
             padding: '6px 16px', borderRadius: 99, marginBottom: '1.5rem',
-            background: 'rgba(124,58,237,0.14)', border: '1px solid rgba(124,58,237,0.34)',
+            background: 'rgba(22, 163, 74,0.14)', border: '1px solid rgba(22, 163, 74,0.34)',
             fontSize: '0.8rem', color: 'var(--primary)',
           }}
         >

@@ -22,7 +22,7 @@ function App() {
         background: 'rgba(244, 241, 255, 0.85)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
       }}>
-        <div className="glass-card flex flex-col items-center justify-center text-center max-w-sm w-full py-8 px-6 shadow-2xl animate-fade-in" style={{ border: '1px solid rgba(111, 53, 232, 0.12)' }}>
+        <div className="glass-card flex flex-col items-center justify-center text-center max-w-sm w-full py-8 px-6 shadow-2xl animate-fade-in" style={{ border: '1px solid rgba(22, 163, 74, 0.12)' }}>
           <div className="global-loader-spinner"></div>
           <h3 style={{ marginTop: '1.5rem', color: '#141827', fontWeight: 800, fontSize: '1.25rem' }}>
             {txLoadingMessage || 'Processing Transaction...'}
