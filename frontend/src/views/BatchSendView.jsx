@@ -402,9 +402,9 @@ export default function BatchSendView() {
                className="flex justify-center items-center gap-2 w-full py-2 mt-1 text-sm font-semibold text-slate-700 hover:bg-white transition-all"
                style={{
                  background: 'rgba(255, 255, 255, 0.72)',
-                 border: '1px solid rgba(111, 53, 232, 0.12)',
+                 border: '1px solid rgba(22, 163, 74, 0.12)',
                  borderRadius: '12px',
-                 boxShadow: '0 4px 12px rgba(111, 53, 232, 0.03)'
+                 boxShadow: '0 4px 12px rgba(22, 163, 74, 0.03)'
                }}
                onClick={addOperation}
              >

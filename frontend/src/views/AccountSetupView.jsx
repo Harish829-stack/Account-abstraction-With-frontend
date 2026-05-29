@@ -293,7 +293,7 @@ export default function AccountSetupView() {
       
       {/* Details Section (Shown under navbar if connected) */}
       {smartAccountAddress && (
-        <div className="glass-card border border-primary/30 flex flex-col gap-4 mb-2 shadow-[0_0_40px_rgba(124,58,237,0.18)] relative overflow-hidden">
+        <div className="glass-card border border-primary/30 flex flex-col gap-4 mb-2 shadow-[0_0_40px_rgba(22, 163, 74,0.18)] relative overflow-hidden">
            <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
            {/* Header */}
            <div className="flex justify-between items-center bg-primary/10 p-4 rounded-xl border border-primary/20 z-10">
