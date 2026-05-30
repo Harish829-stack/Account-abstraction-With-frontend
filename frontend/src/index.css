@@ -1,46 +1,59 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+/* Fonts — Figma Smart Wallet: Inter (body/heading) + DM Mono (code) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap');
 
 :root {
-  /* Core Colors */
+  /* ── Backgrounds — Figma: #f5f3ee base, #ffffff surface, #f0fdf4 info, #dcfce7 container ── */
   --bg-base: #F5F3EE;
   --bg-surface: #FFFFFF;
-  --bg-surface-elevated: #D1D5DB;
+  --bg-surface-elevated: #F0FDF4;
+  --bg-surface-green: #DCFCE7;
+  --bg-dark: #0A0A0A;
+  --bg-dark-elevated: #1A1A1A;
 
-  /* Brand Colors */
-  --primary: #16a34a;
-  --primary-hover: #15803D;
-  --primary-glow: rgba(22, 163, 74, 0.2);
+  /* ── Primary — Figma button: #22c55e, label: #15803d ── */
+  --primary: #22c55e;
+  --primary-hover: #16a34a;
+  --primary-glow: rgba(34, 197, 94, 0.22);
 
+  /* ── Secondary — Figma dark text: #111110 ── */
   --secondary: #111110;
   --secondary-glow: rgba(17, 17, 16, 0.14);
-  --accent-blue: #16a34a; /* Accent Green */
-  --accent-blue-glow: rgba(22, 163, 74, 0.14);
 
-  --danger: #dc3f4a;
-  --danger-hover: #c92f3c;
+  /* ── Accent — Figma smart-account label: #15803d ── */
+  --accent-blue: #15803d;
+  --accent-blue-glow: rgba(21, 128, 61, 0.16);
 
-  /* Text Colors */
+  /* ── Danger — Figma: #ef4444 ── */
+  --danger: #ef4444;
+  --danger-hover: #dc2626;
+
+  /* ── Text — Figma: #111110 main, #9ca3af muted ── */
   --text-main: #111110;
-  --text-muted: #6B7280;
+  --text-muted: #9CA3AF;
 
-  /* Borders */
+  /* ── Borders ── */
   --border-light: #E4E0D8;
-  --border-focus: #16a34a;
+  --border-focus: #22c55e;
 
+  /* ── Glass / card surfaces ── */
   --glass-bg: #FFFFFF;
   --glass-border: #E4E0D8;
 
+  /* ── Theme invert helpers ── */
   --theme-invert-10: rgba(0, 0, 0, 0.08);
   --theme-invert-20: rgba(0, 0, 0, 0.15);
   --theme-invert-02: rgba(0, 0, 0, 0.03);
 
+  /* ── Typography — Figma: Inter all weights, DM Mono for code ── */
   --font-body: 'Inter', system-ui, sans-serif;
   --font-heading: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  --font-mono: 'DM Mono', 'SFMono-Regular', Consolas, monospace;
 
+  /* ── Border radii — Figma nodes: 8, 10, 12, 14, 16, 20 ── */
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
+  --radius-xl: 20px;
   --radius-pill: 9999px;
 
   --transition-fast: 0.15s ease-out;
@@ -48,7 +61,7 @@
   --transition-bounce: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 
   --color-bg: #FFFFFF;
-  --color-muted: #6B7280;
+  --color-muted: #9CA3AF;
 }
 
 * {
@@ -148,10 +161,10 @@ a:hover {
   border-color: var(--primary);
 }
 
-/* Glass Stat Card */
+/* Glass Stat Card — Figma: #f0fdf4 tint surface */
 .glass-stat-card {
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(22, 163, 74, 0.12);
+  background: #F0FDF4;
+  border: 1px solid rgba(34, 197, 94, 0.14);
   border-radius: var(--radius-md);
   padding: 1rem;
   display: flex;
@@ -159,14 +172,14 @@ a:hover {
   transition: all var(--transition-bounce);
   position: relative;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.03);
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.06);
 }
 
 .glass-stat-card::before {
   content: "";
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 100%);
+  background: linear-gradient(180deg, rgba(255,255,255,0.5) 0%, transparent 100%);
   opacity: 0;
   transition: opacity var(--transition-fast);
 }
@@ -174,45 +187,45 @@ a:hover {
 .glass-stat-card:hover {
   transform: translateY(-4px) scale(1.02);
   border-color: var(--border-focus);
-  box-shadow: 0 12px 28px rgba(22, 163, 74, 0.14), inset 0 1px 0 rgba(255,255,255,0.9);
-  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(34, 197, 94, 0.14), inset 0 1px 0 rgba(255,255,255,0.9);
+  background: #DCFCE7;
 }
 
 .glass-stat-card:hover::before {
   opacity: 1;
 }
 
-/* Glass History Card */
+/* Glass History Card — Figma: white surface, green border on hover */
 .glass-history-card {
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(22, 163, 74, 0.12);
+  background: #FFFFFF;
+  border: 1px solid rgba(34, 197, 94, 0.12);
   border-radius: var(--radius-lg);
   padding: 1.25rem;
   display: flex;
   transition: all var(--transition-bounce);
   position: relative;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.03);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .glass-history-card:hover {
   transform: translateY(-3px) scale(1.005);
   border-color: var(--border-focus);
-  box-shadow: 0 12px 28px rgba(22, 163, 74, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(34, 197, 94, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  background: #F0FDF4;
 }
 
-/* Advanced Gas Settings Panel */
+/* Advanced Gas Settings Panel — Figma: #f0fdf4 tint */
 .advanced-gas-panel {
   display: grid;
   grid-template-columns: 1fr;
   gap: 1rem;
   margin-top: 0.75rem;
-  background: rgba(22, 163, 74, 0.04);
+  background: #F0FDF4;
   padding: 1.25rem;
   border-radius: var(--radius-md);
-  border: 1px solid rgba(22, 163, 74, 0.08);
-  box-shadow: inset 0 2px 4px rgba(22, 163, 74, 0.015);
+  border: 1px solid rgba(34, 197, 94, 0.12);
+  box-shadow: inset 0 2px 4px rgba(34, 197, 94, 0.02);
 }
 
 @media (min-width: 640px) {
@@ -222,21 +235,21 @@ a:hover {
 }
 
 .advanced-gas-panel label {
-  color: #141827 !important; /* Rich black label text */
+  color: #111110 !important;
   font-weight: 600;
   font-size: 0.75rem;
   margin-bottom: 0.25rem;
 }
 
 .advanced-gas-panel .input-field {
-  color: #141827 !important; /* Solid black input text */
+  color: #111110 !important;
   background: #ffffff;
-  border: 1px solid rgba(22, 163, 74, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.18);
 }
 
 .advanced-gas-panel .input-field:focus {
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.15);
 }
 
 .btn-advanced-toggle {
@@ -256,7 +269,7 @@ a:hover {
 
 .btn-advanced-toggle:hover {
   color: var(--primary-hover);
-  background: rgba(22, 163, 74, 0.05);
+  background: rgba(34, 197, 94, 0.06);
 }
 
 /* Inputs */
@@ -377,7 +390,11 @@ a:hover {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
-.badge-success { background: rgba(57, 255, 20, 0.1); color: var(--secondary); }
+.badge-success {
+  background: rgba(34, 197, 94, 0.12);
+  color: #15803d;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
 
 /* App chrome */
 .network-alert {
@@ -388,7 +405,7 @@ a:hover {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  border: 1px solid rgba(220, 63, 74, 0.24);
+  border: 1px solid rgba(239, 68, 68, 0.24);
   border-radius: var(--radius-lg);
   background: #FFFFFF;
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.12);
@@ -409,8 +426,8 @@ a:hover {
   place-items: center;
   flex: 0 0 auto;
   color: var(--danger);
-  background: rgba(255, 90, 102, 0.14);
-  border: 1px solid rgba(255, 90, 102, 0.26);
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.26);
 }
 
 .network-alert__text {
@@ -434,7 +451,7 @@ a:hover {
   flex: 0 0 auto;
   min-height: 2.75rem;
   padding: 0 1.25rem;
-  border: 1px solid rgba(255, 90, 102, 0.36);
+  border: 1px solid rgba(239, 68, 68, 0.36);
   border-radius: var(--radius-pill);
   background: var(--danger);
   color: white;
@@ -442,7 +459,7 @@ a:hover {
   font-size: 0.92rem;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 12px 30px rgba(255, 90, 102, 0.22);
+  box-shadow: 0 12px 30px rgba(239, 68, 68, 0.22);
   transition: transform var(--transition-fast), box-shadow var(--transition-fast), filter var(--transition-fast);
   white-space: nowrap;
 }
@@ -450,7 +467,7 @@ a:hover {
 .network-alert__action:hover {
   filter: brightness(1.06);
   transform: translateY(-1px);
-  box-shadow: 0 16px 38px rgba(255, 90, 102, 0.3);
+  box-shadow: 0 16px 38px rgba(239, 68, 68, 0.3);
 }
 
 .wallet-topbar {
@@ -458,9 +475,12 @@ a:hover {
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  padding: 0.75rem 0;
+  padding: 0.85rem 1.25rem;
   margin-bottom: 1.6rem;
-  border-bottom: 1px solid var(--border-light);
+  background: #ffffff;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
 }
 
 .wallet-topbar__brand,
@@ -511,34 +531,44 @@ a:hover {
   min-height: 2.45rem;
   padding: 0 1rem;
   border-radius: var(--radius-pill);
-  background: #ffffff;
+  background: rgba(239, 68, 68, 0.06);
   color: var(--danger);
-  border: 1px solid rgba(220, 63, 74, 0.28);
+  border: 1px solid rgba(239, 68, 68, 0.28);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
   font-family: var(--font-heading);
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 0.875rem;
   cursor: pointer;
   white-space: nowrap;
-  box-shadow: 0 8px 24px rgba(220, 63, 74, 0.1);
+  transition: all var(--transition-fast);
+  box-shadow: none;
+}
+
+.wallet-disconnect:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.5);
 }
 
 .wallet-nav-shell {
   position: relative;
   margin-bottom: 2rem;
-  border-bottom: 1px solid var(--border-light);
 }
 
 .wallet-nav-scroll {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  overflow-x: hidden;
+  gap: 0.25rem;
+  overflow-x: auto;
   overscroll-behavior-x: contain;
-  padding: 0 0 0.9rem;
   scrollbar-width: none;
+  background: #ffffff;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
 }
 
 .wallet-nav-scroll::-webkit-scrollbar {
@@ -547,37 +577,38 @@ a:hover {
 
 .wallet-nav-item {
   flex: 0 0 auto;
-  min-width: 10.5rem;
-  min-height: 3.25rem;
-  padding: 0 1.35rem;
+  height: 2.5rem;
+  padding: 10px 1rem;
   border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.62);
-  color: #59657a;
-  border: 1px solid rgba(28, 32, 52, 0.12);
+  background: transparent;
+  color: #6b7280;
+  border: none;
   cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72), 0 10px 26px rgba(0, 0, 0, 0.08);
-  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.wallet-nav-item:hover:not(:disabled):not(.is-active) {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-main);
 }
 
 .wallet-nav-item.is-active {
   color: #ffffff;
-  border-color: rgba(22, 163, 74, 0.72);
   background: var(--primary);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.35);
 }
 
 .wallet-nav-item:disabled {
-  opacity: 0.58;
-  color: #7b8498;
+  opacity: 0.4;
+  color: #9ca3af;
   cursor: not-allowed;
-  filter: grayscale(100%);
 }
 
 .wallet-nav-item__inner {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem;
+  gap: 0.45rem;
   width: 100%;
   white-space: nowrap;
 }
@@ -585,10 +616,16 @@ a:hover {
 .wallet-nav-item__label {
   display: inline-block;
   font-family: var(--font-heading);
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: 0.875rem;
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+/* Active tab icon inherits white */
+.wallet-nav-item.is-active .wallet-nav-item__inner svg {
+  color: #ffffff;
 }
 
 /* Layout Utilities */
@@ -654,7 +691,7 @@ a:hover {
   width: 3rem;
   height: 3rem;
   border-radius: var(--radius-md);
-  background: rgba(22, 163, 74, 0.16);
+  background: rgba(34, 197, 94, 0.16);
   color: var(--primary);
   display: grid;
   place-items: center;
@@ -674,7 +711,7 @@ a:hover {
 
 .wallet-summary-card--signer {
   background: var(--glass-bg);
-  border: 1px solid rgba(22, 163, 74,0.24);
+  border: 1px solid rgba(34, 197, 94,0.24);
 }
 
 .wallet-summary-card--smart {
@@ -691,7 +728,7 @@ a:hover {
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 50%;
-  background: rgba(22, 163, 74,0.12);
+  background: rgba(34, 197, 94,0.12);
   color: var(--primary);
   display: grid;
   place-items: center;
@@ -713,8 +750,8 @@ a:hover {
   border-radius: var(--radius-pill);
   font-size: 0.7rem;
   color: var(--primary);
-  background: rgba(22, 163, 74,0.08);
-  border: 1px solid rgba(22, 163, 74,0.24);
+  background: rgba(34, 197, 94,0.08);
+  border: 1px solid rgba(34, 197, 94,0.24);
 }
 
 .wallet-summary-card__pill--success {
@@ -732,7 +769,7 @@ a:hover {
 .progress-track {
   height: 8px;
   border-radius: var(--radius-pill);
-  background: rgba(22, 163, 74,0.08);
+  background: rgba(34, 197, 94,0.08);
   overflow: hidden;
   position: relative;
 }
@@ -767,7 +804,7 @@ a:hover {
   top: 32px;
   bottom: 0;
   width: 1px;
-  background: rgba(22, 163, 74,0.15);
+  background: rgba(34, 197, 94,0.15);
 }
 
 .setup-timeline-icon {
@@ -781,9 +818,9 @@ a:hover {
 }
 
 .setup-timeline-icon--done {
-  background: rgba(22, 163, 74,0.12);
-  border: 1.5px solid rgba(22, 163, 74,0.3);
-  color: #16a34a;
+  background: rgba(34, 197, 94,0.12);
+  border: 1.5px solid rgba(34, 197, 94,0.3);
+  color: var(--primary);
 }
 
 .setup-timeline-icon--pending {
@@ -797,9 +834,9 @@ a:hover {
   border-radius: 99px;
   font-size: 0.65rem;
   font-weight: 600;
-  background: rgba(22, 163, 74,0.1);
-  color: #16a34a;
-  border: 1px solid rgba(22, 163, 74,0.24);
+  background: rgba(34, 197, 94,0.1);
+  color: var(--primary);
+  border: 1px solid rgba(34, 197, 94,0.24);
   white-space: nowrap;
 }
 
@@ -816,8 +853,8 @@ a:hover {
 
 /* ── Setup CTA Banner ─────────────────────────────────── */
 .setup-cta-banner {
-  background: linear-gradient(135deg, rgba(22, 163, 74,0.07) 0%, rgba(17, 17, 16,0.05) 100%);
-  border: 1px solid rgba(22, 163, 74,0.12);
+  background: linear-gradient(135deg, rgba(34, 197, 94,0.07) 0%, rgba(17, 17, 16,0.05) 100%);
+  border: 1px solid rgba(34, 197, 94,0.12);
   border-radius: 14px;
   padding: 1rem;
   display: flex;
@@ -836,7 +873,7 @@ a:hover {
   place-items: center;
   color: white;
   flex-shrink: 0;
-  box-shadow: 0 4px 14px rgba(22, 163, 74,0.28);
+  box-shadow: 0 4px 14px rgba(34, 197, 94,0.28);
 }
 
 /* ── Portfolio Donut (upgraded) ───────────────────────── */
@@ -857,7 +894,7 @@ a:hover {
 
 .portfolio-alloc-card {
   background: rgba(255,255,255,0.7);
-  border: 1px solid rgba(22, 163, 74,0.1);
+  border: 1px solid rgba(34, 197, 94,0.1);
   border-radius: 12px;
   padding: 0.75rem;
   flex: 1;
@@ -867,7 +904,7 @@ a:hover {
 .alloc-progress {
   height: 4px;
   border-radius: 99px;
-  background: rgba(22, 163, 74,0.1);
+  background: rgba(34, 197, 94,0.1);
   overflow: hidden;
   margin-top: 4px;
 }
@@ -889,12 +926,12 @@ a:hover {
 .quick-action-btn--primary {
   background: var(--primary);
   color: white;
-  box-shadow: 0 6px 20px rgba(22, 163, 74,0.28);
+  box-shadow: 0 6px 20px rgba(34, 197, 94,0.28);
 }
 
 .quick-action-btn--primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 28px rgba(22, 163, 74,0.36);
+  box-shadow: 0 10px 28px rgba(34, 197, 94,0.36);
 }
 
 .quick-action-btn--secondary {
@@ -905,9 +942,9 @@ a:hover {
 
 .quick-action-btn--secondary:hover {
   background: #ffffff;
-  border-color: rgba(22, 163, 74,0.22);
+  border-color: rgba(34, 197, 94,0.22);
   transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(22, 163, 74,0.1);
+  box-shadow: 0 4px 16px rgba(34, 197, 94,0.1);
 }
 
 .quick-action-icon {
@@ -925,14 +962,14 @@ a:hover {
 }
 
 .quick-action-icon--secondary {
-  background: rgba(22, 163, 74,0.09);
+  background: rgba(34, 197, 94,0.09);
   color: var(--primary);
 }
 
 /* ── Quick Swap Panel (premium) ───────────────────────── */
 .quick-swap-panel {
   background: var(--glass-bg);
-  border: 1px solid rgba(22, 163, 74,0.1);
+  border: 1px solid rgba(34, 197, 94,0.1);
   border-radius: 18px;
   padding: 1.25rem;
   margin-top: 0.5rem;
@@ -943,7 +980,7 @@ a:hover {
   align-items: center;
   gap: 0.75rem;
   background: rgba(255,255,255,0.85);
-  border: 1px solid rgba(22, 163, 74,0.1);
+  border: 1px solid rgba(34, 197, 94,0.1);
   border-radius: 12px;
   padding: 0.65rem 0.85rem;
 }
@@ -954,8 +991,8 @@ a:hover {
   gap: 0.4rem;
   padding: 4px 10px;
   border-radius: 99px;
-  background: rgba(22, 163, 74,0.07);
-  border: 1px solid rgba(22, 163, 74,0.14);
+  background: rgba(34, 197, 94,0.07);
+  border: 1px solid rgba(34, 197, 94,0.14);
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-main);
@@ -971,15 +1008,15 @@ a:hover {
   display: grid;
   place-items: center;
   cursor: default;
-  box-shadow: 0 3px 10px rgba(22, 163, 74,0.3);
+  box-shadow: 0 3px 10px rgba(34, 197, 94,0.3);
   flex-shrink: 0;
   align-self: center;
   margin: 0 0.25rem;
 }
 
 .swap-output-box {
-  background: rgba(22, 163, 74,0.04);
-  border: 1px solid rgba(22, 163, 74,0.1);
+  background: rgba(34, 197, 94,0.04);
+  border: 1px solid rgba(34, 197, 94,0.1);
   border-radius: 12px;
   padding: 0.65rem 0.85rem;
 }
@@ -988,7 +1025,7 @@ a:hover {
 .global-loader-spinner {
   width: 60px;
   height: 60px;
-  border: 4px solid rgba(22, 163, 74,0.15);
+  border: 4px solid rgba(34, 197, 94,0.15);
   border-left-color: var(--primary);
   border-radius: 50%;
   animation: spin 1s cubic-bezier(0.5, 0.1, 0.4, 0.9) infinite;
@@ -1002,9 +1039,9 @@ a:hover {
   border-radius: 99px;
   font-size: 0.62rem;
   font-weight: 700;
-  background: rgba(22, 163, 74,0.1);
-  color: #16a34a;
-  border: 1px solid rgba(22, 163, 74,0.22);
+  background: rgba(34, 197, 94,0.1);
+  color: var(--primary);
+  border: 1px solid rgba(34, 197, 94,0.22);
   letter-spacing: 0.04em;
 }
 
@@ -1145,8 +1182,8 @@ a:hover {
   min-height: 2.5rem;
   padding: 0 1rem;
   border-radius: 9999px;
-  background: rgba(22, 163, 74, 0.08);
-  border: 1px solid rgba(22, 163, 74, 0.4);
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1154,7 +1191,7 @@ a:hover {
   font-size: 0.8rem;
   color: var(--primary);
   transition: all var(--transition-bounce);
-  box-shadow: 0 0 10px rgba(22, 163, 74, 0.1);
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.1);
   white-space: nowrap;
 }
 
@@ -1163,9 +1200,9 @@ a:hover {
 }
 
 @keyframes pulse-glow {
-  0% { box-shadow: 0 0 15px rgba(22, 163, 74, 0.36); }
-  50% { box-shadow: 0 0 30px rgba(22, 163, 74, 0.68), 0 0 10px rgba(47, 107, 255, 0.38) inset; }
-  100% { box-shadow: 0 0 15px rgba(22, 163, 74, 0.36); }
+  0% { box-shadow: 0 0 15px rgba(34, 197, 94, 0.36); }
+  50% { box-shadow: 0 0 30px rgba(34, 197, 94, 0.68), 0 0 10px rgba(47, 107, 255, 0.38) inset; }
+  100% { box-shadow: 0 0 15px rgba(34, 197, 94, 0.36); }
 }
 
 .step-item.completed .step-indicator {
@@ -1175,8 +1212,8 @@ a:hover {
 
 .step-item:hover .step-indicator {
   transform: translateY(-2px);
-  background: rgba(22, 163, 74, 0.12);
-  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.15);
+  background: rgba(34, 197, 94, 0.12);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);
 }
 
 .step-item.active:hover .step-indicator {
@@ -1196,7 +1233,7 @@ a:hover {
   content: "";
   width: 100%;
   height: 2px;
-  background: rgba(22, 163, 74, 0.2);
+  background: rgba(34, 197, 94, 0.2);
   display: block;
 }
 
@@ -1208,8 +1245,8 @@ a:hover {
   transform: translateY(-50%) rotate(45deg);
   width: 6px;
   height: 6px;
-  border-top: 2px solid rgba(22, 163, 74, 0.4);
-  border-right: 2px solid rgba(22, 163, 74, 0.4);
+  border-top: 2px solid rgba(34, 197, 94, 0.4);
+  border-right: 2px solid rgba(34, 197, 94, 0.4);
 }
 
 .step-content-area {
@@ -1325,6 +1362,7 @@ a:hover {
   .wallet-topbar {
     gap: 0.75rem;
     margin-bottom: 1.25rem;
+    padding: 0.65rem 1rem;
   }
 
   .wallet-topbar__brand {
@@ -1356,32 +1394,28 @@ a:hover {
   }
 
   .wallet-nav-shell {
-    margin-left: -1.15rem;
-    margin-right: -1.15rem;
     margin-bottom: 1.75rem;
-    padding-left: 1.15rem;
   }
 
   .wallet-nav-scroll {
-    gap: 0.65rem;
+    gap: 0.35rem;
     overflow-x: auto;
     scroll-snap-type: x proximity;
-    padding-right: 1.15rem;
+    padding: 0.3rem;
   }
 
   .wallet-nav-item {
-    min-width: auto;
-    min-height: 3.05rem;
-    padding: 0 1.1rem;
+    height: 2.25rem;
+    padding: 0 0.85rem;
     scroll-snap-align: start;
   }
 
   .wallet-nav-item__inner {
-    gap: 0.55rem;
+    gap: 0.4rem;
   }
 
   .wallet-nav-item__label {
-    font-size: 0.9rem;
+    font-size: 0.82rem;
   }
 
   .glass-card {
@@ -1426,7 +1460,7 @@ a:hover {
   .step-item.active .step-indicator {
     transform: none;
     animation: none;
-    box-shadow: 0 10px 24px rgba(22, 163, 74, 0.2);
+    box-shadow: 0 10px 24px rgba(34, 197, 94, 0.2);
   }
 
   .step-item.completed .step-indicator {
