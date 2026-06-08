@@ -4,7 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { SmartAccountABI, ERC20_ABI, IEntryPointABI } from '../utils/abis';
 import { sendUserOperation, estimateUserOperationGas } from '../utils/bundler';
-import { toHex, getEthPriceInUsd, formatNum } from '../utils/helpers';
+import { toHex, getEthPriceInUsd, formatNum, packUserOp } from '../utils/helpers';
 import { Layers, Settings, ExternalLink, Plus, Trash2, Send, CheckCircle2, RotateCcw } from 'lucide-react';
 
 const UNISWAP_ROUTER = '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E';
@@ -165,14 +165,18 @@ export default function BatchSendView() {
       const userOp = {
         sender: smartAccountAddress,
         nonce: toHex(nonce),
-        initCode: "0x",
+        factory: "0x",
+        factoryData: "0x",
         callData: buildBatchCalldata(),
         callGasLimit: toHex(callGasLimit),
         verificationGasLimit: toHex(verificationGasLimit),
         preVerificationGas: toHex(preVerificationGas),
         maxFeePerGas: toHex(maxFeePerGas),
         maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
-        paymasterAndData: usePaymaster ? (paymasterAddress || "0x") : "0x",
+        paymaster: usePaymaster ? (paymasterAddress || "0x") : "0x",
+        paymasterVerificationGasLimit: usePaymaster ? toHex(150000) : "0x",
+        paymasterPostOpGasLimit: usePaymaster ? toHex(150000) : "0x",
+        paymasterData: "0x",
         signature: "0x"
       };
 
@@ -180,7 +184,7 @@ export default function BatchSendView() {
       
       setCallGasLimit(BigInt(est.callGasLimit).toString());
       setVerificationGasLimit(BigInt(est.verificationGasLimit).toString());
-      const pvg = (BigInt(est.preVerificationGas) + 10000n).toString();
+      const pvg = BigInt(est.preVerificationGas).toString();
       setPreVerificationGas(pvg);
 
       // Compute dual-currency gas fees
@@ -238,20 +242,26 @@ export default function BatchSendView() {
       const userOp = {
         sender: smartAccountAddress,
         nonce: toHex(nonce),
-        initCode: "0x",
+        factory: "0x",
+        factoryData: "0x",
         callData: buildBatchCalldata(),
         callGasLimit: toHex(callGasLimit),
         verificationGasLimit: toHex(verificationGasLimit),
         preVerificationGas: toHex(preVerificationGas),
         maxFeePerGas: toHex(maxFeePerGas),
         maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
-        paymasterAndData: "0x",
+        paymaster: "0x",
+        paymasterVerificationGasLimit: "0x",
+        paymasterPostOpGasLimit: "0x",
+        paymasterData: "0x",
         signature: "0x"
       };
 
       if (usePaymaster) {
          if (!paymasterAddress) throw new Error("Paymaster address not set!");
-         userOp.paymasterAndData = paymasterAddress;
+         userOp.paymaster = paymasterAddress;
+         userOp.paymasterVerificationGasLimit = toHex(150000);
+         userOp.paymasterPostOpGasLimit = toHex(150000);
       }
 
       // Try to estimate gas dynamically right before sending
@@ -267,7 +277,7 @@ export default function BatchSendView() {
         userOp.preVerificationGas = toHex(preVerificationGas);
       }
 
-      const hash = await entryPoint.getUserOpHash(userOp);
+      const hash = await entryPoint.getUserOpHash(packUserOp(userOp));
       userOp.signature = await signer.signMessage(ethers.getBytes(hash));
 
       const opHash = await sendUserOperation(userOp);

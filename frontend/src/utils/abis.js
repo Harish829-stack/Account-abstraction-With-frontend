@@ -3,7 +3,7 @@ export const IEntryPointABI = [
   "function balanceOf(address account) view returns (uint256)",
   "function getDepositInfo(address account) view returns (tuple(uint112 deposit, bool staked, uint112 stake, uint32 unstakeDelaySec, uint48 withdrawTime))",
   "function getNonce(address sender, uint192 key) view returns (uint256)",
-  "function getUserOpHash(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, uint256 callGasLimit, uint256 verificationGasLimit, uint256 preVerificationGas, uint256 maxFeePerGas, uint256 maxPriorityFeePerGas, bytes paymasterAndData, bytes signature) userOp) view returns (bytes32)",
+  "function getUserOpHash(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature) userOp) view returns (bytes32)",
   "function addStake(uint32 unstakeDelaySec) payable",
   "function unlockStake()",
   "function withdrawStake(address payable withdrawAddress)",

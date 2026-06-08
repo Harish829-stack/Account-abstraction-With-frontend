@@ -4,7 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { SmartAccountABI, ERC20_ABI, IEntryPointABI } from '../utils/abis';
 import { sendUserOperation, estimateUserOperationGas } from '../utils/bundler';
-import { toHex, getEthPriceInUsd, formatNum } from '../utils/helpers';
+import { toHex, getEthPriceInUsd, formatNum, packUserOp } from '../utils/helpers';
 import { Send, Settings, CheckCircle2, RotateCcw, ExternalLink } from 'lucide-react';
 
 const UNISWAP_ROUTER = '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E';
@@ -151,14 +151,18 @@ export default function SendOpView() {
       const userOp = {
         sender: smartAccountAddress,
         nonce: toHex(nonce),
-        initCode: "0x",
+        factory: "0x",
+        factoryData: "0x",
         callData: buildCalldata(),
         callGasLimit: toHex(callGasLimit),
         verificationGasLimit: toHex(verificationGasLimit),
         preVerificationGas: toHex(preVerificationGas),
         maxFeePerGas: toHex(maxFeePerGas),
         maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
-        paymasterAndData: usePaymaster ? (paymasterAddress || "0x") : "0x",
+        paymaster: usePaymaster ? (paymasterAddress || "0x") : "0x",
+        paymasterVerificationGasLimit: usePaymaster ? toHex(150000) : "0x",
+        paymasterPostOpGasLimit: usePaymaster ? toHex(150000) : "0x",
+        paymasterData: "0x",
         signature: "0x"
       };
 
@@ -166,7 +170,7 @@ export default function SendOpView() {
       
       setCallGasLimit(BigInt(est.callGasLimit).toString());
       setVerificationGasLimit(BigInt(est.verificationGasLimit).toString());
-      const pvg = (BigInt(est.preVerificationGas) + 5000n).toString();
+      const pvg = BigInt(est.preVerificationGas).toString();
       setPreVerificationGas(pvg);
 
       // Compute dual-currency gas fees
@@ -232,27 +236,29 @@ export default function SendOpView() {
       const userOp = {
         sender: smartAccountAddress,
         nonce: toHex(nonce),
-        initCode: "0x",
+        factory: "0x",
+        factoryData: "0x",
         callData: buildCalldata(),
         callGasLimit: toHex(callGasLimit),
         verificationGasLimit: toHex(verificationGasLimit),
         preVerificationGas: toHex(preVerificationGas),
         maxFeePerGas: toHex(maxFeePerGas),
         maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
-        paymasterAndData: "0x",
+        paymaster: "0x",
+        paymasterVerificationGasLimit: "0x",
+        paymasterPostOpGasLimit: "0x",
+        paymasterData: "0x",
         signature: "0x"
       };
 
       if (usePaymaster) {
          if (!paymasterAddress) throw new Error("Paymaster address not set!");
-         userOp.paymasterAndData = paymasterAddress;
+         userOp.paymaster = paymasterAddress;
+         userOp.paymasterVerificationGasLimit = toHex(150000);
+         userOp.paymasterPostOpGasLimit = toHex(150000);
       }
 
-      userOp.callGasLimit = toHex(callGasLimit);
-      userOp.verificationGasLimit = toHex(verificationGasLimit);
-      userOp.preVerificationGas = toHex(preVerificationGas);
-
-      const hash = await entryPoint.getUserOpHash(userOp);
+      const hash = await entryPoint.getUserOpHash(packUserOp(userOp));
       userOp.signature = await signer.signMessage(ethers.getBytes(hash));
 
       const opHash = await sendUserOperation(userOp);

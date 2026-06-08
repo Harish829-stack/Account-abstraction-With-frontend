@@ -4,13 +4,11 @@ pragma solidity ^0.8.23;
 import "@openzeppelin/contracts/utils/Create2.sol";
 
 import "./Proxy.sol";
-import "./Beacon.sol";
 import "./Implementation.sol";
 import "./Interfaces.sol"; 
 
 contract ProxyFactory {
 
-    ModularBeacon public immutable beacon;
     ModularImplementation public immutable implementation;
     IEntryPoint public immutable entryPoint;
 
@@ -19,7 +17,6 @@ contract ProxyFactory {
     ) {
         entryPoint = _entryPoint;
         implementation = new ModularImplementation();
-        beacon = new ModularBeacon(address(implementation));
     }
 
     function createAccount(
@@ -45,7 +42,7 @@ contract ProxyFactory {
         );
 
         ret = new ModularProxy{salt: bytes32(salt)}(
-            address(beacon),
+            address(implementation),
             data
         );
     }
@@ -68,7 +65,7 @@ contract ProxyFactory {
             keccak256(
                 abi.encodePacked(
                     type(ModularProxy).creationCode,
-                    abi.encode(address(beacon), data)
+                    abi.encode(address(implementation), data)
                 )
             )
         );

@@ -15,6 +15,18 @@ export async function estimateUserOperationGas(userOp) {
     opToEstimate.signature = "0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c";
   }
 
+  // Clean up optional fields for v0.7 bundlers
+  if (!opToEstimate.factory || opToEstimate.factory === "0x") {
+    delete opToEstimate.factory;
+    delete opToEstimate.factoryData;
+  }
+  if (!opToEstimate.paymaster || opToEstimate.paymaster === "0x") {
+    delete opToEstimate.paymaster;
+    delete opToEstimate.paymasterVerificationGasLimit;
+    delete opToEstimate.paymasterPostOpGasLimit;
+    delete opToEstimate.paymasterData;
+  }
+
   try {
     const res = await axios.post(
       rpcUrl,
@@ -31,7 +43,22 @@ export async function estimateUserOperationGas(userOp) {
 
     const data = res.data;
     if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-    return data.result;
+    
+    // Automatically pad the gas estimates to prevent AA26 errors across all views
+    const est = data.result;
+    if (est) {
+      if (est.callGasLimit) {
+        est.callGasLimit = ((BigInt(est.callGasLimit) * 120n) / 100n).toString();
+      }
+      if (est.verificationGasLimit) {
+        est.verificationGasLimit = ((BigInt(est.verificationGasLimit) * 150n) / 100n).toString();
+      }
+      if (est.preVerificationGas) {
+        est.preVerificationGas = (BigInt(est.preVerificationGas) + 5000n).toString();
+      }
+    }
+    
+    return est;
   } catch (error) {
     if (error.response && error.response.data && error.response.data.error) {
       throw new Error(error.response.data.error.message);
@@ -48,13 +75,27 @@ export async function sendUserOperation(userOp) {
   if (!entryPoint) throw new Error("Entry Point missing in env");
 
   try {
+    const opToSend = { ...userOp };
+    
+    // Clean up optional fields for v0.7 bundlers
+    if (!opToSend.factory || opToSend.factory === "0x") {
+      delete opToSend.factory;
+      delete opToSend.factoryData;
+    }
+    if (!opToSend.paymaster || opToSend.paymaster === "0x") {
+      delete opToSend.paymaster;
+      delete opToSend.paymasterVerificationGasLimit;
+      delete opToSend.paymasterPostOpGasLimit;
+      delete opToSend.paymasterData;
+    }
+
     const res = await axios.post(
       rpcUrl,
       {
         jsonrpc: "2.0",
         id: 1,
         method: "eth_sendUserOperation",
-        params: [userOp, entryPoint]
+        params: [opToSend, entryPoint]
       },
       {
         headers: { "Content-Type": "application/json" }

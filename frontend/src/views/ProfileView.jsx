@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { shortenAddress, formatNum, toHex } from '../utils/helpers';
+import { shortenAddress, formatNum, toHex, packUserOp } from '../utils/helpers';
 import { Copy, Wallet, CheckCircle2, ShieldAlert, RotateCcw, ArrowDownCircle } from 'lucide-react';
 import { ERC20_ABI, SmartAccountABI, IEntryPointABI } from '../utils/abis';
 import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
@@ -112,14 +112,18 @@ export default function ProfileView() {
       const userOp = {
         sender: smartAccountAddress,
         nonce: toHex(nonce),
-        initCode: "0x",
+        factory: "0x",
+        factoryData: "0x",
         callData: callData,
         callGasLimit: toHex(150000),
         verificationGasLimit: toHex(150000),
         preVerificationGas: toHex(50000),
         maxFeePerGas: toHex(maxFeePerGas),
         maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
-        paymasterAndData: "0x", // SA pays gas in ETH for its own approval
+        paymaster: "0x", // SA pays gas in ETH for its own approval
+        paymasterVerificationGasLimit: "0x",
+        paymasterPostOpGasLimit: "0x",
+        paymasterData: "0x",
         signature: "0x"
       };
 
@@ -133,7 +137,7 @@ export default function ProfileView() {
         console.warn("Estimation failed, using defaults", err);
       }
 
-      const hash = await entryPoint.getUserOpHash(userOp);
+      const hash = await entryPoint.getUserOpHash(packUserOp(userOp));
       userOp.signature = await signer.signMessage(ethers.getBytes(hash));
 
       toast.info("Sending UserOp to approve Paymaster...");

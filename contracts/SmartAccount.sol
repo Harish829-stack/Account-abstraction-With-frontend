@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-import "./UserOperation.sol";
+import "@account-abstraction/contracts/interfaces/PackedUserOperation.sol";
 import "./Interfaces.sol";
 import "./BaseAccount.sol";
 
@@ -51,7 +51,7 @@ contract SmartAccount is BaseAccount, ERC165 {
     }
 
     function validateUserOp(
-        UserOperation calldata userOp,
+        PackedUserOperation calldata userOp,
         bytes32 userOpHash,
         uint256 missingAccountFunds
     ) external override onlyEntryPoint returns (uint256 validationData) {

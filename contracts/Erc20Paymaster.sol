@@ -260,7 +260,7 @@ contract ERC20Paymaster is IPaymaster, Ownable {
      * No signature verification — any UserOp using this paymaster is accepted.
      */
     function validatePaymasterUserOp(
-        UserOperation calldata userOp,
+        PackedUserOperation calldata userOp,
         bytes32 /*userOpHash*/,
         uint256 maxCost
     ) external override returns (bytes memory context, uint256 validationData) {
@@ -285,7 +285,8 @@ contract ERC20Paymaster is IPaymaster, Ownable {
     function postOp(
         PostOpMode mode,
         bytes calldata context,
-        uint256 actualGasCost
+        uint256 actualGasCost,
+        uint256 actualUserOpFeePerGas
     ) external override {
         require(
             msg.sender == address(entryPoint),

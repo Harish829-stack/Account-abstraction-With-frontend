@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { formatNum, shortenAddress, toHex, getEthPriceInUsd } from '../utils/helpers';
+import { formatNum, shortenAddress, toHex, getEthPriceInUsd, packUserOp } from '../utils/helpers';
 import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
 import { IEntryPointABI, SmartAccountABI } from '../utils/abis';
 import {
@@ -249,14 +249,18 @@ function ConnectedDashboard() {
       const userOp = {
         sender: smartAccountAddress,
         nonce: toHex(nonce),
-        initCode: "0x",
+        factory: "0x",
+        factoryData: "0x",
         callData: callData,
         callGasLimit: toHex(300000), // Swaps take more gas
         verificationGasLimit: toHex(150000),
         preVerificationGas: toHex(50000),
         maxFeePerGas: toHex(fee.maxFeePerGas),
         maxPriorityFeePerGas: toHex(fee.maxPriorityFeePerGas),
-        paymasterAndData: usePmForSwap ? paymasterAddress : "0x",
+        paymaster: usePmForSwap ? paymasterAddress : "0x",
+        paymasterVerificationGasLimit: usePmForSwap ? toHex(150000) : "0x",
+        paymasterPostOpGasLimit: usePmForSwap ? toHex(150000) : "0x",
+        paymasterData: "0x",
         signature: "0x"
       };
 
@@ -270,7 +274,7 @@ function ConnectedDashboard() {
         console.warn("Estimation failed, using defaults", err);
       }
 
-      const hash = await entryPoint.getUserOpHash(userOp);
+      const hash = await entryPoint.getUserOpHash(packUserOp(userOp));
       userOp.signature = await signer.signMessage(ethers.getBytes(hash));
 
       toast.info("Sending UserOp to swap ETH for USDC...");

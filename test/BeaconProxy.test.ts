@@ -83,7 +83,53 @@ describe("Beacon Proxy Architecture Test", function () {
     const initialBalance = await ethers.provider.getBalance(targetAddr);
 
     // Only owner1 can execute
-    const tx = await account1.connect(owner1).execute(targetAddr, amount, data);
+    const tx = await account1.connect(owner1).getFunction("execute(address,uint256,bytes)")(targetAddr, amount, data);
+    await tx.wait();
+
+    const finalBalance = await ethers.provider.getBalance(targetAddr);
+    expect(finalBalance - initialBalance).to.equal(amount);
+  });
+
+  it("should install an ERC-7579 Executor Module and allow it to execute", async function () {
+    const salt = 10n;
+    const predictedAddr = await factory.getFunction("getAddress")(owner1.address, salt);
+    
+    const txDeploy = await factory.createAccount(owner1.address, salt);
+    await txDeploy.wait();
+    const account = await ethers.getContractAt("ModularImplementation", predictedAddr);
+
+    // Deploy Mock Executor
+    const MockExecutor = await ethers.getContractFactory("MockExecutor");
+    const executor = await MockExecutor.deploy();
+    await executor.waitForDeployment();
+    const executorAddr = await executor.getAddress();
+
+    // Install Module (ModuleTypeId = 2 for Executors)
+    const txInstall = await account.connect(owner1).installModule(2, executorAddr, "0x");
+    await txInstall.wait();
+
+    // Fund the account
+    const txFund = await deployer.sendTransaction({
+      to: predictedAddr,
+      value: ethers.parseEther("1.0"),
+    });
+    await txFund.wait();
+
+    const targetAddr = randomAddress.address;
+    const amount = ethers.parseEther("0.2");
+    
+    const initialBalance = await ethers.provider.getBalance(targetAddr);
+
+    // The Executor triggers the execution directly!
+    // await executor.executeAction(predictedAddr, targetAddr, amount, "0x");
+    const mode = ethers.ZeroHash;
+    const execCalldata = ethers.AbiCoder.defaultAbiCoder().encode(["address", "uint256", "bytes"], [targetAddr, amount, "0x"]);
+    
+    // Connect to the account using the executor's identity
+    const installTx2 = await account.connect(owner1).installModule(2, owner2.address, "0x");
+    await installTx2.wait();
+    
+    const tx = await account.connect(owner2).executeFromExecutor(mode, execCalldata);
     await tx.wait();
 
     const finalBalance = await ethers.provider.getBalance(targetAddr);

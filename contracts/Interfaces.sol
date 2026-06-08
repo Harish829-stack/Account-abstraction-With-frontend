@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.23;
 
-import "./UserOperation.sol";
+import "@account-abstraction/contracts/interfaces/PackedUserOperation.sol";
 
 interface IEntryPoint {
 
     function handleOps(
-        UserOperation[] calldata ops,
+        PackedUserOperation[] calldata ops,
         address payable beneficiary
     ) external;
 
@@ -16,7 +16,7 @@ interface IEntryPoint {
     ) external view returns (uint256 nonce);
 
     function getUserOpHash(
-        UserOperation calldata userOp
+        PackedUserOperation calldata userOp
     ) external view returns (bytes32);
 
     function depositTo(address account)
@@ -41,7 +41,7 @@ interface IEntryPoint {
 interface IAccount {
 
     function validateUserOp(
-        UserOperation calldata userOp,
+        PackedUserOperation calldata userOp,
         bytes32 userOpHash,
         uint256 missingAccountFunds
     ) external returns (uint256 validationData);
@@ -126,4 +126,45 @@ interface IERC20 {
      * Emits a {Transfer} event.
      */
     function transferFrom(address from, address to, uint256 value) external returns (bool);
+}
+
+// --- ERC-7579 Interfaces ---
+
+type ModeCode is bytes32;
+
+interface IERC7579Account {
+    function execute(ModeCode mode, bytes calldata executionCalldata) external;
+    function executeFromExecutor(ModeCode mode, bytes calldata executionCalldata) external returns (bytes[] memory returnData);
+    function installModule(uint256 moduleTypeId, address module, bytes calldata initData) external;
+    function uninstallModule(uint256 moduleTypeId, address module, bytes calldata deInitData) external;
+    function supportsModule(uint256 moduleTypeId) external view returns (bool);
+    function isModuleInstalled(uint256 moduleTypeId, address module, bytes calldata additionalContext) external view returns (bool);
+    function accountId() external view returns (string memory accountImplementationId);
+}
+
+interface IModule {
+    function onInstall(bytes calldata data) external;
+    function onUninstall(bytes calldata data) external;
+    function isModuleType(uint256 moduleTypeId) external view returns (bool);
+    function isInitialized(address smartAccount) external view returns (bool);
+}
+
+interface IValidator is IModule {
+    function validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash) external returns (uint256);
+    function isValidSignatureWithSender(address sender, bytes32 hash, bytes calldata data) external view returns (bytes4);
+}
+
+interface IExecutor is IModule {
+}
+
+interface IHook is IModule {
+    function preCheck(address msgSender, uint256 msgValue, bytes calldata msgData) external returns (bytes memory hookData);
+    function postCheck(bytes calldata hookData) external;
+}
+
+interface IFallback is IModule {
+}
+
+interface IERC1271 {
+    function isValidSignature(bytes32 hash, bytes memory signature) external view returns (bytes4 magicValue);
 }

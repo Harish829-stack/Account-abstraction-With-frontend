@@ -20,16 +20,17 @@ contract Paymaster is IPaymaster, Ownable {
     }
 
     function validatePaymasterUserOp(
-        UserOperation calldata userOp,
+        PackedUserOperation calldata userOp,
         bytes32 /*userOpHash*/,
         uint256 /*maxCost*/
-    ) external view override returns (bytes memory context, uint256 validationData) {
+    ) external override returns (bytes memory context, uint256 validationData) {
         require(msg.sender == address(entryPoint), "Paymaster: not EntryPoint");
 
-        // paymasterAndData = [address(this) (20 bytes) | validUntil (6 bytes) | validAfter (6 bytes) | signature (dynamic)]
-        uint48 validUntil = uint48(bytes6(userOp.paymasterAndData[20:26]));
-        uint48 validAfter = uint48(bytes6(userOp.paymasterAndData[26:32]));
-        bytes calldata signature = userOp.paymasterAndData[32:];
+        // v0.7 paymasterAndData = [paymaster (20 bytes) | paymasterVerificationGasLimit (16 bytes) | paymasterPostOpGasLimit (16 bytes) | validUntil (6 bytes) | validAfter (6 bytes) | signature (dynamic)]
+        // Custom data starts at index 52
+        uint48 validUntil = uint48(bytes6(userOp.paymasterAndData[52:58]));
+        uint48 validAfter = uint48(bytes6(userOp.paymasterAndData[58:64]));
+        bytes calldata signature = userOp.paymasterAndData[64:];
 
         bytes32 hash = getHash(userOp, validUntil, validAfter);
         
@@ -42,12 +43,17 @@ contract Paymaster is IPaymaster, Ownable {
         return ("", _packValidationData(false, validUntil, validAfter));
     }
 
-    function postOp(PostOpMode mode, bytes calldata context, uint256 actualGasCost) external override {
+    function postOp(
+        PostOpMode mode,
+        bytes calldata context,
+        uint256 actualGasCost,
+        uint256 actualUserOpFeePerGas
+    ) external override {
         // No-op for verifying paymaster
     }
 
     function getHash(
-    UserOperation calldata userOp, 
+    PackedUserOperation calldata userOp, 
     uint48 validUntil, 
     uint48 validAfter
 ) public view returns (bytes32) {
@@ -57,11 +63,9 @@ contract Paymaster is IPaymaster, Ownable {
         userOp.nonce,
         keccak256(userOp.initCode),
         keccak256(userOp.callData),
-        userOp.callGasLimit,
-        userOp.verificationGasLimit,
+        userOp.accountGasLimits,
         userOp.preVerificationGas,
-        userOp.maxFeePerGas,
-        userOp.maxPriorityFeePerGas
+        userOp.gasFees
     ));
 
     // Then we hash the result with the paymaster-specific fields

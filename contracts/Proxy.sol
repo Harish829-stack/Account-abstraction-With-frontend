@@ -1,11 +1,8 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
-import "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-
-contract ModularProxy is BeaconProxy , Initializable{
-    constructor(address beacon, bytes memory _data) BeaconProxy(beacon, _data) {}
-    
+contract ModularProxy is ERC1967Proxy {
+    constructor(address logic, bytes memory _data) ERC1967Proxy(logic, _data) {}
 }
