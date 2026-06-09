@@ -127,6 +127,87 @@ describe("Modular Account v0.7 E2E", function () {
     await account.connect(owner).getFunction("execute(address,uint256,bytes)")(randomUser.address, 0n, "0x");
   });
 
+  it("should recover ownership through guardian approvals", async function () {
+    const salt = 250n;
+    const predictedAddr = await factory.getFunction("getAddress")(owner.address, salt);
+
+    const txDeploy = await factory.createAccount(owner.address, salt);
+    await txDeploy.wait();
+
+    await deployer.sendTransaction({
+      to: predictedAddr,
+      value: ethers.parseEther("1.0"),
+    });
+
+    const account = await ethers.getContractAt("ModularImplementation", predictedAddr);
+    const newOwner = deployer;
+    const guardianOne = randomUser;
+    const guardianTwo = (await ethers.getSigners())[3];
+    const guardianThree = (await ethers.getSigners())[4];
+
+    const SocialRecoveryValidator = await ethers.getContractFactory("SocialRecoveryValidator");
+    const recoveryValidator = await SocialRecoveryValidator.deploy();
+    await recoveryValidator.waitForDeployment();
+    const recoveryValidatorAddr = await recoveryValidator.getAddress();
+
+    const guardians = [guardianOne.address, guardianTwo.address, guardianThree.address];
+    const threshold = 2;
+    const delay = 0;
+    const initData = ethers.AbiCoder.defaultAbiCoder().encode(
+      ["address[]", "uint16", "uint48"],
+      [guardians, threshold, delay]
+    );
+
+    await account.connect(owner).installModule(1, recoveryValidatorAddr, initData);
+
+    await recoveryValidator.connect(guardianOne).approveRecovery(predictedAddr, newOwner.address);
+    expect(await recoveryValidator.canRecover(predictedAddr, newOwner.address)).to.equal(false);
+
+    await recoveryValidator.connect(guardianTwo).approveRecovery(predictedAddr, newOwner.address);
+    expect(await recoveryValidator.canRecover(predictedAddr, newOwner.address)).to.equal(true);
+
+    const callData = account.interface.encodeFunctionData("changeOwner", [newOwner.address]);
+
+    const verificationGasLimit = 300000n;
+    const callGasLimit = 200000n;
+    const maxPriorityFeePerGas = 1500000000n;
+    const maxFeePerGas = 20000000000n;
+
+    const accountGasLimits = ethers.concat([
+      ethers.zeroPadValue(ethers.toBeHex(verificationGasLimit), 16),
+      ethers.zeroPadValue(ethers.toBeHex(callGasLimit), 16)
+    ]);
+
+    const gasFees = ethers.concat([
+      ethers.zeroPadValue(ethers.toBeHex(maxPriorityFeePerGas), 16),
+      ethers.zeroPadValue(ethers.toBeHex(maxFeePerGas), 16)
+    ]);
+
+    const userOp = {
+      sender: predictedAddr,
+      nonce: 0n,
+      initCode: "0x",
+      callData,
+      accountGasLimits,
+      preVerificationGas: 50000n,
+      gasFees,
+      paymasterAndData: "0x",
+      signature: ethers.concat([
+        recoveryValidatorAddr,
+        ethers.AbiCoder.defaultAbiCoder().encode(["address"], [newOwner.address])
+      ])
+    };
+
+    const tx = await entryPoint.handleOps([userOp], deployer.address);
+    await tx.wait();
+
+    await expect(
+      account.connect(owner).getFunction("execute(address,uint256,bytes)")(randomUser.address, 0n, "0x")
+    ).to.be.revertedWith("not owner or EntryPoint");
+
+    await account.connect(newOwner).getFunction("execute(address,uint256,bytes)")(randomUser.address, 0n, "0x");
+  });
+
   it("should sponsor transaction via Custom Paymaster", async function () {
     const salt = 300n;
     const predictedAddr = await factory.getFunction("getAddress")(owner.address, salt);

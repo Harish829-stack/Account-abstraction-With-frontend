@@ -10,8 +10,9 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@account-abstraction/contracts/interfaces/PackedUserOperation.sol";
 import "./Interfaces.sol";
 import "./BaseAccount.sol";
+import "./ModuleManager.sol";
 
-contract ModularImplementation is BaseAccount, ERC165, Initializable, UUPSUpgradeable, IERC7579Account {
+contract ModularImplementation is BaseAccount, ERC165, Initializable, UUPSUpgradeable, IERC7579Account, ModuleManager {
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
 
@@ -19,12 +20,6 @@ contract ModularImplementation is BaseAccount, ERC165, Initializable, UUPSUpgrad
 
     address private owner;
 
-    // ERC-7579 Module Storage
-    mapping(address => bool) public executors;
-    mapping(address => bool) public validators;
-    mapping(bytes4 => address) public fallbacks;
-    address[] public activeHooks;
-    
     event OwnerChanged(address indexed oldOwner, address indexed newOwner);
     event ExecutedFromExecutor(address target, uint256 value);
 
@@ -165,59 +160,19 @@ contract ModularImplementation is BaseAccount, ERC165, Initializable, UUPSUpgrad
     }
 
     function installModule(uint256 moduleTypeId, address module, bytes calldata initData) external onlyEntryPointOrOwner {
-        if (moduleTypeId == 1) validators[module] = true;
-        else if (moduleTypeId == 2) executors[module] = true;
-        else if (moduleTypeId == 3) {
-            require(initData.length >= 4, "Fallback requires selector init data");
-            bytes4 selector = bytes4(initData[0:4]);
-            fallbacks[selector] = module;
-        }
-        else if (moduleTypeId == 4) activeHooks.push(module);
-        else revert("Unsupported module type");
-
-        if (initData.length > 0) IModule(module).onInstall(initData);
+        _installModule(moduleTypeId, module, initData);
     }
 
     function uninstallModule(uint256 moduleTypeId, address module, bytes calldata deInitData) external onlyEntryPointOrOwner {
-        if (moduleTypeId == 1) validators[module] = false;
-        else if (moduleTypeId == 2) executors[module] = false;
-        else if (moduleTypeId == 3) {
-            require(deInitData.length >= 4, "Fallback requires selector deInit data");
-            bytes4 selector = bytes4(deInitData[0:4]);
-            fallbacks[selector] = address(0);
-        }
-        else if (moduleTypeId == 4) {
-            for (uint256 i = 0; i < activeHooks.length; i++) {
-                if (activeHooks[i] == module) {
-                    activeHooks[i] = activeHooks[activeHooks.length - 1];
-                    activeHooks.pop();
-                    break;
-                }
-            }
-        }
-        else revert("Unsupported module type");
-
-        if (deInitData.length > 0) IModule(module).onUninstall(deInitData);
+        _uninstallModule(moduleTypeId, module, deInitData);
     }
 
     function supportsModule(uint256 moduleTypeId) external pure returns (bool) {
-        return moduleTypeId >= 1 && moduleTypeId <= 4;
+        return _supportsModule(moduleTypeId);
     }
 
     function isModuleInstalled(uint256 moduleTypeId, address module, bytes calldata additionalContext) external view returns (bool) {
-        if (moduleTypeId == 1) return validators[module];
-        if (moduleTypeId == 2) return executors[module];
-        if (moduleTypeId == 3) {
-            bytes4 selector = bytes4(additionalContext[0:4]);
-            return fallbacks[selector] == module;
-        }
-        if (moduleTypeId == 4) {
-            for (uint256 i = 0; i < activeHooks.length; i++) {
-                if (activeHooks[i] == module) return true;
-            }
-            return false;
-        }
-        return false;
+        return _isModuleInstalled(moduleTypeId, module, additionalContext);
     }
 
     function accountId() external pure returns (string memory) {
@@ -299,4 +254,3 @@ contract ModularImplementation is BaseAccount, ERC165, Initializable, UUPSUpgrad
         return interfaceId == type(IAccount).interfaceId || interfaceId == type(IERC7579Account).interfaceId;
     }
 }
-

@@ -8,7 +8,9 @@ export const IEntryPointABI = [
   "function unlockStake()",
   "function withdrawStake(address payable withdrawAddress)",
   "function withdrawTo(address payable withdrawAddress, uint256 withdrawAmount)",
-  "event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)"
+  "event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)",
+  "function handleOps(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature)[] ops, address beneficiary)",
+  "error FailedOp(uint256 opIndex, string reason)"
 ];
 
 export const SmartAccountFactoryABI = [
@@ -23,7 +25,10 @@ export const SmartAccountABI = [
   "function addDeposit() payable",
   "function getDeposit() view returns (uint256)",
   "function withdrawDepositTo(address payable withdrawAddress, uint256 amount) external",
-  "function changeOwner(address newOwner) external"
+  "function changeOwner(address newOwner) external",
+  "function installModule(uint256 moduleTypeId, address module, bytes calldata initData) external",
+  "function uninstallModule(uint256 moduleTypeId, address module, bytes calldata additionalContext) external",
+  "function isModuleInstalled(uint256 moduleTypeId, address module, bytes calldata additionalContext) external view returns (bool)"
 ];
 
 export const ERC20PaymasterABI = [
@@ -44,4 +49,11 @@ export const ERC20_ABI = [
   "function transferFrom(address from, address to, uint256 amount) returns (bool)",
   "function symbol() view returns (string)",
   "function decimals() view returns (uint8)"
+];
+
+export const SocialRecoveryValidatorABI = [
+  "function approveRecovery(address smartAccount, address newOwner) external",
+  "function revokeRecovery(address smartAccount, address newOwner) external",
+  "function canRecover(address smartAccount, address newOwner) view returns (bool)",
+  "function hasApproved(address smartAccount, address newOwner, address guardian) view returns (bool)"
 ];

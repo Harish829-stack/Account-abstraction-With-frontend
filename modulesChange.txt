@@ -1,0 +1,516 @@
+Modules / Social Recovery Change Notes
+======================================
+
+Purpose
+-------
+This file documents only the modular smart account and social recovery changes
+that need to be reapplied after checking out an older commit.
+
+WebAuthn/passkey changes are intentionally excluded.
+
+High-level idea
+---------------
+- Convert the smart account into an ERC-7579-style modular account.
+- Add a ModuleManager that stores installed modules.
+- Support four module types:
+  - 1 = validator
+  - 2 = executor
+  - 3 = fallback
+  - 4 = hook
+- Let validator modules validate ERC-4337 UserOperations.
+- Implement social recovery as a validator module.
+- Social recovery allows approved guardians to change the account owner through
+  EntryPoint, but only after enough guardian approvals.
+
+
+Files to add or update
+----------------------
+
+1. Update contracts/Interfaces.sol
+
+Add ERC-7579-style interfaces:
+
+- type ModeCode is bytes32;
+
+- interface IERC7579Account
+  - execute(ModeCode mode, bytes calldata executionCalldata)
+  - executeFromExecutor(ModeCode mode, bytes calldata executionCalldata)
+  - installModule(uint256 moduleTypeId, address module, bytes calldata initData)
+  - uninstallModule(uint256 moduleTypeId, address module, bytes calldata deInitData)
+  - supportsModule(uint256 moduleTypeId)
+  - isModuleInstalled(uint256 moduleTypeId, address module, bytes calldata additionalContext)
+  - accountId()
+
+- interface IModule
+  - onInstall(bytes calldata data)
+  - onUninstall(bytes calldata data)
+  - isModuleType(uint256 moduleTypeId)
+  - isInitialized(address smartAccount)
+
+- interface IValidator is IModule
+  - validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash)
+  - isValidSignatureWithSender(address sender, bytes32 hash, bytes calldata data)
+
+- interface IExecutor is IModule
+
+- interface IHook is IModule
+  - preCheck(address msgSender, uint256 msgValue, bytes calldata msgData)
+  - postCheck(bytes calldata hookData)
+
+- interface IFallback is IModule
+
+- interface IERC1271
+  - isValidSignature(bytes32 hash, bytes memory signature)
+
+
+2. Add contracts/ModuleManager.sol
+
+New abstract contract responsible for module storage, installation, and
+uninstallation.
+
+Constants:
+- MODULE_TYPE_VALIDATOR = 1
+- MODULE_TYPE_EXECUTOR = 2
+- MODULE_TYPE_FALLBACK = 3
+- MODULE_TYPE_HOOK = 4
+
+Storage:
+- mapping(address => bool) public validators;
+- mapping(address => bool) public executors;
+- mapping(bytes4 => address) public fallbacks;
+- address[] public activeHooks;
+
+Events:
+- ModuleInstalled(uint256 indexed moduleTypeId, address indexed module)
+- ModuleUninstalled(uint256 indexed moduleTypeId, address indexed module)
+
+Errors:
+- InvalidModule()
+- UnsupportedModuleType(uint256 moduleTypeId)
+- MismatchedModuleType(uint256 moduleTypeId, address module)
+- ModuleAlreadyInstalled(uint256 moduleTypeId, address module)
+- ModuleNotInstalled(uint256 moduleTypeId, address module)
+- InvalidFallbackData()
+
+Main functions:
+- _installModule(uint256 moduleTypeId, address module, bytes calldata initData)
+- _uninstallModule(uint256 moduleTypeId, address module, bytes calldata deInitData)
+- _supportsModule(uint256 moduleTypeId)
+- _isModuleInstalled(uint256 moduleTypeId, address module, bytes calldata additionalContext)
+
+Install behavior:
+- Check module is not address(0).
+- Check module has contract code.
+- Check the account supports the module type.
+- Check IModule(module).isModuleType(moduleTypeId).
+- Store the module in validators, executors, fallbacks, or activeHooks.
+- Call IModule(module).onInstall(initData).
+- Emit ModuleInstalled.
+
+Uninstall behavior:
+- Remove module from validators, executors, fallbacks, or activeHooks.
+- Call IModule(module).onUninstall(deInitData).
+- Emit ModuleUninstalled.
+
+Fallback module note:
+- For fallback modules, initData/deInitData must contain at least the 4-byte
+  selector that the fallback module handles.
+
+Hook module note:
+- Hooks are stored in activeHooks.
+- Uninstall removes a hook using swap-and-pop.
+
+
+3. Update contracts/Implementation.sol
+
+Make ModularImplementation inherit IERC7579Account and ModuleManager.
+
+Add import:
+
+import "./ModuleManager.sol";
+
+Inheritance should include:
+
+contract ModularImplementation is
+    BaseAccount,
+    ERC165,
+    Initializable,
+    UUPSUpgradeable,
+    IERC7579Account,
+    ModuleManager
+
+Validator routing in validateUserOp:
+- Keep normal owner ECDSA validation for 65-byte signatures.
+- For non-65-byte signatures:
+  - first 20 bytes of userOp.signature = validator address
+  - require validators[validator] is installed
+  - call IValidator(validator).validateUserOp(userOp, userOpHash)
+
+Expected logic:
+
+if (userOp.signature.length == 65) {
+    validationData = _validateSignature(userOpHash, userOp.signature);
+} else {
+    address validator = address(bytes20(userOp.signature[0:20]));
+    require(validators[validator], "Validator not installed");
+    validationData = IValidator(validator).validateUserOp(userOp, userOpHash);
+}
+
+Hook support in _call:
+- Before target.call, loop through activeHooks and call preCheck.
+- Store each hook's returned hookData.
+- Execute the target call.
+- After target.call, loop through activeHooks and call postCheck.
+- If the target call failed, bubble the revert reason.
+
+Add ERC-7579 account methods:
+- execute(ModeCode mode, bytes calldata executionCalldata)
+  - onlyEntryPointOrOwner
+  - decode executionCalldata as (address target, uint256 value, bytes data)
+  - call _call(target, value, data)
+
+- executeFromExecutor(ModeCode mode, bytes calldata executionCalldata)
+  - require executors[msg.sender]
+  - decode executionCalldata as (address target, uint256 value, bytes data)
+  - call _call(target, value, data)
+  - return empty bytes[]
+
+- installModule(uint256 moduleTypeId, address module, bytes calldata initData)
+  - onlyEntryPointOrOwner
+  - call _installModule(moduleTypeId, module, initData)
+
+- uninstallModule(uint256 moduleTypeId, address module, bytes calldata deInitData)
+  - onlyEntryPointOrOwner
+  - call _uninstallModule(moduleTypeId, module, deInitData)
+
+- supportsModule(uint256 moduleTypeId)
+  - return _supportsModule(moduleTypeId)
+
+- isModuleInstalled(uint256 moduleTypeId, address module, bytes calldata additionalContext)
+  - return _isModuleInstalled(moduleTypeId, module, additionalContext)
+
+- accountId()
+  - return "ModularAccount.v1"
+
+Add fallback module dispatch:
+- fallback() should look up fallbacks[msg.sig].
+- Revert if no fallback handler is installed.
+- Forward calldata and msg.value to the fallback handler.
+- Return/revert with the handler's returndata.
+
+Add ERC-1271 validator routing:
+- isValidSignature(bytes32 hash, bytes calldata signature)
+- If signature length is 65, recover owner normally.
+- If signature length is greater than 20:
+  - first 20 bytes = validator address
+  - if validator is installed, call:
+    IValidator(validator).isValidSignatureWithSender(msg.sender, hash, signature[20:])
+- Return 0xffffffff if invalid.
+
+Update supportsInterface:
+- Return true for IAccount and IERC7579Account.
+
+
+4. Add contracts/MockHook.sol
+
+Test/demo hook module.
+
+Purpose:
+- Proves hook installation works.
+- Proves hooks can block execution.
+
+Behavior:
+- Implements IHook.
+- Has bool public revertOnPreCheck.
+- setRevertOnPreCheck(bool) toggles behavior.
+- preCheck reverts with "MockHook: Reverting in preCheck" when enabled.
+- postCheck is a no-op.
+- isModuleType returns true only for module type 4.
+
+
+5. Add contracts/SocialRecoveryValidator.sol
+
+This is the social recovery validator module.
+
+It must implement IValidator.
+It must return true for isModuleType(1).
+
+Internal interface:
+
+interface IRecoveryAccount {
+    function changeOwner(address newOwner) external;
+}
+
+Constants:
+- ERC1271_INVALID_VALUE = 0xffffffff
+- MODULE_TYPE_VALIDATOR = 1
+
+Structs:
+
+RecoveryConfig:
+- uint48 delay
+- uint16 threshold
+- uint16 guardianCount
+
+RecoveryRequest:
+- uint48 executeAfter
+- uint16 approvalCount
+
+Storage:
+- mapping(address => RecoveryConfig) public recoveryConfigs;
+  smartAccount => config
+
+- mapping(address => mapping(address => bool)) public isGuardian;
+  smartAccount => guardian => true/false
+
+- mapping(address => mapping(address => RecoveryRequest)) public recoveryRequests;
+  smartAccount => newOwner => recovery request
+
+- mapping(address => mapping(address => mapping(address => bool))) public hasApproved;
+  smartAccount => newOwner => guardian => true/false
+
+Events:
+- SocialRecoveryInstalled(address indexed smartAccount, uint16 threshold, uint48 delay, address[] guardians)
+- SocialRecoveryUninstalled(address indexed smartAccount)
+- RecoveryApproved(address indexed smartAccount, address indexed guardian, address indexed newOwner, uint16 approvalCount, uint48 executeAfter)
+- RecoveryRevoked(address indexed smartAccount, address indexed guardian, address indexed newOwner, uint16 approvalCount)
+
+Errors:
+- InvalidGuardian()
+- InvalidNewOwner()
+- InvalidThreshold()
+- DuplicateGuardian()
+- NotGuardian()
+- AlreadyApproved()
+- ApprovalNotFound()
+
+
+Social recovery install flow
+----------------------------
+
+Deploy SocialRecoveryValidator.
+
+Prepare initData:
+
+address[] guardians = [guardian1, guardian2, guardian3];
+uint16 threshold = 2;
+uint48 delay = 0; // seconds; can be changed to 1 days, etc.
+bytes memory initData = abi.encode(guardians, threshold, delay);
+
+Install it as validator module type 1:
+
+account.installModule(1, address(socialRecoveryValidator), initData);
+
+What happens:
+- Account calls ModuleManager._installModule.
+- ModuleManager checks module.isModuleType(1).
+- ModuleManager stores validators[address(socialRecoveryValidator)] = true.
+- ModuleManager calls socialRecoveryValidator.onInstall(initData).
+- In onInstall, msg.sender is the smart account.
+- SocialRecoveryValidator stores guardians, threshold, and delay for that
+  smart account.
+
+Install validation:
+- threshold cannot be 0.
+- threshold cannot be greater than guardians.length.
+- guardians.length must fit in uint16.
+- guardian cannot be address(0).
+- guardian cannot be the smart account itself.
+- duplicate guardians are rejected.
+
+
+Social recovery approval flow
+-----------------------------
+
+When the owner key is lost, guardians approve a new owner:
+
+socialRecoveryValidator.approveRecovery(smartAccount, newOwner);
+
+Rules:
+- msg.sender must be a guardian for smartAccount.
+- newOwner cannot be address(0).
+- newOwner cannot be smartAccount.
+- same guardian cannot approve the same newOwner twice.
+
+On first approval:
+- executeAfter = block.timestamp + delay
+
+On each approval:
+- approvalCount increments.
+- hasApproved[smartAccount][newOwner][guardian] = true.
+- RecoveryApproved event is emitted.
+
+Check if recovery is ready:
+
+socialRecoveryValidator.canRecover(smartAccount, newOwner);
+
+Returns true only when:
+- config exists
+- approvalCount >= threshold
+- executeAfter is set
+- block.timestamp >= executeAfter
+
+Guardian revoke:
+
+socialRecoveryValidator.revokeRecovery(smartAccount, newOwner);
+
+Rules:
+- caller must have approved that newOwner.
+- approvalCount decrements.
+- caller approval is cleared.
+- if approvalCount becomes 0, executeAfter resets to 0.
+
+
+Social recovery execution flow
+------------------------------
+
+After enough guardians approve and any delay has passed, submit a UserOperation
+through EntryPoint.
+
+The UserOperation callData must be exactly:
+
+account.changeOwner(newOwner)
+
+Build callData:
+
+account.interface.encodeFunctionData("changeOwner", [newOwner])
+
+The UserOperation signature must be:
+
+abi.encodePacked(
+    address(socialRecoveryValidator),
+    abi.encode(newOwner)
+)
+
+Why:
+- ModularImplementation sees the signature is not 65 bytes.
+- It reads the first 20 bytes as the validator address.
+- It checks validators[validator] is installed.
+- It calls socialRecoveryValidator.validateUserOp(userOp, userOpHash).
+
+SocialRecoveryValidator.validateUserOp checks:
+- userOp.sender == msg.sender
+- signature length is at least 52 bytes
+- newOwner is decoded from userOp.signature[20:]
+- recovery is ready for smartAccount/newOwner
+- userOp.callData exactly equals changeOwner(newOwner)
+
+If all checks pass:
+- validateUserOp returns 0
+- EntryPoint executes the operation
+- Account.changeOwner(newOwner) succeeds because msg.sender is EntryPoint
+- OwnerChanged(oldOwner, newOwner) is emitted
+
+Security property:
+- Guardians cannot execute arbitrary calls.
+- The validator only approves the exact changeOwner(newOwner) operation.
+- It does not approve transfers, upgrades, module installs, or batch execution.
+
+
+Social recovery uninstall flow
+------------------------------
+
+Owner or EntryPoint can uninstall:
+
+bytes memory deInitData = abi.encode(guardians);
+account.uninstallModule(1, address(socialRecoveryValidator), deInitData);
+
+Important:
+- deInitData must include the guardian list.
+- The validator uses this list to clear isGuardian[smartAccount][guardian].
+- It then deletes recoveryConfigs[smartAccount].
+
+Known limitation:
+- recoveryRequests and hasApproved are not enumerable and are not fully deleted
+  on uninstall.
+- They become inactive because recoveryConfigs[smartAccount].threshold is
+  deleted.
+- For production, add a recovery epoch/nonce and include it in request/approval
+  mappings so reinstalling starts from a clean logical state.
+
+
+Test changes
+------------
+
+File:
+- test/ModularAccount.test.ts
+
+Add test:
+- "should recover ownership through guardian approvals"
+
+Test flow:
+- Deploy account.
+- Fund account.
+- Deploy SocialRecoveryValidator.
+- Install it as module type 1.
+- Configure 3 guardians, threshold 2, delay 0.
+- Guardian 1 approves recovery to newOwner.
+- Assert canRecover is false.
+- Guardian 2 approves recovery to newOwner.
+- Assert canRecover is true.
+- Build UserOperation:
+  - sender = account address
+  - callData = changeOwner(newOwner)
+  - signature = recoveryValidator address + abi.encode(newOwner)
+- Submit through EntryPoint.handleOps.
+- Assert old owner can no longer execute.
+- Assert new owner can execute.
+
+Also add/keep hook module test:
+- "should install an ERC-7579 hook and block execution if hook reverts"
+- Proves ModuleManager hook installation and _call hook checks work.
+
+
+Recommended reapply order
+-------------------------
+
+1. Update contracts/Interfaces.sol with module interfaces.
+
+2. Add contracts/ModuleManager.sol.
+
+3. Update contracts/Implementation.sol:
+   - import ModuleManager
+   - inherit IERC7579Account and ModuleManager
+   - add validator routing in validateUserOp
+   - add hook calls in _call
+   - add execute(ModeCode,...)
+   - add executeFromExecutor(...)
+   - add installModule(...)
+   - add uninstallModule(...)
+   - add supportsModule(...)
+   - add isModuleInstalled(...)
+   - add accountId()
+   - add fallback module dispatch
+   - add ERC-1271 validator routing
+   - update supportsInterface
+
+4. Add contracts/MockHook.sol.
+
+5. Add contracts/SocialRecoveryValidator.sol.
+
+6. Update test/ModularAccount.test.ts:
+   - add hook module test if missing
+   - add social recovery validator test
+
+7. Compile and test:
+   - npx hardhat compile
+   - npx hardhat test test/ModularAccount.test.ts
+
+
+Frontend note
+-------------
+
+This document intentionally focuses on contracts and tests.
+
+For a future social recovery UI, add:
+- SocialRecoveryValidator ABI/address
+- guardian configuration screen
+- installModule(1, validator, initData)
+- approveRecovery(account, newOwner)
+- revokeRecovery(account, newOwner)
+- canRecover(account, newOwner)
+- UserOperation builder that uses:
+  signature = validator address + abi.encode(newOwner)
+
+Do not add WebAuthn/passkey UI or contracts if you only want social recovery.
+

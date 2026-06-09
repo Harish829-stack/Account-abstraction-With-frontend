@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAppContext } from '../context/AppContext';
 import { shortenAddress } from '../utils/helpers';
-import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, LayoutDashboard } from 'lucide-react';
+import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, LayoutDashboard, Shield } from 'lucide-react';
 
 export default function Navbar() {
   const { eoaAddress, smartAccountAddress, disconnect, currentView, setCurrentView } = useAppContext();
@@ -57,6 +57,7 @@ export default function Navbar() {
           <NavItem viewId="home" icon={<LayoutDashboard size={18} />} label="Dashboard" />
           <NavItem viewId="setup" icon={<Settings size={18} />} label="Account Setup" />
           <NavItem viewId="paymaster" icon={<DollarSign size={18} />} label="Paymaster" />
+          <NavItem viewId="profile" icon={<User size={18} />} label="Profile" />
           <NavItem viewId="send" icon={<Send size={18} />} label="Send Ops" disabled={!smartAccountAddress} />
           <NavItem viewId="batch-send" icon={<Send size={18} />} label="Batch Ops" disabled={!smartAccountAddress} />
           <NavItem viewId="history" icon={<Clock size={18} />} label="UserOp History" disabled={!smartAccountAddress} />

@@ -2,274 +2,470 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { shortenAddress, formatNum, toHex, packUserOp } from '../utils/helpers';
-import { Copy, Wallet, CheckCircle2, ShieldAlert, RotateCcw, ArrowDownCircle } from 'lucide-react';
-import { ERC20_ABI, SmartAccountABI, IEntryPointABI } from '../utils/abis';
-import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
+import { Shield, CheckCircle, UserPlus, PlayCircle, Settings, ChevronRight, XCircle, Trash2 } from 'lucide-react';
+import { SmartAccountABI, IEntryPointABI, SocialRecoveryValidatorABI } from '../utils/abis';
 
 export default function ProfileView() {
-  const { eoaAddress, eoaETHBalance, eoaUSDCBalance, smartAccountAddress, paymasterAddress, signer, provider, env, loadEOABalances, refreshAllData, saETHBalance, saEntryPointDeposit, trackOp, setCurrentView, setGlobalLoading, refreshTrigger } = useAppContext();
+  const { eoaAddress, smartAccountAddress, signer, provider, env, refreshAllData, refreshTrigger, setGlobalLoading } = useAppContext();
   const toast = useToast();
 
-  const [copied, setCopied] = useState(false);
-  const [pmAllowance, setPmAllowance] = useState('0');
+  // --- SOCIAL RECOVERY STATE ---
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [validatorAddr, setValidatorAddr] = useState("0x9F610079905994f44968428fdA4c0a806f8C99df");
+  const [isRecoveryInstalled, setIsRecoveryInstalled] = useState(false);
+  const [checkingRecovery, setCheckingRecovery] = useState(true);
 
+  // Install State
+  const [guardianOne, setGuardianOne] = useState("");
+  const [guardianTwo, setGuardianTwo] = useState("");
+  const [guardianThree, setGuardianThree] = useState("");
+  const [threshold, setThreshold] = useState("2");
+  const [isInstalling, setIsInstalling] = useState(false);
 
-  const [inputPmAllowance, setInputPmAllowance] = useState('');
+  // Installed Action State
+  const [activeTab, setActiveTab] = useState('approve'); // 'approve' | 'revoke' | 'execute' | 'uninstall'
+  
+  // Shared Form State for actions
+  const [targetSmartAccount, setTargetSmartAccount] = useState("");
+  const [newOwner, setNewOwner] = useState("");
+  const [appStatus, setAppStatus] = useState("idle");
+  const [isExecuting, setIsExecuting] = useState(false);
 
-  const [pendingSa, setPendingSa] = useState(false);
-  const [pendingPm, setPendingPm] = useState(false);
-  const [lastOpHash, setLastOpHash] = useState('');
-
-  const usdcAddress = import.meta.env.VITE_USDC_TOKEN;
-
-  const copyAddress = () => {
-    navigator.clipboard.writeText(eoaAddress);
-    setCopied(true);
-    toast.success("Address copied to clipboard!");
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const fetchAllowances = async () => {
-    if (!signer || !usdcAddress || !smartAccountAddress) return;
-    try {
-      const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, provider);
-      if (paymasterAddress) {
-        // Fetch allowance that the Smart Account gave to the Paymaster
-        const allowance2 = await usdc.allowance(smartAccountAddress, paymasterAddress);
-        setPmAllowance(allowance2.toString());
+  const checkRecoveryModule = async () => {
+      if (!smartAccountAddress || !provider || !validatorAddr) {
+          setCheckingRecovery(false);
+          return;
       }
-    } catch (err) {
-      console.error("Error fetching allowances:", err);
-    }
+      setCheckingRecovery(true);
+      try {
+          const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
+          const installed = await account.isModuleInstalled(1, validatorAddr, "0x");
+          setIsRecoveryInstalled(installed);
+          if (installed) {
+              setTargetSmartAccount(smartAccountAddress); // default value
+          }
+      } catch (err) {
+          console.error("Error checking recovery module:", err);
+          setIsRecoveryInstalled(false);
+      } finally {
+          setCheckingRecovery(false);
+      }
   };
 
   useEffect(() => {
-    fetchAllowances();
-  }, [smartAccountAddress, paymasterAddress, signer, refreshTrigger]);
+    checkRecoveryModule();
+  }, [smartAccountAddress, signer, refreshTrigger, validatorAddr]);
 
 
+  // === SOCIAL RECOVERY ACTIONS ===
 
-  const handleApprovePM = async (amountStr) => {
-    if (!signer || !usdcAddress || !smartAccountAddress || !paymasterAddress) return;
-    setPendingPm(true);
-    setGlobalLoading(true, "Approving Paymaster...");
-    try {
-      // Robust EIP-1559 gas fee estimation for public bundlers
-      let maxFeePerGas = 25000000000n; // 25 Gwei fallback
-      let maxPriorityFeePerGas = 1500000000n; // 1.5 Gwei fallback
-      try {
-        const block = await provider.getBlock("latest");
-        if (block && block.baseFeePerGas) {
-          maxFeePerGas = block.baseFeePerGas * 2n + maxPriorityFeePerGas;
-        } else {
-          const fee = await provider.getFeeData();
-          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
-          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
-        }
-      } catch (feeErr) {
-        console.warn("Failed to get EIP-1559 fees via block, using getFeeData fallback:", feeErr);
-        try {
-          const fee = await provider.getFeeData();
-          maxFeePerGas = fee.maxFeePerGas || maxFeePerGas;
-          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
-        } catch (e) {
-          console.error("Failed to load fee fallback:", e);
-        }
-      }
-
-      // EntryPoint gas prefund (maxCost) validation check
-      const totalGasLimit = 150000n + 150000n + 50000n; // callGasLimit + verificationGasLimit + preVerificationGas
-      const requiredPrefundWei = totalGasLimit * maxFeePerGas;
-      const requiredPrefundEth = parseFloat(ethers.formatEther(requiredPrefundWei));
-
-      const saBalanceEth = parseFloat(ethers.formatEther(saETHBalance || "0"));
-      const saDepositEth = parseFloat(ethers.formatEther(saEntryPointDeposit || "0"));
-      const totalAvailableEth = saBalanceEth + saDepositEth;
-
-      console.log(`[Profile-Prefund-Check] Required max prefund: ${requiredPrefundEth.toFixed(5)} ETH. Available: ${totalAvailableEth.toFixed(5)} ETH.`);
-
-      if (totalAvailableEth < requiredPrefundEth) {
-        toast.error(
-          `Insufficient ETH for prefund! The EntryPoint requires your Smart Account to have at least ${requiredPrefundEth.toFixed(4)} ETH to cover the worst-case gas cost of this transaction. You currently have ${totalAvailableEth.toFixed(4)} ETH total (Balance + Deposit). Please deposit more ETH into your Smart Account first.`
-        );
-        setPendingPm(false);
-        setGlobalLoading(false);
+  const handleInstallRecovery = async () => {
+    if (!smartAccountAddress || !signer) return;
+    if (!validatorAddr || !guardianOne || !guardianTwo || !guardianThree) {
+        toast.error("Please fill in validator and all 3 guardian addresses.");
         return;
-      }
-
-      const parsedAmount = amountStr ? ethers.parseUnits(amountStr, 6) : 0n;
-
-      const erc20 = new ethers.Interface(ERC20_ABI);
-      const inner = erc20.encodeFunctionData("approve", [paymasterAddress, parsedAmount]);
-
-      const saInterface = new ethers.Interface(SmartAccountABI);
-      const callData = saInterface.encodeFunctionData("execute", [usdcAddress, 0, inner]);
-
-      const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
-      const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
-
-      const userOp = {
-        sender: smartAccountAddress,
-        nonce: toHex(nonce),
-        factory: "0x",
-        factoryData: "0x",
-        callData: callData,
-        callGasLimit: toHex(150000),
-        verificationGasLimit: toHex(150000),
-        preVerificationGas: toHex(50000),
-        maxFeePerGas: toHex(maxFeePerGas),
-        maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
-        paymaster: "0x", // SA pays gas in ETH for its own approval
-        paymasterVerificationGasLimit: "0x",
-        paymasterPostOpGasLimit: "0x",
-        paymasterData: "0x",
-        signature: "0x"
-      };
-
-      // Try to estimate gas
-      try {
-        const est = await estimateUserOperationGas(userOp);
-        userOp.callGasLimit = toHex(est.callGasLimit);
-        userOp.verificationGasLimit = toHex(est.verificationGasLimit);
-        userOp.preVerificationGas = toHex(BigInt(est.preVerificationGas) + 5000n);
-      } catch (err) {
-        console.warn("Estimation failed, using defaults", err);
-      }
-
-      const hash = await entryPoint.getUserOpHash(packUserOp(userOp));
-      userOp.signature = await signer.signMessage(ethers.getBytes(hash));
-
-      toast.info("Sending UserOp to approve Paymaster...");
-      const opHash = await sendUserOperation(userOp);
-
-      // Fire and forget — global tracker handles confirmation in background
-      trackOp(opHash, 'USDC Allowance Update');
-      setLastOpHash(opHash);
-      toast.withAction(
-        'UserOp submitted to bundler!',
-        'View in History →',
-        () => setCurrentView('history'),
-        'info'
+    }
+    setIsInstalling(true);
+    setGlobalLoading(true, "Installing Recovery Module...");
+    try {
+      const initData = ethers.AbiCoder.defaultAbiCoder().encode(
+        ["address[]", "uint16", "uint48"],
+        [[guardianOne, guardianTwo, guardianThree], Number(threshold), 0]
       );
-      setInputPmAllowance('');
+      const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
+      const tx = await account.installModule(1, validatorAddr, initData);
+      await tx.wait();
+      
+      toast.success("Social Recovery Module Installed Successfully!");
+      await checkRecoveryModule();
     } catch (err) {
-      if (err.code === 4001) toast.error("Transaction rejected by user");
-      else toast.error(err.reason || err.message || "Failed to approve Paymaster");
+      console.error(err);
+      toast.error(err.reason || err.message || "Failed to install module");
     } finally {
-      setPendingPm(false);
+      setIsInstalling(false);
       setGlobalLoading(false);
     }
   };
 
+  const handleUninstallRecovery = async () => {
+    if (!smartAccountAddress || !signer || !validatorAddr) return;
+    setGlobalLoading(true, "Uninstalling Module...");
+    try {
+        const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
+        // Pass empty array to prevent decode revert
+        const deInitData = ethers.AbiCoder.defaultAbiCoder().encode(["address[]"], [[]]);
+        const tx = await account.uninstallModule(1, validatorAddr, deInitData);
+        await tx.wait();
+        toast.success("Module Uninstalled.");
+        await checkRecoveryModule();
+        setShowRecovery(false); // Close the view on success
+    } catch (err) {
+        toast.error("Uninstall failed: " + (err.reason || err.message));
+    } finally {
+        setGlobalLoading(false);
+    }
+  };
+
+  const handleApproveRecovery = async () => {
+    if (!targetSmartAccount || !newOwner || !signer) {
+        toast.error("Please enter the Smart Account and New Owner addresses.");
+        return;
+    }
+    setAppStatus("loading");
+    setGlobalLoading(true, "Approving Recovery...");
+    try {
+        const recoveryValidator = new ethers.Contract(validatorAddr, SocialRecoveryValidatorABI, signer);
+        
+        const hasApproved = await recoveryValidator.hasApproved(targetSmartAccount, newOwner, eoaAddress);
+        if (hasApproved) {
+            toast.success("You have already approved this recovery request.");
+            setAppStatus("done");
+            return;
+        }
+
+        const tx = await recoveryValidator.approveRecovery(targetSmartAccount, newOwner);
+        await tx.wait();
+        toast.success(`Approval successful!`);
+        setAppStatus("done");
+    } catch (err) {
+        console.error(err);
+        toast.error("Approval failed: " + (err.reason || err.message));
+        setAppStatus("idle");
+    } finally {
+        setGlobalLoading(false);
+    }
+  };
+
+  const handleRevokeRecovery = async () => {
+    if (!targetSmartAccount || !newOwner || !signer) {
+        toast.error("Please enter the Smart Account and New Owner addresses.");
+        return;
+    }
+    setAppStatus("loading");
+    setGlobalLoading(true, "Revoking Recovery...");
+    try {
+        const recoveryValidator = new ethers.Contract(validatorAddr, SocialRecoveryValidatorABI, signer);
+        const tx = await recoveryValidator.revokeRecovery(targetSmartAccount, newOwner);
+        await tx.wait();
+        toast.success(`Revoked successfully!`);
+        setAppStatus("idle");
+    } catch (err) {
+        console.error(err);
+        toast.error("Revoke failed: " + (err.reason || err.message));
+        setAppStatus("idle");
+    } finally {
+        setGlobalLoading(false);
+    }
+  };
+
+  const handleExecuteRecovery = async () => {
+      if (!targetSmartAccount || !newOwner || !signer) return;
+      setIsExecuting(true);
+      setGlobalLoading(true, "Executing Recovery...");
+      try {
+          const recoveryValidator = new ethers.Contract(validatorAddr, SocialRecoveryValidatorABI, provider);
+          const canRecover = await recoveryValidator.canRecover(targetSmartAccount, newOwner);
+          if (!canRecover) {
+              throw new Error("Cannot recover yet. Threshold not met or delay hasn't passed.");
+          }
+
+          const account = new ethers.Contract(targetSmartAccount, SmartAccountABI, provider);
+          const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, signer);
+
+          const callData = account.interface.encodeFunctionData("changeOwner", [newOwner]);
+          const signature = ethers.concat([
+              validatorAddr,
+              ethers.AbiCoder.defaultAbiCoder().encode(["address"], [newOwner])
+          ]);
+
+          const verificationGasLimit = 150000n;
+          const callGasLimit = 100000n;
+          const maxPriorityFeePerGas = 1500000000n;
+          const maxFeePerGas = 5000000000n;
+
+          const accountGasLimits = ethers.concat([
+              ethers.zeroPadValue(ethers.toBeHex(verificationGasLimit), 16),
+              ethers.zeroPadValue(ethers.toBeHex(callGasLimit), 16)
+          ]);
+
+          const gasFees = ethers.concat([
+              ethers.zeroPadValue(ethers.toBeHex(maxPriorityFeePerGas), 16),
+              ethers.zeroPadValue(ethers.toBeHex(maxFeePerGas), 16)
+          ]);
+
+          const nonce = await entryPoint.getNonce(targetSmartAccount, 0);
+
+          const userOp = {
+              sender: targetSmartAccount,
+              nonce: nonce,
+              initCode: "0x",
+              callData: callData,
+              accountGasLimits: accountGasLimits,
+              preVerificationGas: 50000n,
+              gasFees: gasFees,
+              paymasterAndData: "0x",
+              signature: signature
+          };
+
+          try {
+              await entryPoint.getFunction("handleOps").staticCall([userOp], await signer.getAddress());
+          } catch(simErr) {
+              if (simErr.data) {
+                 try {
+                     const decoded = entryPoint.interface.parseError(simErr.data);
+                     throw new Error(`Simulation Failed: ${decoded?.name}`);
+                 } catch(e) {}
+              }
+              throw simErr;
+          }
+
+          const tx = await entryPoint.handleOps([userOp], await signer.getAddress());
+          await tx.wait();
+          
+          toast.success("Recovery Executed Successfully!");
+          await refreshAllData();
+          setNewOwner("");
+          setAppStatus("idle");
+      } catch (err) {
+          console.error(err);
+          toast.error(err.message || "Failed to execute recovery");
+      } finally {
+          setIsExecuting(false);
+          setGlobalLoading(false);
+      }
+  };
+
+
   return (
-    <div className="flex flex-col gap-6 max-w-4xl mx-auto">
-      {/* EOA Details Card */}
-      <div className="glass-card flex flex-col gap-4">
-        <div className="flex justify-between items-center mb-0">
-          <h2 className="flex items-center gap-2 text-gradient m-0"><Wallet size={24} /> EOA Profile</h2>
-          <button
-            className="p-1.5 rounded-full hover:bg-white/10 transition-all text-muted hover:text-white"
-            onClick={async () => {
-              await refreshAllData();
-              await fetchAllowances();
-            }}
-            title="Refresh profile"
-          >
-            <RotateCcw size={18} />
-          </button>
-        </div>
+    <div className="flex flex-col gap-6 max-w-4xl mx-auto pb-12 animate-fade-in">
+        
+        {/* Main Entry Button */}
+        {!showRecovery && (
+            <button 
+                className="glass-card flex items-center justify-between hover:bg-white/5 transition-all cursor-pointer group border border-emerald-500/20 shadow-xl hover:shadow-[0_0_40px_rgba(16,185,129,0.15)] bg-gradient-to-r from-black/60 to-emerald-950/20"
+                onClick={() => setShowRecovery(true)}
+            >
+                <div className="flex items-center gap-4">
+                    <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-400 group-hover:bg-emerald-500/20 group-hover:scale-110 transition-all border border-emerald-500/10">
+                        <Shield size={32} />
+                    </div>
+                    <div className="text-left">
+                        <h2 className="text-xl font-bold m-0 text-slate-100 group-hover:text-emerald-400 transition-colors">Social Recovery</h2>
+                        <p className="text-sm text-slate-400 m-0 group-hover:text-slate-300">Manage guardians, approve recovery, or rescue an account.</p>
+                    </div>
+                </div>
+                <ChevronRight className="text-slate-500 group-hover:text-emerald-400 transition-colors" size={24} />
+            </button>
+        )}
 
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white/5 p-4 rounded-md border border-white/10">
-          <div>
-            <div className="text-sm text-muted mb-1">Externally Owned Account</div>
-            <div className="font-heading font-medium text-lg flex items-center gap-2">
-              {shortenAddress(eoaAddress)}
-              <button onClick={copyAddress} className="text-muted hover:text-white transition-colors" title="Copy Address">
-                {copied ? <CheckCircle2 size={18} className="text-secondary" /> : <Copy size={18} />}
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4 sm:mt-0 flex flex-col gap-2 min-w-[200px]">
-            <div className="flex justify-between items-center border-b border-light pb-2">
-              <span className="text-sm text-muted">ETH Balance</span>
-              <span className="font-bold">{formatNum(eoaETHBalance, 18)}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-muted">USDC Balance</span>
-              <span className="font-bold">{formatNum(eoaUSDCBalance, 6)}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-
-      {/* Allowances Card */}
-      <div className="glass-card">
-        <h2 className="flex items-center gap-2 text-gradient mb-4"><ShieldAlert size={24} /> Paymaster Approval</h2>
-        <p className="text-sm text-muted mb-4">Approve the Paymaster to pull USDC from your Smart Account's balance for gas fees (Requires ETH in SA for this first UserOp).</p>
-
-        <div className="overflow-x-auto">
-          <table className="styled-table">
-            <thead>
-              <tr>
-                <th>Spender</th>
-                <th>Approved Amount</th>
-                <th>Update Allowance</th>
-                <th>Revoke</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Paymaster Row */}
-              <tr>
-                <td>
-                  <div className="font-medium">Paymaster</div>
-                  {paymasterAddress ? (
-                    <div className="text-xs text-muted">{shortenAddress(paymasterAddress)}</div>
-                  ) : (
-                    <div className="text-xs text-red-400">Not Setup</div>
-                  )}
-                </td>
-                <td>
-                  <span className="font-bold">{formatNum(pmAllowance, 6)}</span>
-                </td>
-                <td>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      className="input-field py-1 px-2 text-sm w-24"
-                      placeholder="Amount"
-                      value={inputPmAllowance}
-                      onChange={(e) => setInputPmAllowance(e.target.value)}
-                      disabled={!paymasterAddress || pendingPm}
-                    />
-                    <button
-                      className="btn btn-primary py-1 px-3 text-sm"
-                      disabled={!paymasterAddress || !inputPmAllowance || pendingPm}
-                      title={!paymasterAddress ? "Set up paymaster first" : ""}
-                      onClick={() => handleApprovePM(inputPmAllowance)}
+        {/* Expanded Recovery View */}
+        {showRecovery && (
+            <div className="glass-card border border-emerald-500/30 flex flex-col gap-6 shadow-[0_0_50px_rgba(16,185,129,0.1)] relative overflow-hidden animate-slide-up bg-gradient-to-b from-black/80 to-slate-900/90">
+                <div className="absolute top-0 right-0 w-72 h-72 bg-emerald-500/10 rounded-full blur-[80px] -mr-20 -mt-20 pointer-events-none"></div>
+                
+                {/* Header */}
+                <div className="flex items-center justify-between z-10 border-b border-emerald-500/20 pb-4">
+                    <div className="flex items-center gap-3">
+                        <Shield className="text-emerald-400 drop-shadow-[0_0_10px_rgba(16,185,129,0.5)]" size={28} />
+                        <div>
+                            <h2 className="text-xl font-bold m-0 bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent drop-shadow-sm">Social Recovery</h2>
+                            <p className="text-sm text-emerald-400/70 m-0 font-medium">
+                                {checkingRecovery ? "Checking status..." : (isRecoveryInstalled ? "Module Active" : "Module Not Installed")}
+                            </p>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={() => setShowRecovery(false)}
+                        className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-all"
                     >
-                      {pendingPm ? '...' : 'Approve'}
+                        <XCircle size={20} />
                     </button>
-                  </div>
-                </td>
-                <td>
-                  <button
-                    className="btn btn-danger py-1 px-3 text-sm"
-                    disabled={!paymasterAddress || pendingPm}
-                    onClick={() => handleApprovePM("0")}
-                  >
-                    Revoke
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+                </div>
+
+                {/* CONTENT: Always show Sub-Navbar & Action Forms */}
+                {!checkingRecovery && (
+                    <div className="z-10 animate-fade-in flex flex-col gap-5">
+                        
+                        {/* Sub Navbar */}
+                        <div className="flex bg-black/60 rounded-lg border border-emerald-500/20 p-1.5 gap-1.5 overflow-x-auto no-scrollbar shadow-[inset_0_0_20px_rgba(16,185,129,0.05)]">
+                            <button 
+                                className={`px-4 py-2 text-sm font-bold rounded-md whitespace-nowrap transition-all flex items-center gap-2 ${activeTab === 'setup' ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-black shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'text-emerald-500/70 hover:text-emerald-400 hover:bg-emerald-500/10'}`}
+                                onClick={() => setActiveTab('setup')}
+                            >
+                                <Settings size={15} /> Setup
+                            </button>
+                            <button 
+                                className={`px-4 py-2 text-sm font-bold rounded-md whitespace-nowrap transition-all flex items-center gap-2 ${activeTab === 'approve' ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-black shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'text-emerald-500/70 hover:text-emerald-400 hover:bg-emerald-500/10'}`}
+                                onClick={() => setActiveTab('approve')}
+                            >
+                                <CheckCircle size={15} /> Approve
+                            </button>
+                            <button 
+                                className={`px-4 py-2 text-sm font-bold rounded-md whitespace-nowrap transition-all flex items-center gap-2 ${activeTab === 'revoke' ? 'bg-gradient-to-r from-orange-500 to-amber-400 text-black shadow-[0_0_15px_rgba(249,115,22,0.4)]' : 'text-emerald-500/70 hover:text-emerald-400 hover:bg-emerald-500/10'}`}
+                                onClick={() => setActiveTab('revoke')}
+                            >
+                                <XCircle size={15} /> Revoke
+                            </button>
+                            <button 
+                                className={`px-4 py-2 text-sm font-bold rounded-md whitespace-nowrap transition-all flex items-center gap-2 ${activeTab === 'execute' ? 'bg-gradient-to-r from-teal-500 to-cyan-400 text-black shadow-[0_0_15px_rgba(20,184,166,0.4)]' : 'text-emerald-500/70 hover:text-emerald-400 hover:bg-emerald-500/10'}`}
+                                onClick={() => setActiveTab('execute')}
+                            >
+                                <PlayCircle size={15} /> Execute
+                            </button>
+                        </div>
+
+                        {/* Forms Container */}
+                        <div className="p-6 bg-black/40 rounded-xl border border-emerald-500/10 mt-1 min-h-[240px] shadow-[inset_0_0_30px_rgba(16,185,129,0.02)]">
+                            
+                            {/* SETUP TAB */}
+                            {activeTab === 'setup' && (
+                                <div className="flex flex-col gap-5 animate-fade-in">
+                                    {!isRecoveryInstalled ? (
+                                        <>
+                                            <div>
+                                                <h3 className="text-lg font-bold text-emerald-400 drop-shadow-sm">Setup & Install Module</h3>
+                                                <p className="text-xs text-emerald-100/50 mt-1">Configure guardians to protect your smart account.</p>
+                                            </div>
+                                            <div className="flex flex-col gap-4">
+                                                <div>
+                                                    <label className="text-xs text-slate-400 mb-1 block">Validator Address</label>
+                                                    <input type="text" className="input-field bg-slate-900/50 border-emerald-500/20 text-slate-200 text-sm focus:border-emerald-500" value={validatorAddr} onChange={(e) => setValidatorAddr(e.target.value)} />
+                                                </div>
+
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                    <div>
+                                                        <label className="text-xs text-slate-400 mb-1 block">Guardian 1 Address</label>
+                                                        <input type="text" className="input-field bg-slate-900/50 border-emerald-500/20 text-slate-200 text-sm focus:border-emerald-500" placeholder="0x..." value={guardianOne} onChange={(e) => setGuardianOne(e.target.value)} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-slate-400 mb-1 block">Guardian 2 Address</label>
+                                                        <input type="text" className="input-field bg-slate-900/50 border-emerald-500/20 text-slate-200 text-sm focus:border-emerald-500" placeholder="0x..." value={guardianTwo} onChange={(e) => setGuardianTwo(e.target.value)} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-slate-400 mb-1 block">Guardian 3 Address</label>
+                                                        <input type="text" className="input-field bg-slate-900/50 border-emerald-500/20 text-slate-200 text-sm focus:border-emerald-500" placeholder="0x..." value={guardianThree} onChange={(e) => setGuardianThree(e.target.value)} />
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs text-slate-400 mb-1 block">Threshold</label>
+                                                    <input type="number" className="input-field bg-slate-900/50 border-emerald-500/20 text-slate-200 text-sm focus:border-emerald-500" value={threshold} onChange={(e) => setThreshold(e.target.value)} min="1" max="3" disabled />
+                                                    <p className="text-xs text-emerald-500/60 mt-1">Threshold is fixed at 2 for this setup.</p>
+                                                </div>
+                                            </div>
+                                            <button 
+                                                className="w-full mt-2 py-3 rounded-lg font-bold text-black bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed border-none"
+                                                onClick={handleInstallRecovery}
+                                                disabled={isInstalling || !smartAccountAddress}
+                                            >
+                                                <UserPlus size={18} /> {isInstalling ? "Installing..." : "Install Recovery Module"}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div>
+                                                <h3 className="text-lg font-bold text-red-500 drop-shadow-sm">Uninstall Module</h3>
+                                                <p className="text-xs text-red-100/50 mt-1">Remove the Social Recovery module from your smart account.</p>
+                                            </div>
+                                            <div className="p-4 bg-red-950/40 border border-red-500/30 rounded-lg shadow-[inset_0_0_15px_rgba(220,38,38,0.1)]">
+                                                <p className="text-sm text-red-400 m-0 font-medium">Warning: This will completely disable social recovery for your account. You will need to re-install it if you wish to use it again.</p>
+                                            </div>
+                                            <button 
+                                                className="w-full py-3.5 rounded-lg font-bold text-white bg-gradient-to-r from-red-600 to-rose-500 hover:from-red-500 hover:to-rose-400 shadow-[0_0_20px_rgba(220,38,38,0.3)] transition-all mt-2 border-none"
+                                                onClick={handleUninstallRecovery}
+                                            >
+                                                Uninstall Now
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* APPROVE TAB */}
+                            {activeTab === 'approve' && (
+                                <div className="flex flex-col gap-5 animate-fade-in">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-emerald-400 drop-shadow-sm">Approve Recovery</h3>
+                                        <p className="text-xs text-emerald-100/50 mt-1">Approve a recovery request for a smart account.</p>
+                                    </div>
+                                    <div className="grid gap-4">
+                                        <div>
+                                            <label className="text-xs text-slate-400 mb-1 block">Target Smart Account</label>
+                                            <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm" placeholder="Address to recover..." value={targetSmartAccount} onChange={(e) => setTargetSmartAccount(e.target.value)} />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-slate-400 mb-1 block">New Owner Address</label>
+                                            <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm" placeholder="The new owner..." value={newOwner} onChange={(e) => setNewOwner(e.target.value)} />
+                                        </div>
+                                    </div>
+                                    <button 
+                                        className="w-full py-3.5 rounded-lg font-bold text-black bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all mt-2 border-none"
+                                        onClick={handleApproveRecovery}
+                                    >
+                                        Approve Recovery
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* REVOKE TAB */}
+                            {activeTab === 'revoke' && (
+                                <div className="flex flex-col gap-5 animate-fade-in">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-orange-400 drop-shadow-sm">Revoke Approval</h3>
+                                        <p className="text-xs text-orange-100/50 mt-1">Cancel your previous approval for a recovery request.</p>
+                                    </div>
+                                    <div className="grid gap-4">
+                                        <div>
+                                            <label className="text-xs text-slate-400 mb-1 block">Target Smart Account</label>
+                                            <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm" placeholder="Address to recover..." value={targetSmartAccount} onChange={(e) => setTargetSmartAccount(e.target.value)} />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-slate-400 mb-1 block">New Owner Address</label>
+                                            <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm" placeholder="The new owner..." value={newOwner} onChange={(e) => setNewOwner(e.target.value)} />
+                                        </div>
+                                    </div>
+                                    <button 
+                                        className="w-full py-3.5 rounded-lg font-bold text-black bg-gradient-to-r from-orange-500 to-amber-400 hover:from-orange-400 hover:to-amber-300 shadow-[0_0_20px_rgba(249,115,22,0.3)] transition-all mt-2 border-none"
+                                        onClick={handleRevokeRecovery}
+                                    >
+                                        Revoke Approval
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* EXECUTE TAB */}
+                            {activeTab === 'execute' && (
+                                <div className="flex flex-col gap-5 animate-fade-in">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-teal-400 drop-shadow-sm">Execute Recovery</h3>
+                                        <p className="text-xs text-teal-100/50 mt-1">Finalize the recovery process once the threshold is met.</p>
+                                    </div>
+                                    <div className="grid gap-4">
+                                        <div>
+                                            <label className="text-xs text-slate-400 mb-1 block">Target Smart Account</label>
+                                            <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm" placeholder="Address to recover..." value={targetSmartAccount} onChange={(e) => setTargetSmartAccount(e.target.value)} />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-slate-400 mb-1 block">New Owner Address</label>
+                                            <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm" placeholder="The new owner..." value={newOwner} onChange={(e) => setNewOwner(e.target.value)} />
+                                        </div>
+                                    </div>
+                                    <button 
+                                        className="w-full py-3.5 rounded-lg font-bold text-black bg-gradient-to-r from-teal-500 to-cyan-400 hover:from-teal-400 hover:to-cyan-300 shadow-[0_0_20px_rgba(20,184,166,0.3)] transition-all mt-2 border-none disabled:opacity-50 disabled:cursor-not-allowed"
+                                        onClick={handleExecuteRecovery}
+                                        disabled={isExecuting}
+                                    >
+                                        {isExecuting ? "Executing..." : "Execute On-Chain"}
+                                    </button>
+                                </div>
+                            )}
 
 
-      </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        )}
 
     </div>
   );
