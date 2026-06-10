@@ -208,6 +208,94 @@ describe("Modular Account v0.7 E2E", function () {
     await account.connect(newOwner).getFunction("execute(address,uint256,bytes)")(randomUser.address, 0n, "0x");
   });
 
+  it("should execute a limited operation through a session key", async function () {
+    const salt = 275n;
+    const predictedAddr = await factory.getFunction("getAddress")(owner.address, salt);
+
+    const txDeploy = await factory.createAccount(owner.address, salt);
+    await txDeploy.wait();
+
+    await deployer.sendTransaction({
+      to: predictedAddr,
+      value: ethers.parseEther("1.0"),
+    });
+
+    const account = await ethers.getContractAt("ModularImplementation", predictedAddr);
+    const sessionSigner = (await ethers.getSigners())[5];
+
+    const SessionKeyValidator = await ethers.getContractFactory("SessionKeyValidator");
+    const sessionValidator = await SessionKeyValidator.deploy();
+    await sessionValidator.waitForDeployment();
+    const sessionValidatorAddr = await sessionValidator.getAddress();
+
+    const sessionKeyData = {
+      sessionKey: sessionSigner.address,
+      target: randomUser.address,
+      selector: "0x00000000",
+      maxValue: ethers.parseEther("0.2"),
+      validAfter: 0,
+      validUntil: 0,
+      remainingUses: 1
+    };
+    const initData = ethers.AbiCoder.defaultAbiCoder().encode(
+      ["tuple(address sessionKey,address target,bytes4 selector,uint256 maxValue,uint48 validAfter,uint48 validUntil,uint48 remainingUses)[]"],
+      [[sessionKeyData]]
+    );
+
+    await account.connect(owner).installModule(1, sessionValidatorAddr, initData);
+
+    const callData = account.interface.encodeFunctionData(
+      "execute(address,uint256,bytes)",
+      [randomUser.address, ethers.parseEther("0.1"), "0x"]
+    );
+
+    const verificationGasLimit = 300000n;
+    const callGasLimit = 200000n;
+    const maxPriorityFeePerGas = 1500000000n;
+    const maxFeePerGas = 20000000000n;
+
+    const accountGasLimits = ethers.concat([
+      ethers.zeroPadValue(ethers.toBeHex(verificationGasLimit), 16),
+      ethers.zeroPadValue(ethers.toBeHex(callGasLimit), 16)
+    ]);
+
+    const gasFees = ethers.concat([
+      ethers.zeroPadValue(ethers.toBeHex(maxPriorityFeePerGas), 16),
+      ethers.zeroPadValue(ethers.toBeHex(maxFeePerGas), 16)
+    ]);
+
+    const userOp = {
+      sender: predictedAddr,
+      nonce: 0n,
+      initCode: "0x",
+      callData,
+      accountGasLimits,
+      preVerificationGas: 50000n,
+      gasFees,
+      paymasterAndData: "0x",
+      signature: "0x"
+    };
+
+    const hash = await entryPoint.getUserOpHash(userOp);
+    const sessionSignature = await sessionSigner.signMessage(ethers.getBytes(hash));
+    userOp.signature = ethers.concat([
+      sessionValidatorAddr,
+      sessionSigner.address,
+      sessionSignature
+    ]);
+
+    const initialBalance = await ethers.provider.getBalance(randomUser.address);
+
+    const tx = await entryPoint.handleOps([userOp], deployer.address);
+    await tx.wait();
+
+    const finalBalance = await ethers.provider.getBalance(randomUser.address);
+    expect(finalBalance - initialBalance).to.equal(ethers.parseEther("0.1"));
+
+    const storedSession = await sessionValidator.sessionKeys(predictedAddr, sessionSigner.address);
+    expect(storedSession.remainingUses).to.equal(0n);
+  });
+
   it("should sponsor transaction via Custom Paymaster", async function () {
     const salt = 300n;
     const predictedAddr = await factory.getFunction("getAddress")(owner.address, salt);
