@@ -57,3 +57,9 @@ export const SocialRecoveryValidatorABI = [
   "function canRecover(address smartAccount, address newOwner) view returns (bool)",
   "function hasApproved(address smartAccount, address newOwner, address guardian) view returns (bool)"
 ];
+
+export const SessionKeyValidatorABI = [
+  "function addSessionKey(tuple(address sessionKey, address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil, uint48 remainingUses) keyData) external",
+  "function revokeSessionKey(address sessionKey) external",
+  "function sessionKeys(address account, address sessionKey) view returns (address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil, uint48 remainingUses, bool enabled)"
+];

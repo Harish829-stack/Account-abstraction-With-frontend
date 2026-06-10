@@ -4,6 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { Shield, CheckCircle, UserPlus, PlayCircle, Settings, ChevronRight, XCircle, Trash2 } from 'lucide-react';
 import { SmartAccountABI, IEntryPointABI, SocialRecoveryValidatorABI } from '../utils/abis';
+import SessionKeyView from './SessionKeyView';
 
 export default function ProfileView() {
   const { eoaAddress, smartAccountAddress, signer, provider, env, refreshAllData, refreshTrigger, setGlobalLoading } = useAppContext();
@@ -467,6 +468,7 @@ export default function ProfileView() {
             </div>
         )}
 
+        <SessionKeyView />
     </div>
   );
 }
