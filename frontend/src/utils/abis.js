@@ -38,8 +38,14 @@ export const ERC20PaymasterABI = [
   "function unlockStake()",
   "function withdrawStake(address payable withdrawAddress)",
   "function withdrawTo(address payable withdrawAddress, uint256 amount)",
-  "function withdrawToken(address to, uint256 amount)",
-  "function unlockBlock() view returns (uint256)"
+  "function withdrawToken(address token, address to, uint256 amount)",
+  "function unlockBlock() view returns (uint256)",
+  "function addToken(address token, address _tokenUsdFeed, uint256 _minTokenPriceUsd) external",
+  "function setTokenEnabled(address token, bool enabled) external",
+  "function setNativeUsdFeed(address feed) external",
+  "function setMaxNativePriceUsd(uint256 _maxPrice) external",
+  "function setMinTokenPriceUsd(address token, uint256 _minPrice) external",
+  "function owner() view returns (address)"
 ];
 
 export const ERC20_ABI = [

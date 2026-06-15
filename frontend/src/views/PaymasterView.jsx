@@ -6,7 +6,7 @@ import pmArtifact from '../utils/ERC20Paymaster.json';
 import { shortenAddress, formatNum, toHex, packUserOp, encodeERC7579Single } from '../utils/helpers';
 import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
 import { useToast } from '../context/ToastContext';
-import { DollarSign, ShieldAlert, ArrowDownCircle, ArrowUpCircle, Lock, Unlock, PlayCircle, CheckCircle, RotateCcw, ChevronRight, Info } from 'lucide-react';
+import { DollarSign, ShieldAlert, ArrowDownCircle, ArrowUpCircle, Lock, Unlock, PlayCircle, CheckCircle, RotateCcw, ChevronRight, Info, Settings, X, Plus, AlertTriangle } from 'lucide-react';
 import Stepper from '../components/Stepper';
 
 
@@ -23,6 +23,24 @@ export default function PaymasterView() {
   // Stepper State
   const [currentStep, setCurrentStep] = useState(1);
   const steps = ["Deploy / Connect", "Approve", "Fund & Stake"];
+
+  // Admin State
+  const [pmOwner, setPmOwner] = useState('');
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  
+  // Admin Action States
+  const [adminDepositAmount, setAdminDepositAmount] = useState('');
+  const [adminStakeAmount, setAdminStakeAmount] = useState('');
+  const [adminEthAddress, setAdminEthAddress] = useState('');
+  const [adminWithdrawEthAmount, setAdminWithdrawEthAmount] = useState('');
+  const [adminTokenAddress, setAdminTokenAddress] = useState('');
+  const [adminTokenAmount, setAdminTokenAmount] = useState('');
+  const [adminUnstakeDelay, setAdminUnstakeDelay] = useState('86400');
+  
+  // Admin Add Token States
+  const [adminNewToken, setAdminNewToken] = useState('');
+  const [adminNewTokenFeed, setAdminNewTokenFeed] = useState('');
+  const [adminNewTokenMinPrice, setAdminNewTokenMinPrice] = useState('1000000'); // 0.01 with 8 decimals
 
 
   // Deploy States
@@ -67,8 +85,20 @@ export default function PaymasterView() {
     }
   };
 
+  const fetchPmOwner = async () => {
+    if (!provider || !paymasterAddress) return;
+    try {
+      const pmContract = new ethers.Contract(paymasterAddress, ERC20PaymasterABI, provider);
+      const owner = await pmContract.owner();
+      setPmOwner(owner);
+    } catch (err) {
+      console.error("Error fetching pm owner:", err);
+    }
+  };
+
   useEffect(() => {
     fetchPmAllowance();
+    fetchPmOwner();
   }, [smartAccountAddress, paymasterAddress, provider, dToken, refreshTrigger]);
 
   // Auto-redirect
@@ -151,6 +181,37 @@ export default function PaymasterView() {
        setFunding(false); setWithdrawing(false);
        setGlobalLoading(false);
     }
+  };
+
+  // --- Admin Handlers ---
+  const handleAdminDeposit = async () => {
+    if (!adminDepositAmount) return;
+    await executePmAction(async (pm) => pm.deposit({ value: ethers.parseEther(adminDepositAmount) }), "Deposit ETH to EntryPoint");
+  };
+
+  const handleAdminStake = async () => {
+    if (!adminStakeAmount || !adminUnstakeDelay) return;
+    await executePmAction(async (pm) => pm.addStake(adminUnstakeDelay, { value: ethers.parseEther(adminStakeAmount) }), "Stake ETH to EntryPoint");
+  };
+
+  const handleAdminWithdrawETH = async () => {
+    if (!adminWithdrawEthAmount || !adminEthAddress) return;
+    await executePmAction(async (pm) => pm.withdrawTo(adminEthAddress.trim(), ethers.parseEther(adminWithdrawEthAmount.trim())), "Withdraw ETH from EntryPoint");
+  };
+
+  const handleAdminWithdrawToken = async () => {
+    if (!adminTokenAmount || !adminTokenAddress || !adminEthAddress) return;
+    await executePmAction(async (pm) => {
+        const tokenAddr = adminTokenAddress.trim();
+        const toAddr = adminEthAddress.trim();
+        const decimals = await (new ethers.Contract(tokenAddr, ERC20_ABI, provider)).decimals();
+        return pm.withdrawToken(tokenAddr, toAddr, ethers.parseUnits(adminTokenAmount.trim(), Number(decimals)));
+    }, "Withdraw Token from Paymaster");
+  };
+
+  const handleAdminAddToken = async () => {
+    if (!adminNewToken || !adminNewTokenFeed || !adminNewTokenMinPrice) return;
+    await executePmAction(async (pm) => pm.addToken(adminNewToken, adminNewTokenFeed, BigInt(adminNewTokenMinPrice)), "Add Token Support");
   };
 
   const handleDeposit = () => executePmAction(
@@ -336,6 +397,14 @@ export default function PaymasterView() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                {pmOwner && eoaAddress && pmOwner.toLowerCase() === eoaAddress.toLowerCase() && (
+                   <button 
+                     className="btn btn-secondary flex items-center gap-2 py-1.5 px-3"
+                     onClick={() => setShowAdminModal(true)}
+                   >
+                     <Settings size={16} /> Admin
+                   </button>
+                )}
                 <button 
                   className="p-2 rounded-full bg-white/5 border border-white/10 shadow-sm hover:bg-white/10 hover:border-white/20 transition-all text-muted hover:text-white"
                   onClick={refreshAllData}
@@ -405,6 +474,104 @@ export default function PaymasterView() {
 
 
       </div>
+
+      {showAdminModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="glass-card max-w-2xl w-full max-h-[90vh] overflow-y-auto border-secondary/30 relative shadow-2xl">
+            <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/10">
+              <h2 className="text-xl font-bold flex items-center gap-2 text-gradient-secondary">
+                <Settings size={24} className="text-secondary" /> Paymaster Admin Controls
+              </h2>
+              <button onClick={() => setShowAdminModal(false)} className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-muted transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-8">
+              {/* Stake & Deposit */}
+              <section>
+                <h3 className="text-sm font-semibold uppercase tracking-widest text-muted mb-3 flex items-center gap-2"><Lock size={16}/> EntryPoint ETH</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="p-4 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-3">
+                    <label className="text-xs text-muted mb-[-4px]">Deposit Amount</label>
+                    <input type="number" className="input-field py-2 text-sm" placeholder="0.01 ETH" value={adminDepositAmount} onChange={e=>setAdminDepositAmount(e.target.value)} />
+                    <button className="btn btn-secondary w-full text-sm py-2 mt-1" onClick={handleAdminDeposit} disabled={!adminDepositAmount}>Deposit ETH</button>
+                  </div>
+                  <div className="p-4 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-3">
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <label className="text-xs text-muted mb-[-4px]">Stake Amount</label>
+                        <input type="number" className="input-field py-2 text-sm w-full" placeholder="0.01 ETH" value={adminStakeAmount} onChange={e=>setAdminStakeAmount(e.target.value)} />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-xs text-muted mb-[-4px]">Unstake Delay (Sec)</label>
+                        <input type="number" className="input-field py-2 text-sm w-full" placeholder="86400" value={adminUnstakeDelay} onChange={e=>setAdminUnstakeDelay(e.target.value)} />
+                      </div>
+                    </div>
+                    <button className="btn btn-secondary w-full text-sm py-2 mt-1" onClick={handleAdminStake} disabled={!adminStakeAmount || !adminUnstakeDelay}>Stake ETH</button>
+                  </div>
+                </div>
+              </section>
+
+              {/* Withdrawals */}
+              <section>
+                <h3 className="text-sm font-semibold uppercase tracking-widest text-muted mb-3 flex items-center gap-2"><ArrowUpCircle size={16}/> Withdrawals</h3>
+                <div className="p-4 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-4">
+                  <div className="flex gap-4">
+                     <div className="flex-1">
+                        <label className="text-xs text-muted mb-1 block">Recipient Address</label>
+                        <input type="text" className="input-field py-2 text-sm font-mono" placeholder="0x..." value={adminEthAddress} onChange={e=>setAdminEthAddress(e.target.value)} />
+                     </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-4 items-end">
+                     <div className="flex-1 w-full">
+                        <label className="text-xs text-muted mb-1 block">ETH Amount to Withdraw (From EntryPoint)</label>
+                        <div className="flex gap-2">
+                          <input type="number" className="input-field py-2 text-sm w-1/3" placeholder="0.01" value={adminWithdrawEthAmount} onChange={e=>setAdminWithdrawEthAmount(e.target.value)} />
+                          <button className="btn btn-secondary py-2 px-4 whitespace-nowrap text-sm flex-1" onClick={handleAdminWithdrawETH} disabled={!adminWithdrawEthAmount || !adminEthAddress}>Withdraw ETH</button>
+                        </div>
+                     </div>
+                     <div className="flex-1 w-full">
+                        <label className="text-xs text-muted mb-1 block">ERC20 Token & Amount to Withdraw</label>
+                        <div className="flex gap-2">
+                          <input type="text" className="input-field py-2 text-sm font-mono w-1/2" placeholder="Token 0x..." value={adminTokenAddress} onChange={e=>setAdminTokenAddress(e.target.value)} />
+                          <input type="number" className="input-field py-2 text-sm w-1/4" placeholder="Amt" value={adminTokenAmount} onChange={e=>setAdminTokenAmount(e.target.value)} />
+                          <button className="btn btn-secondary py-2 px-3 text-sm flex-1" onClick={handleAdminWithdrawToken} disabled={!adminTokenAddress || !adminTokenAmount || !adminEthAddress}>Withdraw Token</button>
+                        </div>
+                     </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* Add Token Support */}
+              <section>
+                <h3 className="text-sm font-semibold uppercase tracking-widest text-muted mb-3 flex items-center gap-2"><Plus size={16}/> Add Payment Token</h3>
+                <div className="p-4 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-4">
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs text-muted mb-1 block">Token Address</label>
+                        <input type="text" className="input-field py-2 text-sm font-mono" placeholder="0x..." value={adminNewToken} onChange={e=>setAdminNewToken(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted mb-1 block">Chainlink USD Feed</label>
+                        <input type="text" className="input-field py-2 text-sm font-mono" placeholder="0x..." value={adminNewTokenFeed} onChange={e=>setAdminNewTokenFeed(e.target.value)} />
+                      </div>
+                   </div>
+                   <div>
+                      <label className="text-xs text-muted mb-1 block">Min Token Price (in feed decimals, e.g. 1000000 for $0.01 w/ 8 decimals)</label>
+                      <input type="number" className="input-field py-2 text-sm" placeholder="1000000" value={adminNewTokenMinPrice} onChange={e=>setAdminNewTokenMinPrice(e.target.value)} />
+                   </div>
+                   <button className="btn btn-secondary w-full text-sm py-2 mt-2" onClick={handleAdminAddToken} disabled={!adminNewToken || !adminNewTokenFeed || !adminNewTokenMinPrice}>Add Token Configuration</button>
+                   <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-md mt-2 flex gap-3 text-orange-200/80 text-xs items-start">
+                      <AlertTriangle size={16} className="text-orange-400 flex-shrink-0 mt-0.5" />
+                      <p>Token must have a valid Chainlink feed. Decimals will be fetched automatically from the token and feed contracts.</p>
+                   </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
