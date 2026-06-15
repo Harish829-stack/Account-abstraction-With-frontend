@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { formatNum, shortenAddress, toHex, getEthPriceInUsd, packUserOp } from '../utils/helpers';
+import { formatNum, shortenAddress, toHex, getEthPriceInUsd, packUserOp, encodeERC7579Single } from '../utils/helpers';
 import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
 import { IEntryPointABI, SmartAccountABI } from '../utils/abis';
 import {
@@ -239,8 +239,7 @@ function ConnectedDashboard() {
         [params.tokenIn, params.tokenOut, params.fee, params.recipient, params.amountIn, params.amountOutMinimum, params.sqrtPriceLimitX96]
       ]);
 
-      const saInterface = new ethers.Interface(SmartAccountABI);
-      const callData = saInterface.encodeFunctionData("execute", [UNISWAP_ROUTER, amtIn, innerCallData]);
+      const callData = encodeERC7579Single(UNISWAP_ROUTER, amtIn, innerCallData);
 
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
@@ -260,7 +259,7 @@ function ConnectedDashboard() {
         paymaster: usePmForSwap ? paymasterAddress : "0x",
         paymasterVerificationGasLimit: usePmForSwap ? toHex(150000) : "0x",
         paymasterPostOpGasLimit: usePmForSwap ? toHex(150000) : "0x",
-        paymasterData: "0x",
+        paymasterData: usePmForSwap ? env.USDC_TOKEN : "0x",
         signature: "0x"
       };
 
@@ -269,7 +268,13 @@ function ConnectedDashboard() {
         const est = await estimateUserOperationGas(userOp);
         userOp.callGasLimit = toHex(est.callGasLimit);
         userOp.verificationGasLimit = toHex(est.verificationGasLimit);
-        userOp.preVerificationGas = toHex(BigInt(est.preVerificationGas) + 5000n);
+        userOp.preVerificationGas = toHex(est.preVerificationGas);
+        if (est.paymasterVerificationGasLimit) {
+            userOp.paymasterVerificationGasLimit = toHex(est.paymasterVerificationGasLimit);
+        }
+        if (est.paymasterPostOpGasLimit) {
+            userOp.paymasterPostOpGasLimit = toHex(est.paymasterPostOpGasLimit);
+        }
       } catch (err) {
         console.warn("Estimation failed, using defaults", err);
       }

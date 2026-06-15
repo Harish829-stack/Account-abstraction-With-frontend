@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { ERC20PaymasterABI, IEntryPointABI, ERC20_ABI, SmartAccountABI } from '../utils/abis';
 import pmArtifact from '../utils/ERC20Paymaster.json';
-import { shortenAddress, formatNum, toHex, packUserOp } from '../utils/helpers';
+import { shortenAddress, formatNum, toHex, packUserOp, encodeERC7579Single } from '../utils/helpers';
 import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
 import { useToast } from '../context/ToastContext';
 import { DollarSign, ShieldAlert, ArrowDownCircle, ArrowUpCircle, Lock, Unlock, PlayCircle, CheckCircle, RotateCcw, ChevronRight, Info } from 'lucide-react';
@@ -234,8 +234,7 @@ export default function PaymasterView() {
       const erc20 = new ethers.Interface(ERC20_ABI);
       const inner = erc20.encodeFunctionData("approve", [paymasterAddress, parsedAmount]);
       
-      const saInterface = new ethers.Interface(SmartAccountABI);
-      const callData = saInterface.encodeFunctionData("execute", [dToken, 0, inner]);
+      const callData = encodeERC7579Single(dToken, 0n, inner);
 
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);

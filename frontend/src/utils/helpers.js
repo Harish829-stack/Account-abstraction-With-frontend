@@ -77,3 +77,31 @@ export function packUserOp(userOp) {
     signature: userOp.signature || "0x"
   };
 }
+
+export function encodeERC7579Single(target, value, callData) {
+    const EXEC_MODE_DEFAULT = "0x0100000000000000000000000000000000000000000000000000000000000000";
+    const abiCoder = new ethers.AbiCoder();
+    const executionCalldata = abiCoder.encode(
+        ["address", "uint256", "bytes"],
+        [target, value, callData]
+    );
+    const nexusIface = new ethers.Interface(["function execute(bytes32 mode, bytes calldata executionCalldata)"]);
+    return nexusIface.encodeFunctionData("execute", [EXEC_MODE_DEFAULT, executionCalldata]);
+}
+
+export function encodeERC7579Batch(targets, values, callDatas) {
+    const EXEC_MODE_BATCH = "0x0100000000000000000000000000000000000000000000000000000000000001";
+    const abiCoder = new ethers.AbiCoder();
+    const executions = targets.map((target, i) => ({
+        target,
+        value: values[i],
+        callData: callDatas[i]
+    }));
+    // Execution[] is tuple(address target, uint256 value, bytes callData)[]
+    const executionCalldata = abiCoder.encode(
+        ["tuple(address target, uint256 value, bytes callData)[]"],
+        [executions]
+    );
+    const nexusIface = new ethers.Interface(["function execute(bytes32 mode, bytes calldata executionCalldata)"]);
+    return nexusIface.encodeFunctionData("execute", [EXEC_MODE_BATCH, executionCalldata]);
+}

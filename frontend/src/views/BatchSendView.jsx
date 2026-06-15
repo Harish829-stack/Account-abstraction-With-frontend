@@ -4,7 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { SmartAccountABI, ERC20_ABI, IEntryPointABI } from '../utils/abis';
 import { sendUserOperation, estimateUserOperationGas } from '../utils/bundler';
-import { toHex, getEthPriceInUsd, formatNum, packUserOp } from '../utils/helpers';
+import { toHex, getEthPriceInUsd, formatNum, packUserOp, encodeERC7579Batch } from '../utils/helpers';
 import { Layers, Settings, ExternalLink, Plus, Trash2, Send, CheckCircle2, RotateCcw } from 'lucide-react';
 
 const UNISWAP_ROUTER = '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E';
@@ -128,8 +128,8 @@ export default function BatchSendView() {
       }
     }
 
-    const saInterface = new ethers.Interface(SmartAccountABI);
-    return saInterface.encodeFunctionData("executeBatch", [dest, value, func]);
+    const saIface = new ethers.Interface(SmartAccountABI);
+    return saIface.encodeFunctionData("executeBatch", [dest, value, func]);
   };
 
   const handleEstimateGas = async () => {
@@ -176,7 +176,7 @@ export default function BatchSendView() {
         paymaster: usePaymaster ? (paymasterAddress || "0x") : "0x",
         paymasterVerificationGasLimit: usePaymaster ? toHex(150000) : "0x",
         paymasterPostOpGasLimit: usePaymaster ? toHex(150000) : "0x",
-        paymasterData: "0x",
+        paymasterData: usePaymaster ? env.USDC_TOKEN : "0x",
         signature: "0x"
       };
 
@@ -262,6 +262,7 @@ export default function BatchSendView() {
          userOp.paymaster = paymasterAddress;
          userOp.paymasterVerificationGasLimit = toHex(150000);
          userOp.paymasterPostOpGasLimit = toHex(150000);
+         userOp.paymasterData = env.USDC_TOKEN;
       }
 
       // Try to estimate gas dynamically right before sending
@@ -269,7 +270,13 @@ export default function BatchSendView() {
         const est = await estimateUserOperationGas(userOp);
         userOp.callGasLimit = toHex(est.callGasLimit);
         userOp.verificationGasLimit = toHex(est.verificationGasLimit);
-        userOp.preVerificationGas = toHex(BigInt(est.preVerificationGas) + 5000n);
+        userOp.preVerificationGas = toHex(est.preVerificationGas);
+        if (est.paymasterVerificationGasLimit) {
+            userOp.paymasterVerificationGasLimit = toHex(est.paymasterVerificationGasLimit);
+        }
+        if (est.paymasterPostOpGasLimit) {
+            userOp.paymasterPostOpGasLimit = toHex(est.paymasterPostOpGasLimit);
+        }
       } catch (err) {
         console.warn("Estimation failed, using UI inputs as fallback", err);
         userOp.callGasLimit = toHex(callGasLimit);

@@ -28,14 +28,16 @@ export async function estimateUserOperationGas(userOp) {
   }
 
   try {
-    const res = await axios.post(
-      rpcUrl,
-      {
+    const payload = {
         jsonrpc: "2.0",
         id: 1,
         method: "eth_estimateUserOperationGas",
         params: [opToEstimate, entryPoint]
-      },
+      };
+    console.log("Estimating UserOp:", JSON.stringify(payload, null, 2));
+    const res = await axios.post(
+      rpcUrl,
+      payload,
       {
         headers: { "Content-Type": "application/json" }
       }
@@ -55,6 +57,12 @@ export async function estimateUserOperationGas(userOp) {
       }
       if (est.preVerificationGas) {
         est.preVerificationGas = (BigInt(est.preVerificationGas) + 5000n).toString();
+      }
+      if (est.paymasterVerificationGasLimit) {
+        est.paymasterVerificationGasLimit = ((BigInt(est.paymasterVerificationGasLimit) * 150n) / 100n).toString();
+      }
+      if (est.paymasterPostOpGasLimit) {
+        est.paymasterPostOpGasLimit = ((BigInt(est.paymasterPostOpGasLimit) * 150n) / 100n).toString();
       }
     }
     

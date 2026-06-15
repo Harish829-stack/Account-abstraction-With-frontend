@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import { shortenAddress, packUserOp, encodeERC7579Single, toHex } from '../utils/helpers';
+import { sendUserOperation, estimateUserOperationGas } from '../utils/bundler';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { Key, PlusCircle, Zap, Settings, ChevronRight, XCircle } from 'lucide-react';
@@ -104,8 +106,10 @@ export default function SessionKeyView() {
       } else {
           // Module already installed, just add the key using execute
           const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, signer);
-          const callData = skValidator.interface.encodeFunctionData("addSessionKey", [keyData]);
-          const tx = await account.execute(validatorAddr, 0, callData);
+          const innerCall = skValidator.interface.encodeFunctionData("addSessionKey", [keyData]);
+          const mode = "0x0100000000000000000000000000000000000000000000000000000000000000";
+          const execData = ethers.solidityPacked(["address", "uint256", "bytes"], [validatorAddr, 0, innerCall]);
+          const tx = await account["execute(bytes32,bytes)"](mode, execData);
           await tx.wait();
           toast.success("Session Key Added successfully!");
       }
@@ -140,31 +144,37 @@ export default function SessionKeyView() {
           const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || 1500000000n;
           const maxFeePerGas = feeData.maxFeePerGas || (feeData.gasPrice ? feeData.gasPrice * 2n : 10000000000n);
 
-          const accountGasLimits = ethers.concat([
-              ethers.zeroPadValue(ethers.toBeHex(verificationGasLimit), 16),
-              ethers.zeroPadValue(ethers.toBeHex(callGasLimit), 16)
-          ]);
-
-          const gasFees = ethers.concat([
-              ethers.zeroPadValue(ethers.toBeHex(maxPriorityFeePerGas), 16),
-              ethers.zeroPadValue(ethers.toBeHex(maxFeePerGas), 16)
-          ]);
-
           const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
 
-          const userOp = {
+          const rpcUserOp = {
               sender: smartAccountAddress,
-              nonce: nonce,
-              initCode: "0x",
+              nonce: toHex(nonce),
+              factory: "0x",
+              factoryData: "0x",
               callData: callData,
-              accountGasLimits: accountGasLimits,
-              preVerificationGas: 50000n,
-              gasFees: gasFees,
-              paymasterAndData: "0x",
+              callGasLimit: toHex(100000),
+              verificationGasLimit: toHex(250000),
+              preVerificationGas: toHex(50000),
+              maxFeePerGas: toHex(maxFeePerGas),
+              maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
+              paymaster: "0x",
+              paymasterVerificationGasLimit: "0x",
+              paymasterPostOpGasLimit: "0x",
+              paymasterData: "0x",
               signature: "0x" // Placeholder
           };
 
-          const userOpHash = await entryPoint.getUserOpHash(userOp);
+          try {
+            const est = await estimateUserOperationGas(rpcUserOp);
+            rpcUserOp.callGasLimit = toHex(est.callGasLimit);
+            rpcUserOp.verificationGasLimit = toHex(est.verificationGasLimit);
+            rpcUserOp.preVerificationGas = toHex(est.preVerificationGas);
+          } catch (err) {
+            console.warn("SessionKey estimation failed, using fallback:", err);
+          }
+
+          const packedOp = packUserOp(rpcUserOp);
+          const userOpHash = await entryPoint.getUserOpHash(packedOp);
           
           // Sign the hash with the burner wallet
           const rawSignature = await burnerWallet.signMessage(ethers.getBytes(userOpHash));
@@ -176,43 +186,11 @@ export default function SessionKeyView() {
               rawSignature
           ]);
           
-          userOp.signature = packedSignature;
+          rpcUserOp.signature = ethers.hexlify(packedSignature);
 
-          const BUNDLER_URL = import.meta.env.VITE_SKANDHA_RPC_URL;
-          if (!BUNDLER_URL) {
-              throw new Error("Missing VITE_SKANDHA_RPC_URL in frontend/.env");
-          }
+          const opHash = await sendUserOperation(rpcUserOp);
 
-          // Convert to v0.7 Bundler JSON-RPC format (unpacked fields)
-          const rpcUserOp = {
-              sender: userOp.sender,
-              nonce: ethers.toBeHex(userOp.nonce),
-              callData: userOp.callData,
-              callGasLimit: ethers.toBeHex(callGasLimit),
-              verificationGasLimit: ethers.toBeHex(verificationGasLimit),
-              preVerificationGas: ethers.toBeHex(50000n),
-              maxFeePerGas: ethers.toBeHex(maxFeePerGas),
-              maxPriorityFeePerGas: ethers.toBeHex(maxPriorityFeePerGas),
-              signature: ethers.hexlify(userOp.signature)
-          };
-
-          const response = await fetch(BUNDLER_URL, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  jsonrpc: '2.0',
-                  id: 1,
-                  method: 'eth_sendUserOperation',
-                  params: [rpcUserOp, env.ENTRY_POINT]
-              })
-          });
-
-          const responseData = await response.json();
-          if (responseData.error) {
-              throw new Error("Bundler rejected: " + (responseData.error.message || JSON.stringify(responseData.error)));
-          }
-          
-          toast.success(`Bundler executing! OpHash: ${responseData.result.slice(0,10)}...`);
+          toast.success(`Bundler executing! OpHash: ${shortenAddress(opHash)}...`);
       } catch (err) {
           console.error(err);
           toast.error(err.reason || err.message || "Execution failed");

@@ -69,32 +69,33 @@ async function main() {
 
   // 3. Deploy MultiTokenPaymaster via CREATE3
   console.log("\n--- Deploying MultiTokenPaymaster ---");
-  const ethUsdFeedSepolia = "0x694AA1769357215DE4FAC081bf1f309aDC325306";
-  // You can change this to Amoy's feed when running on Amoy if needed.
+  const nativeUsdFeedSepolia = "0x694AA1769357215DE4FAC081bf1f309aDC325306"; // ETH/USD
+  // Since Amoy doesn't have an official POL/USD Chainlink feed, we mock it.
+
   // Wait! If the constructor arguments differ between chains, the CREATE3 address 
   // REMAINS THE SAME because CREATE3 address depends ONLY on the salt and deployer!
   // This is the magic of CREATE3.
 
   const PaymasterArtifact = await ethers.getContractFactory("contracts/Erc20Paymaster.sol:MultiTokenPaymaster");
-  // Assuming Sepolia feed by default. When running on Amoy, make sure to pass the Amoy feed address!
+  
   const chainId = (await ethers.provider.getNetwork()).chainId;
   
-  let ethUsdFeed;
+  let nativeUsdFeed;
   if (chainId === 80002n) {
-    // We are on Amoy, deploy MockAggregator
-    console.log("Deploying MockAggregator on Amoy...");
+    // We are on Amoy, deploy MockAggregator for Native(POL)/USD
+    console.log("Deploying MockAggregator for POL/USD on Amoy...");
     const MockAggregatorArtifact = await ethers.getContractFactory("MockAggregator");
-    // $3000 with 8 decimals = 3000 * 10^8
-    const mockFeed = await MockAggregatorArtifact.deploy(300000000000n);
+    // $0.50 with 8 decimals = 0.50 * 10^8 = 50000000
+    const mockFeed = await MockAggregatorArtifact.deploy(50000000n);
     await mockFeed.waitForDeployment();
-    ethUsdFeed = await mockFeed.getAddress();
-    console.log("MockAggregator deployed at:", ethUsdFeed);
+    nativeUsdFeed = await mockFeed.getAddress();
+    console.log("MockAggregator deployed at:", nativeUsdFeed);
   } else {
     // Sepolia or others
-    ethUsdFeed = ethUsdFeedSepolia; 
+    nativeUsdFeed = nativeUsdFeedSepolia; 
   }
   
-  const paymasterTx = await PaymasterArtifact.getDeployTransaction(entryPointAddress, ethUsdFeed);
+  const paymasterTx = await PaymasterArtifact.getDeployTransaction(entryPointAddress, nativeUsdFeed);
   const paymasterCreationCode = paymasterTx.data;
 
   const paymasterSalt = ethers.id("MULTI_TOKEN_PAYMASTER_SALT_V1");
@@ -131,5 +132,5 @@ main().catch((error) => {
 Addresses are deterministic across all chains:
 CREATE3Factory: 0xb31fd259D799Fa4AdAdc64726B75E6195D635C59
 ProxyFactory: 0x333E1c74a84F321D5CDb6bBd79cb9deDE8036880
-MultiTokenPaymaster: 0xD8dc08A009C845676832cba5dDD6b940ABF75E2f
+MultiTokenPaymaster: 0x51D0de56Ef2d9a8d13A1c81364992FD89f38C762
  */

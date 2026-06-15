@@ -20,6 +20,7 @@ export const SmartAccountFactoryABI = [
 
 export const SmartAccountABI = [
   "function owner() view returns (address)",
+  "function execute(bytes32 mode, bytes calldata executionCalldata) external",
   "function execute(address dest, uint256 value, bytes calldata func) external",
   "function executeBatch(address[] calldata dest, uint256[] calldata value, bytes[] calldata func) external",
   "function addDeposit() payable",

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import { shortenAddress, encodeERC7579Single, packUserOp, toHex } from '../utils/helpers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { Shield, CheckCircle, UserPlus, PlayCircle, Settings, ChevronRight, XCircle, Trash2 } from 'lucide-react';
@@ -171,45 +172,37 @@ export default function ProfileView() {
           }
 
           const account = new ethers.Contract(targetSmartAccount, SmartAccountABI, provider);
-          const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, signer);
-
-          const callData = account.interface.encodeFunctionData("changeOwner", [newOwner]);
+          const inner = account.interface.encodeFunctionData("changeOwner", [newOwner]);
+          const callData = encodeERC7579Single(targetSmartAccount, 0n, inner);
           const signature = ethers.concat([
               validatorAddr,
               ethers.AbiCoder.defaultAbiCoder().encode(["address"], [newOwner])
-          ]);
-
-          const verificationGasLimit = 150000n;
-          const callGasLimit = 100000n;
-          const maxPriorityFeePerGas = 1500000000n;
-          const maxFeePerGas = 5000000000n;
-
-          const accountGasLimits = ethers.concat([
-              ethers.zeroPadValue(ethers.toBeHex(verificationGasLimit), 16),
-              ethers.zeroPadValue(ethers.toBeHex(callGasLimit), 16)
-          ]);
-
-          const gasFees = ethers.concat([
-              ethers.zeroPadValue(ethers.toBeHex(maxPriorityFeePerGas), 16),
-              ethers.zeroPadValue(ethers.toBeHex(maxFeePerGas), 16)
           ]);
 
           const nonce = await entryPoint.getNonce(targetSmartAccount, 0);
 
           const userOp = {
               sender: targetSmartAccount,
-              nonce: nonce,
-              initCode: "0x",
+              nonce: toHex(nonce),
+              factory: "0x",
+              factoryData: "0x",
               callData: callData,
-              accountGasLimits: accountGasLimits,
-              preVerificationGas: 50000n,
-              gasFees: gasFees,
-              paymasterAndData: "0x",
+              callGasLimit: toHex(100000),
+              verificationGasLimit: toHex(150000),
+              preVerificationGas: toHex(50000),
+              maxFeePerGas: toHex(5000000000n),
+              maxPriorityFeePerGas: toHex(1500000000n),
+              paymaster: "0x",
+              paymasterVerificationGasLimit: "0x",
+              paymasterPostOpGasLimit: "0x",
+              paymasterData: "0x",
               signature: signature
           };
 
+          const packedOp = packUserOp(userOp);
+
           try {
-              await entryPoint.getFunction("handleOps").staticCall([userOp], await signer.getAddress());
+              await entryPoint.getFunction("handleOps").staticCall([packedOp], await signer.getAddress());
           } catch(simErr) {
               if (simErr.data) {
                  try {
@@ -220,7 +213,7 @@ export default function ProfileView() {
               throw simErr;
           }
 
-          const tx = await entryPoint.handleOps([userOp], await signer.getAddress());
+          const tx = await entryPoint.handleOps([packedOp], await signer.getAddress());
           await tx.wait();
           
           toast.success("Recovery Executed Successfully!");

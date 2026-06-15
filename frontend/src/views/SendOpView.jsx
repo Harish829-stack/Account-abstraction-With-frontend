@@ -4,7 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { SmartAccountABI, ERC20_ABI, IEntryPointABI } from '../utils/abis';
 import { sendUserOperation, estimateUserOperationGas } from '../utils/bundler';
-import { toHex, getEthPriceInUsd, formatNum, packUserOp } from '../utils/helpers';
+import { toHex, getEthPriceInUsd, formatNum, packUserOp, encodeERC7579Single } from '../utils/helpers';
 import { Send, Settings, CheckCircle2, RotateCcw, ExternalLink } from 'lucide-react';
 
 const UNISWAP_ROUTER = '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E';
@@ -56,14 +56,14 @@ export default function SendOpView() {
 
     if (token === 'ETH') {
       const val = amount ? ethers.parseEther(amount) : 0n;
-      return saInterface.encodeFunctionData("execute", [receiver, val, "0x"]);
+      return encodeERC7579Single(receiver, val, "0x");
     }
 
     if (token === 'USDC') {
       const erc20 = new ethers.Interface(ERC20_ABI);
       const amt = amount ? ethers.parseUnits(amount, 6) : 0n;
       const inner = erc20.encodeFunctionData("transfer", [receiver, amt]);
-      return saInterface.encodeFunctionData("execute", [env.USDC_TOKEN, 0, inner]);
+      return encodeERC7579Single(env.USDC_TOKEN, 0n, inner);
     }
 
     if (token === 'UNISWAP_V3') {
@@ -83,7 +83,7 @@ export default function SendOpView() {
       const innerCallData = swapIface.encodeFunctionData("exactInputSingle", [
         [params.tokenIn, params.tokenOut, params.fee, params.recipient, params.amountIn, params.amountOutMinimum, params.sqrtPriceLimitX96]
       ]);
-      return saInterface.encodeFunctionData("execute", [UNISWAP_ROUTER, amtIn, innerCallData]);
+      return encodeERC7579Single(UNISWAP_ROUTER, amtIn, innerCallData);
     }
 
     if (token === 'CONTRACT_CALL') {
@@ -101,7 +101,7 @@ export default function SendOpView() {
         }
         const inner = iface.encodeFunctionData(method, params);
         const val = amount ? ethers.parseEther(amount) : 0n;
-        return saInterface.encodeFunctionData("execute", [receiver, val, inner]);
+        return encodeERC7579Single(receiver, val, inner);
       } catch (err) {
         throw new Error("encoding failed: " + err.message);
       }
@@ -162,7 +162,7 @@ export default function SendOpView() {
         paymaster: usePaymaster ? (paymasterAddress || "0x") : "0x",
         paymasterVerificationGasLimit: usePaymaster ? toHex(150000) : "0x",
         paymasterPostOpGasLimit: usePaymaster ? toHex(150000) : "0x",
-        paymasterData: "0x",
+        paymasterData: usePaymaster ? env.USDC_TOKEN : "0x",
         signature: "0x"
       };
 
@@ -256,6 +256,26 @@ export default function SendOpView() {
          userOp.paymaster = paymasterAddress;
          userOp.paymasterVerificationGasLimit = toHex(150000);
          userOp.paymasterPostOpGasLimit = toHex(150000);
+         userOp.paymasterData = env.USDC_TOKEN;
+      }
+
+      // Try to estimate gas dynamically right before sending
+      try {
+        const est = await estimateUserOperationGas(userOp);
+        userOp.callGasLimit = toHex(est.callGasLimit);
+        userOp.verificationGasLimit = toHex(est.verificationGasLimit);
+        userOp.preVerificationGas = toHex(est.preVerificationGas);
+        if (est.paymasterVerificationGasLimit) {
+            userOp.paymasterVerificationGasLimit = toHex(est.paymasterVerificationGasLimit);
+        }
+        if (est.paymasterPostOpGasLimit) {
+            userOp.paymasterPostOpGasLimit = toHex(est.paymasterPostOpGasLimit);
+        }
+      } catch (err) {
+        console.warn("Estimation failed, using UI inputs as fallback", err);
+        userOp.callGasLimit = toHex(callGasLimit);
+        userOp.verificationGasLimit = toHex(verificationGasLimit);
+        userOp.preVerificationGas = toHex(preVerificationGas);
       }
 
       const hash = await entryPoint.getUserOpHash(packUserOp(userOp));
