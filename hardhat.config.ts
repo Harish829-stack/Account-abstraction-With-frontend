@@ -46,8 +46,14 @@ export default defineConfig({
     sepolia: {
       type: "http",
       chainType: "l1",
-      url: process.env.SEPOLIA_RPC_URL!,
-      accounts: [process.env.PRIVATE_KEY!],
+      url: process.env.SEPOLIA_RPC_URL || "https://rpc.sepolia.org",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+    },
+    amoy: {
+      type: "http",
+      chainType: "generic",
+      url: process.env.AMOY_RPC_URL || "https://rpc-amoy.polygon.technology/",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
     },
   },
 verify: {
