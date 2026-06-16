@@ -136,7 +136,7 @@ export default function SessionKeyView() {
           const value = ethers.parseEther(execValue || "0");
           const data = execData || "0x";
           
-          const callData = account.interface.encodeFunctionData("execute", [target, value, data]);
+          const callData = account.interface.encodeFunctionData("execute(address,uint256,bytes)", [target, value, data]);
 
           const feeData = await provider.getFeeData();
           const verificationGasLimit = 250000n;

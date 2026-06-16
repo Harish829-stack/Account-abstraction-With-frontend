@@ -7,6 +7,7 @@ import SendOpView from './views/SendOpView';
 import PaymasterView from './views/PaymasterView';
 import HistoryView from './views/HistoryView';
 import BatchSendView from './views/BatchSendView';
+import WebAuthnView from './views/WebAuthnView';
 import { AlertTriangle } from 'lucide-react';
 
 function App() {
@@ -86,6 +87,11 @@ function App() {
             <div style={{ display: currentView === "history" ? "block" : "none" }}>
               <HistoryView />
             </div>
+            {Number(chainId) === 80002 && (
+              <div style={{ display: currentView === "webauthn" ? "block" : "none" }}>
+                <WebAuthnView />
+              </div>
+            )}
           </>
         )}
       </main>

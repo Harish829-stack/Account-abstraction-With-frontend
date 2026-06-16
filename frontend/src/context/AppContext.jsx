@@ -597,7 +597,7 @@ export const AppProvider = ({ children }) => {
       USDC_TOKEN: getUsdcAddress(),
       PRICE_FEED: isAmoy ? "0x2A60D7e36FC5FDa6e97aE2C7d054656382f730D7" : import.meta.env.VITE_PRICE_FEED,
       SKANDHA_RPC_URL: isAmoy 
-        ? import.meta.env.VITE_SKANDHA_RPC_URL.replace("11155111", "80002") 
+        ? import.meta.env.VITE_AMOY_RPC_URL 
         : import.meta.env.VITE_SKANDHA_RPC_URL,
       VERIFYING_SIGNER: import.meta.env.VITE_VERIFYING_SIGNER,
     }
