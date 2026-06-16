@@ -1,7 +1,15 @@
 import axios from "axios";
 
 export async function estimateUserOperationGas(userOp) {
-  const rpcUrl = import.meta.env.VITE_SKANDHA_RPC_URL;
+  let rpcUrl = import.meta.env.VITE_SKANDHA_RPC_URL;
+  if (window.ethereum) {
+    try {
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      if (parseInt(chainId, 16) === 80002) {
+        rpcUrl = rpcUrl.replace("11155111", "80002");
+      }
+    } catch (e) { console.warn("Failed to get chainId", e); }
+  }
   const entryPoint = import.meta.env.VITE_ENTRY_POINT;
 
   if (!rpcUrl) throw new Error("Bundler RPC URL not found in env");
@@ -76,7 +84,15 @@ export async function estimateUserOperationGas(userOp) {
 }
 
 export async function sendUserOperation(userOp) {
-  const rpcUrl = import.meta.env.VITE_SKANDHA_RPC_URL;
+  let rpcUrl = import.meta.env.VITE_SKANDHA_RPC_URL;
+  if (window.ethereum) {
+    try {
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      if (parseInt(chainId, 16) === 80002) {
+        rpcUrl = rpcUrl.replace("11155111", "80002");
+      }
+    } catch (e) { console.warn("Failed to get chainId", e); }
+  }
   const entryPoint = import.meta.env.VITE_ENTRY_POINT;
 
   if (!rpcUrl) throw new Error("Bundler RPC URL not found in env");
@@ -124,7 +140,15 @@ export async function sendUserOperation(userOp) {
 }
 
 export async function getUserOpReceipt(userOpHash) {
-  const rpcUrl = import.meta.env.VITE_SKANDHA_RPC_URL;
+  let rpcUrl = import.meta.env.VITE_SKANDHA_RPC_URL;
+  if (window.ethereum) {
+    try {
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      if (parseInt(chainId, 16) === 80002) {
+        rpcUrl = rpcUrl.replace("11155111", "80002");
+      }
+    } catch (e) { console.warn("Failed to get chainId", e); }
+  }
   if (!rpcUrl) return null;
 
   try {

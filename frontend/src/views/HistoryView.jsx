@@ -7,7 +7,7 @@ import { Activity, Clock } from 'lucide-react';
 import { IEntryPointABI } from '../utils/abis';
 
 export default function HistoryView() {
-  const { smartAccountAddress, provider, env, pendingUserOps, recentOps, loadingOps, fetchRecentOps } = useAppContext();
+  const { smartAccountAddress, provider, env, pendingUserOps, recentOps, loadingOps, fetchRecentOps, isAmoy } = useAppContext();
   const toast = useToast();
 
   const timeAgo = (ms) => {
@@ -92,12 +92,12 @@ export default function HistoryView() {
 
                     <div className="flex items-center gap-2">
                       <a
-                        href={`https://sepolia.etherscan.io/tx/${op.txHash}`}
+                        href={isAmoy ? `https://amoy.polygonscan.com/tx/${op.txHash}` : `https://sepolia.etherscan.io/tx/${op.txHash}`}
                         target="_blank"
                         rel="noreferrer"
                         className="btn btn-secondary py-1.5 px-3 text-xs opacity-80 group-hover:opacity-100 transition-opacity"
                       >
-                        Etherscan
+                        {isAmoy ? 'Polygonscan' : 'Etherscan'}
                       </a>
                     </div>
                   </div>

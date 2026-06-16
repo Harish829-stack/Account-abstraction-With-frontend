@@ -31,6 +31,9 @@ export const AppProvider = ({ children }) => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const nativeToken = Number(chainId) === 80002 ? "POL" : "ETH";
+  const isAmoy = Number(chainId) === 80002;
+
+  const getUsdcAddress = () => isAmoy ? "0xA0C3907b1fc323AdB95dA27e08e289deaE87BD8C" : import.meta.env.VITE_USDC_TOKEN;
 
 
   const [eoaETHBalance, setEoaETHBalance] = useState("0");
@@ -98,7 +101,7 @@ export const AppProvider = ({ children }) => {
       const filter = epContract.filters.UserOperationEvent(null, saAddress);
 
       const blockNum = await _provider.getBlockNumber();
-      const events = await epContract.queryFilter(filter, Math.max(0, blockNum - 20000), "latest");
+      const events = await epContract.queryFilter(filter, Math.max(0, blockNum - 1000), "latest");
 
       const last10 = events.slice(-10).reverse();
       const formattedOps = await Promise.all(last10.map(async (e) => {
@@ -130,9 +133,19 @@ export const AppProvider = ({ children }) => {
 
   // --- Global Background Transaction Tracker ---
   // Each entry: { opHash, label, submittedAt, status: 'pending' | 'confirmed' | 'dropped' }
-  const [trackedOps, setTrackedOps] = useState([]);
+  const [trackedOps, setTrackedOps] = useState(() => {
+    try {
+      const saved = localStorage.getItem('trackedOps');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const trackedOpsRef = useRef(trackedOps);
-  useEffect(() => { trackedOpsRef.current = trackedOps; }, [trackedOps]);
+  useEffect(() => { 
+    trackedOpsRef.current = trackedOps; 
+    localStorage.setItem('trackedOps', JSON.stringify(trackedOps));
+  }, [trackedOps]);
 
   // Call this right after sendUserOperation() — instantly unblocks the view
   const trackOp = useCallback((opHash, label = 'UserOperation') => {
@@ -165,17 +178,21 @@ export const AppProvider = ({ children }) => {
       const ethBal = await _provider.getBalance(address);
       setEoaETHBalance(ethBal.toString());
 
-      const usdcAddress = import.meta.env.VITE_USDC_TOKEN;
+      const usdcAddress = getUsdcAddress();
       if (usdcAddress) {
         const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
         const usdcBal = await usdc.balanceOf(address);
         setEoaUSDCBalance(usdcBal.toString());
       }
 
-      const eurcAddress = "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4";
-      const eurc = new ethers.Contract(eurcAddress, ERC20_ABI, _provider);
-      const eurcBal = await eurc.balanceOf(address);
-      setEoaEURCBalance(eurcBal.toString());
+      if (!isAmoy) {
+        const eurcAddress = "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4";
+        const eurc = new ethers.Contract(eurcAddress, ERC20_ABI, _provider);
+        const eurcBal = await eurc.balanceOf(address);
+        setEoaEURCBalance(eurcBal.toString());
+      } else {
+        setEoaEURCBalance("0");
+      }
     } catch (err) {
       console.error("Error loading EOA balances:", err);
     }
@@ -198,17 +215,21 @@ export const AppProvider = ({ children }) => {
       const balance = await _provider.getBalance(saAddress);
       setSaETHBalance(balance.toString());
 
-      const usdcAddress = import.meta.env.VITE_USDC_TOKEN;
+      const usdcAddress = getUsdcAddress();
       if (usdcAddress) {
         const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
         const usdcBal = await usdc.balanceOf(saAddress);
         setSaUSDCBalance(usdcBal.toString());
       }
 
-      const eurcAddress = "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4";
-      const eurc = new ethers.Contract(eurcAddress, ERC20_ABI, _provider);
-      const eurcBal = await eurc.balanceOf(saAddress);
-      setSaEURCBalance(eurcBal.toString());
+      if (!isAmoy) {
+        const eurcAddress = "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4";
+        const eurc = new ethers.Contract(eurcAddress, ERC20_ABI, _provider);
+        const eurcBal = await eurc.balanceOf(saAddress);
+        setSaEURCBalance(eurcBal.toString());
+      } else {
+        setSaEURCBalance("0");
+      }
 
       const entryPoint = new ethers.Contract(import.meta.env.VITE_ENTRY_POINT, IEntryPointABI, _provider);
       const deposit = await entryPoint.balanceOf(saAddress);
@@ -231,7 +252,7 @@ export const AppProvider = ({ children }) => {
     if (!pmAddress || !_provider) return;
     try {
       const entryPoint = new ethers.Contract(import.meta.env.VITE_ENTRY_POINT, IEntryPointABI, _provider);
-      const usdcAddress = import.meta.env.VITE_USDC_TOKEN;
+      const usdcAddress = getUsdcAddress();
       const tokenContract = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
 
       try {
@@ -559,7 +580,7 @@ export const AppProvider = ({ children }) => {
     isTxLoading, txLoadingMessage, setGlobalLoading,
     currentView, setCurrentView,
     setupStep, setSetupStep,
-    provider, signer, eoaAddress, chainId, expectedChainId, nativeToken,
+    provider, signer, eoaAddress, chainId, expectedChainId, nativeToken, isAmoy,
     eoaETHBalance, eoaUSDCBalance, eoaEURCBalance,
     smartAccountAddress, setSmartAccountAddress,
     saETHBalance, saUSDCBalance, saEURCBalance, saEntryPointDeposit, saOwner,
@@ -573,9 +594,11 @@ export const AppProvider = ({ children }) => {
     env: {
       ENTRY_POINT: import.meta.env.VITE_ENTRY_POINT,
       FACTORY: import.meta.env.VITE_FACTORY,
-      USDC_TOKEN: import.meta.env.VITE_USDC_TOKEN,
-      PRICE_FEED: import.meta.env.VITE_PRICE_FEED,
-      SKANDHA_RPC_URL: import.meta.env.VITE_SKANDHA_RPC_URL,
+      USDC_TOKEN: getUsdcAddress(),
+      PRICE_FEED: isAmoy ? "0x2A60D7e36FC5FDa6e97aE2C7d054656382f730D7" : import.meta.env.VITE_PRICE_FEED,
+      SKANDHA_RPC_URL: isAmoy 
+        ? import.meta.env.VITE_SKANDHA_RPC_URL.replace("11155111", "80002") 
+        : import.meta.env.VITE_SKANDHA_RPC_URL,
       VERIFYING_SIGNER: import.meta.env.VITE_VERIFYING_SIGNER,
     }
   };

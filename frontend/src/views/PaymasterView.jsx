@@ -15,7 +15,7 @@ export default function PaymasterView() {
     provider, signer, eoaAddress, smartAccountAddress, paymasterAddress, setPaymasterAddress, refreshAllData, env,
     pmETHBalance, pmUSDCBalance, pmDeposit, pmStake, pmUnstakeDelay, pmTokenSymbol, pmTokenDecimals, loadPaymasterDetails,
     saETHBalance, saUSDCBalance, saEntryPointDeposit,
-    trackOp, setCurrentView, setGlobalLoading, refreshTrigger, nativeToken
+    trackOp, setCurrentView, setGlobalLoading, refreshTrigger, nativeToken, isAmoy
   } = useAppContext();
   const toast = useToast();
 
@@ -38,8 +38,8 @@ export default function PaymasterView() {
   const [adminUnstakeDelay, setAdminUnstakeDelay] = useState('86400');
   
   // Admin Add Token States
-  const [adminNewToken, setAdminNewToken] = useState('');
-  const [adminNewTokenFeed, setAdminNewTokenFeed] = useState('');
+  const [adminNewToken, setAdminNewToken] = useState(env.USDC_TOKEN || '');
+  const [adminNewTokenFeed, setAdminNewTokenFeed] = useState(env.PRICE_FEED || '');
   const [adminNewTokenMinPrice, setAdminNewTokenMinPrice] = useState('950000'); // $0.95 with 6 decimals
 
 
@@ -77,10 +77,12 @@ export default function PaymasterView() {
   const [tokenAllowances, setTokenAllowances] = useState({});
   const [pmTokenBalances, setPmTokenBalances] = useState({});
 
-  const trackedTokens = [
-    { symbol: 'USDC', address: env.USDC_TOKEN, decimals: 6 },
-    { symbol: 'EURC', address: '0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4', decimals: 6 }
-  ];
+  const trackedTokens = isAmoy 
+    ? [{ symbol: 'USDC', address: env.USDC_TOKEN, decimals: 6 }]
+    : [
+        { symbol: 'USDC', address: env.USDC_TOKEN, decimals: 6 },
+        { symbol: 'EURC', address: '0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4', decimals: 6 }
+      ];
 
   const fetchTokenData = async () => {
     if (!signer || !smartAccountAddress || !paymasterAddress) return;
@@ -208,12 +210,26 @@ export default function PaymasterView() {
   // --- Admin Handlers ---
   const handleAdminDeposit = async () => {
     if (!adminDepositAmount) return;
-    await executePmAction(async (pm) => pm.deposit({ value: ethers.parseEther(adminDepositAmount) }), "Deposit ETH to EntryPoint");
+    await executePmAction(async (pm) => {
+        const data = pm.interface.encodeFunctionData("deposit");
+        return signer.sendTransaction({
+            to: paymasterAddress,
+            data: data,
+            value: ethers.parseEther(adminDepositAmount)
+        });
+    }, "Deposit ETH to EntryPoint");
   };
 
   const handleAdminStake = async () => {
     if (!adminStakeAmount || !adminUnstakeDelay) return;
-    await executePmAction(async (pm) => pm.addStake(adminUnstakeDelay, { value: ethers.parseEther(adminStakeAmount) }), "Stake ETH to EntryPoint");
+    await executePmAction(async (pm) => {
+        const data = pm.interface.encodeFunctionData("addStake", [adminUnstakeDelay]);
+        return signer.sendTransaction({
+            to: paymasterAddress,
+            data: data,
+            value: ethers.parseEther(adminStakeAmount)
+        });
+    }, "Stake ETH to EntryPoint");
   };
 
   const handleAdminWithdrawETH = async () => {
@@ -271,26 +287,19 @@ export default function PaymasterView() {
     setGlobalLoading(true, "Approving Paymaster via Smart Account...");
     try {
       // Robust EIP-1559 gas fee estimation for public bundlers
-      let maxFeePerGas = 25000000000n; // 25 Gwei fallback
-      let maxPriorityFeePerGas = 1500000000n; // 1.5 Gwei fallback
+      let maxFeePerGas = 40000000000n; // 40 Gwei fallback
+      let maxPriorityFeePerGas = 40000000000n; // 40 Gwei fallback
       try {
-        const block = await provider.getBlock("latest");
-        if (block && block.baseFeePerGas) {
-          maxFeePerGas = block.baseFeePerGas * 2n + maxPriorityFeePerGas;
-        } else {
-          const fee = await provider.getFeeData();
-          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
-          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        const fee = await provider.getFeeData();
+        maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
+        
+        if (isAmoy && maxPriorityFeePerGas < 35000000000n) {
+           maxPriorityFeePerGas = 35000000000n; // enforce 35 Gwei minimum for Amoy
+           maxFeePerGas = (maxFeePerGas < maxPriorityFeePerGas) ? maxPriorityFeePerGas : maxFeePerGas;
         }
       } catch (feeErr) {
-        console.warn("Failed to get EIP-1559 fees via block, using getFeeData fallback:", feeErr);
-        try {
-          const fee = await provider.getFeeData();
-          maxFeePerGas = fee.maxFeePerGas || maxFeePerGas;
-          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
-        } catch (e) {
-          console.error("Failed to load fee fallback:", e);
-        }
+        console.warn("Failed to get EIP-1559 fees via getFeeData:", feeErr);
       }
 
       // EntryPoint gas prefund (maxCost) validation check
@@ -421,7 +430,7 @@ export default function PaymasterView() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                {pmOwner && eoaAddress && pmOwner.toLowerCase() === eoaAddress.toLowerCase() && (
+                {((pmOwner && eoaAddress && pmOwner.toLowerCase() === eoaAddress.toLowerCase()) || isAmoy) && (
                    <button 
                      className="btn btn-secondary flex items-center gap-2 py-1.5 px-3"
                      onClick={() => setShowAdminModal(true)}

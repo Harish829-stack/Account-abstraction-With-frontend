@@ -93,7 +93,7 @@ function ConnectedDashboard() {
     smartAccountAddress, saETHBalance, saUSDCBalance, saEURCBalance, saEntryPointDeposit,
     paymasterAddress, pmDeposit,
     pendingUserOps,
-    setCurrentView, refreshAllData, signer, provider, env, nativeToken,
+    setCurrentView, refreshAllData, signer, provider, env, nativeToken, isAmoy,
     trackOp, setGlobalLoading, setSetupStep
   } = useAppContext();
   const toast = useToast();
@@ -122,10 +122,12 @@ function ConnectedDashboard() {
   const [usePmForSwap, setUsePmForSwap] = useState(false);
   const [selectedGasToken, setSelectedGasToken] = useState(env?.USDC_TOKEN || '');
   
-  const trackedTokens = [
-    { symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 },
-    { symbol: 'EURC', address: '0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4', decimals: 6 }
-  ];
+  const trackedTokens = isAmoy 
+    ? [{ symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 }]
+    : [
+        { symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 },
+        { symbol: 'EURC', address: '0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4', decimals: 6 }
+      ];
 
   const [ethPrice, setEthPrice] = useState(3300);
   const [estimatedUsdcOutput, setEstimatedUsdcOutput] = useState('0.00');
@@ -170,7 +172,8 @@ function ConnectedDashboard() {
         setEstimatedUsdcOutput(ethers.formatUnits(result.amountOut, 6));
       } catch (err) {
         console.warn("Uniswap V3 quote exact input failed, falling back to Chainlink feed:", err);
-        setEstimatedUsdcOutput((parseFloat(swapAmount) * ethPrice).toFixed(2));
+        const rawOutput = parseFloat(swapAmount) * ethPrice;
+        setEstimatedUsdcOutput(rawOutput > 0 && rawOutput < 0.01 ? "< 0.01" : rawOutput.toFixed(2));
       } finally {
         setIsEstimatingOutput(false);
       }
@@ -364,10 +367,12 @@ function ConnectedDashboard() {
               <div className="text-xs text-muted mb-1">USDC</div>
               <div className="font-bold text-lg">{eoaUSDC.toFixed(2)}</div>
             </div>
-            <div className="text-right">
-              <div className="text-xs text-muted mb-1">EURC</div>
-              <div className="font-bold text-lg">{eoaEURC.toFixed(2)}</div>
-            </div>
+            {!isAmoy && (
+              <div className="text-right">
+                <div className="text-xs text-muted mb-1">EURC</div>
+                <div className="font-bold text-lg">{eoaEURC.toFixed(2)}</div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -401,10 +406,12 @@ function ConnectedDashboard() {
                 <div className="text-xs text-muted mb-1">USDC</div>
                 <div className="font-bold text-lg">{saUSDC.toFixed(2)}</div>
               </div>
-              <div className="text-center">
-                <div className="text-xs text-muted mb-1">EURC</div>
-                <div className="font-bold text-lg">{saEURC.toFixed(2)}</div>
-              </div>
+              {!isAmoy && (
+                <div className="text-center">
+                  <div className="text-xs text-muted mb-1">EURC</div>
+                  <div className="font-bold text-lg">{saEURC.toFixed(2)}</div>
+                </div>
+              )}
               <div className="text-right">
                 <div className="text-xs text-muted mb-1">EP Deposit</div>
                 <div className="font-bold text-lg">{parseFloat(ethers.formatEther(saEntryPointDeposit || '0')).toFixed(4)}</div>
@@ -620,14 +627,16 @@ function ConnectedDashboard() {
           </button>
 
           {/* Quick Swap button */}
-          <button className="quick-action-btn quick-action-btn--secondary" onClick={() => setShowSwapModal(true)}>
-            <div className="quick-action-icon quick-action-icon--secondary"><Activity size={18} /></div>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:'0.85rem', fontWeight:600, color:'#141827' }}>Quick Swap</div>
-              <div style={{ fontSize:'0.65rem', color:'var(--text-muted)' }}>{nativeToken} → USDC via Uniswap V3</div>
-            </div>
-            <ArrowRight size={15} style={{ color:'var(--text-muted)' }} />
-          </button>
+          {!isAmoy && (
+            <button className="quick-action-btn quick-action-btn--secondary" onClick={() => setShowSwapModal(true)}>
+              <div className="quick-action-icon quick-action-icon--secondary"><Activity size={18} /></div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:'0.85rem', fontWeight:600, color:'#141827' }}>Quick Swap</div>
+                <div style={{ fontSize:'0.65rem', color:'var(--text-muted)' }}>{nativeToken} → USDC via Uniswap V3</div>
+              </div>
+              <ArrowRight size={15} style={{ color:'var(--text-muted)' }} />
+            </button>
+          )}
         </div>
       </div>
 

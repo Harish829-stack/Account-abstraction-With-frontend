@@ -70,8 +70,8 @@ async function main() {
   } else if (networkName === "amoy" || networkName === "polygonAmoy") {
     tokens.push({
       symbol: "USDC",
-      tokenAddress: process.env.AMOY_USDC_TOKEN || "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582",
-      feedAddress: process.env.AMOY_USDC_FEED || "0x1b8739bB4CdF0089d07097A9Ae5Bd274b29C6F16",
+      tokenAddress: process.env.AMOY_USDC || "0xA0C3907b1fc323AdB95dA27e08e289deaE87BD8C",
+      feedAddress: process.env.AMOY_MOCKAGG || "0x2A60D7e36FC5FDa6e97aE2C7d054656382f730D7",
       minTokenPriceUsd: 0n,
     });
   }

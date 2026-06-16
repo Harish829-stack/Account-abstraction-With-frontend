@@ -22,7 +22,8 @@ export default function SendOpView() {
     trackOp,
     setCurrentView,
     setGlobalLoading,
-    nativeToken
+    nativeToken,
+    isAmoy
   } = useAppContext();
 
   const toast = useToast();
@@ -37,10 +38,12 @@ export default function SendOpView() {
   const [usePaymaster, setUsePaymaster] = useState(false);
   const [selectedGasToken, setSelectedGasToken] = useState(env?.USDC_TOKEN || '');
 
-  const trackedTokens = [
-    { symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 },
-    { symbol: 'EURC', address: '0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4', decimals: 6 }
-  ];
+  const trackedTokens = isAmoy 
+    ? [{ symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 }]
+    : [
+        { symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 },
+        { symbol: 'EURC', address: '0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4', decimals: 6 }
+      ];
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -134,26 +137,19 @@ export default function SendOpView() {
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
 
       // Robust fee calculation bypassing eth_maxPriorityFeePerGas
-      let maxFeePerGas = 20000000000n;
-      let maxPriorityFeePerGas = 1500000000n;
+      let maxFeePerGas = 40000000000n;
+      let maxPriorityFeePerGas = 40000000000n;
       try {
-        const block = await provider.getBlock("latest");
-        if (block && block.baseFeePerGas) {
-          maxFeePerGas = block.baseFeePerGas * 2n + maxPriorityFeePerGas;
-        } else {
-          const fee = await provider.getFeeData();
-          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
-          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        const fee = await provider.getFeeData();
+        maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
+        
+        if (isAmoy && maxPriorityFeePerGas < 35000000000n) {
+           maxPriorityFeePerGas = 35000000000n; // enforce 35 Gwei minimum for Amoy
+           maxFeePerGas = (maxFeePerGas < maxPriorityFeePerGas) ? maxPriorityFeePerGas : maxFeePerGas;
         }
       } catch (feeErr) {
-        console.warn("Failed to get EIP-1559 fees via block, using getFeeData fallback:", feeErr);
-        try {
-          const fee = await provider.getFeeData();
-          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
-          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
-        } catch (e) {
-          console.error("Failed to load fee fallback:", e);
-        }
+        console.warn("Failed to get EIP-1559 fees via getFeeData:", feeErr);
       }
 
       const userOp = {
@@ -186,7 +182,8 @@ export default function SendOpView() {
       const maxFee = totalGas * BigInt(maxFeePerGas);
       const ethFee = ethers.formatEther(maxFee);
       const ethPrice = await getEthPriceInUsd(provider, env.PRICE_FEED);
-      const usdcFee = (parseFloat(ethFee) * ethPrice).toFixed(2);
+      const rawUsdcFee = parseFloat(ethFee) * ethPrice;
+      const usdcFee = rawUsdcFee > 0 && rawUsdcFee < 0.01 ? "< 0.01" : rawUsdcFee.toFixed(2);
       setEstimatedFee({ eth: ethFee, usdc: usdcFee });
       
       toast.success("Gas estimated successfully! Advanced settings updated.");
@@ -219,26 +216,19 @@ export default function SendOpView() {
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
 
       // Robust fee calculation bypassing eth_maxPriorityFeePerGas
-      let maxFeePerGas = 20000000000n;
-      let maxPriorityFeePerGas = 1500000000n;
+      let maxFeePerGas = 40000000000n;
+      let maxPriorityFeePerGas = 40000000000n;
       try {
-        const block = await provider.getBlock("latest");
-        if (block && block.baseFeePerGas) {
-          maxFeePerGas = block.baseFeePerGas * 2n + maxPriorityFeePerGas;
-        } else {
-          const fee = await provider.getFeeData();
-          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
-          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        const fee = await provider.getFeeData();
+        maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
+        maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
+        
+        if (isAmoy && maxPriorityFeePerGas < 35000000000n) {
+           maxPriorityFeePerGas = 35000000000n; // enforce 35 Gwei minimum for Amoy
+           maxFeePerGas = (maxFeePerGas < maxPriorityFeePerGas) ? maxPriorityFeePerGas : maxFeePerGas;
         }
       } catch (feeErr) {
-        console.warn("Failed to get EIP-1559 fees via block, using getFeeData fallback:", feeErr);
-        try {
-          const fee = await provider.getFeeData();
-          maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
-          maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
-        } catch (e) {
-          console.error("Failed to load fee fallback:", e);
-        }
+        console.warn("Failed to get EIP-1559 fees via getFeeData:", feeErr);
       }
 
       const userOp = {
@@ -335,7 +325,9 @@ export default function SendOpView() {
                 <select className="input-field px-3" value={token} onChange={(e) => setToken(e.target.value)}>
                   <option value="ETH">{nativeToken}</option>
                   <option value="USDC">USDC</option>
-                  <option value="UNISWAP_V3">Uniswap V3 ({nativeToken} → USDC)</option>
+                  {!isAmoy && (
+                    <option value="UNISWAP_V3">Uniswap V3 ({nativeToken} → USDC)</option>
+                  )}
                   <option value="CONTRACT_CALL">Contract Call</option>
                 </select>
               </div>
