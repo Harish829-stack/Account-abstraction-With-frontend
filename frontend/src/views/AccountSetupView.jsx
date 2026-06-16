@@ -17,6 +17,7 @@ export default function AccountSetupView() {
     setSmartAccountAddress,
     saETHBalance,
     saUSDCBalance,
+    saEURCBalance,
     saEntryPointDeposit,
     saOwner,
     loadSmartAccountDetails,
@@ -29,8 +30,7 @@ export default function AccountSetupView() {
   const toast = useToast();
 
   // Stepper State
-  // Stepper State
-  const steps = ["Deploy / Connect", "Fund ETH", "Pull USDC", "EntryPoint"];
+  const steps = ["Deploy / Connect", "Fund ETH", "Pull Token", "EntryPoint"];
 
   // Option A State
   const [salt, setSalt] = useState('');
@@ -59,6 +59,7 @@ export default function AccountSetupView() {
 
   const [approveAmount, setApproveAmount] = useState('1000');
   const [approving, setApproving] = useState(false);
+  const [pullTokenAddress, setPullTokenAddress] = useState(import.meta.env.VITE_USDC_TOKEN || '');
 
   // UX: Double click to confirm transfer
   const [confirmTransfer, setConfirmTransfer] = useState(false);
@@ -258,20 +259,21 @@ export default function AccountSetupView() {
     }
   };
 
-  const handlePullUSDC = async () => {
-    if (!smartAccountAddress || !approveAmount || !signer || !env.USDC_TOKEN) return;
+  const handlePullToken = async () => {
+    if (!smartAccountAddress || !approveAmount || !signer || !pullTokenAddress) return;
     setApproving(true);
-    setGlobalLoading(true, "Pulling USDC to Smart Account...");
+    setGlobalLoading(true, "Pulling Token to Smart Account...");
     try {
-      const usdc = new ethers.Contract(env.USDC_TOKEN, ["function transfer(address to, uint256 amount) public returns (bool)"], signer);
-      const tx = await usdc.transfer(smartAccountAddress, ethers.parseUnits(approveAmount, 6));
+      const tokenContract = new ethers.Contract(pullTokenAddress, ["function transfer(address to, uint256 amount) public returns (bool)", "function symbol() view returns (string)"], signer);
+      const symbol = await tokenContract.symbol().catch(() => "Token");
+      const tx = await tokenContract.transfer(smartAccountAddress, ethers.parseUnits(approveAmount, 6));
       await tx.wait();
       await refreshAllData();
-      toast.success("USDC pulled to Smart Account successfully!");
+      toast.success(`${symbol} pulled to Smart Account successfully!`);
       setSetupStep(4);
     } catch (err) {
       if (err.code === 4001) toast.error("Transaction rejected by user");
-      else toast.error(err.reason || err.message || "Failed to pull USDC");
+      else toast.error(err.reason || err.message || "Failed to pull token");
     } finally {
       setApproving(false);
       setGlobalLoading(false);
@@ -319,7 +321,7 @@ export default function AccountSetupView() {
            </div>
            
            {/* Stats Grid */}
-           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 z-10">
+           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 z-10">
              <div className="glass-stat-card group">
                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">ETH Balance</span>
                <span className="font-bold text-2xl text-gradient-primary">{formatNum(saETHBalance, 18)} <span className="text-sm font-normal text-muted">ETH</span></span>
@@ -327,6 +329,10 @@ export default function AccountSetupView() {
              <div className="glass-stat-card group">
                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">USDC Balance</span>
                <span className="font-bold text-2xl text-gradient-secondary truncate">{formatNum(saUSDCBalance, 6)} <span className="text-sm font-normal text-muted">USDC</span></span>
+             </div>
+             <div className="glass-stat-card group">
+               <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">EURC Balance</span>
+               <span className="font-bold text-2xl text-gradient-secondary truncate">{formatNum(saEURCBalance, 6)} <span className="text-sm font-normal text-muted">EURC</span></span>
              </div>
              <div className="glass-stat-card group">
                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">EP Deposit</span>
@@ -500,32 +506,45 @@ export default function AccountSetupView() {
           </div>
         )}
 
-        {/* STEP 3: Approve USDC */}
+        {/* STEP 3: Approve Token */}
         {setupStep === 3 && (
           <div className="glass-card max-w-2xl mx-auto animate-fade-in">
-             <h3 className="flex items-center gap-2 text-gradient mb-2"><ArrowDownCircle size={24} /> Step 3: Fund Smart Account (Pull USDC)</h3>
+             <h3 className="flex items-center gap-2 text-gradient mb-2"><ArrowDownCircle size={24} /> Step 3: Fund Smart Account (Pull Token)</h3>
              <p className="text-sm text-muted mb-6">
-               Transfer USDC directly from your EOA to your Smart Account to use it for operations and gas fees.
+               Transfer tokens directly from your EOA to your Smart Account to use it for operations and gas fees.
              </p>
 
              <div className="flex flex-col gap-4 p-6 bg-white/5 rounded-xl border border-white/10">
-                <div className="flex flex-col gap-1">
-                  <label className="text-sm text-muted">Amount (USDC)</label>
-                  <div className="flex gap-2">
-                    <input 
-                        type="number" 
-                        className="input-field flex-1" 
-                        placeholder="1000" 
-                        value={approveAmount}
-                        onChange={(e) => setApproveAmount(e.target.value)}
-                    />
-                    <button 
-                      className={`btn btn-primary ${approving ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      onClick={handlePullUSDC}
-                      disabled={approving || !approveAmount}
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm text-muted">Select Token</label>
+                    <select 
+                      className="input-field"
+                      value={pullTokenAddress}
+                      onChange={(e) => setPullTokenAddress(e.target.value)}
                     >
-                      {approving ? "Pulling..." : "Pull USDC"}
-                    </button>
+                      <option value={env.USDC_TOKEN}>USDC ({env.USDC_TOKEN?.slice(0,6)}...)</option>
+                      <option value="0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4">EURC (0x0821...)</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-sm text-muted">Amount</label>
+                    <div className="flex gap-2">
+                      <input 
+                          type="number" 
+                          className="input-field flex-1" 
+                          placeholder="1000" 
+                          value={approveAmount}
+                          onChange={(e) => setApproveAmount(e.target.value)}
+                      />
+                      <button 
+                        className={`btn btn-primary ${approving ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        onClick={handlePullToken}
+                        disabled={approving || !approveAmount || !pullTokenAddress}
+                      >
+                        {approving ? "Pulling..." : "Pull Token"}
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <p className="text-xs text-muted text-center italic mt-2">

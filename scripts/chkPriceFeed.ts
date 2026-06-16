@@ -3,7 +3,7 @@ const {ethers}= await hre.network.connect();
 const RPC_URL="https://polygon-amoy.infura.io/v3/86b7c03e8d49460ca30a6845f81a6c80";
 
 
-const FEED_ADDRESS = "0x001382149eBa3441043c1c66972b4772963f5D43";
+const FEED_ADDRESS = "0x94213EAdA83cC242dAa3f70023D55F3F72488156";
 
 const ABI = [
   "function decimals() view returns (uint8)",

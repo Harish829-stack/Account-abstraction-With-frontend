@@ -6,7 +6,7 @@ async function main() {
   const [owner] = await ethers.getSigners();
 
 
-  const PAYMASTER_ADDRESS ="0xe1a975AEe59fA274396A06C5dA8fF52C04109bAc"
+  const PAYMASTER_ADDRESS ="0x7d045fA2F7DE36fB537852442bb2693D2a6b5Aa3"
 
   console.log(`Setting up Paymaster at ${PAYMASTER_ADDRESS}`);
   console.log(`Using account: ${owner.address}`);
@@ -20,10 +20,10 @@ async function main() {
   
   // 1. Add Stake
   // Staking is required by the bundler to prevent griefing.
-  console.log(`\nAdding Stake of ${ethers.formatEther(STAKE_AMOUNT)} native tokens with a 1-day delay...`);
-  const tx1 = await paymaster.addStake(UNSTAKE_DELAY_SEC, { value: STAKE_AMOUNT });
-  await tx1.wait();
-  console.log("✅ Stake added successfully!");
+  // console.log(`\nAdding Stake of ${ethers.formatEther(STAKE_AMOUNT)} native tokens with a 1-day delay...`);
+  // const tx1 = await paymaster.addStake(UNSTAKE_DELAY_SEC, { value: STAKE_AMOUNT });
+  // await tx1.wait();
+  // console.log("✅ Stake added successfully!");
 
   // 2. Deposit to EntryPoint
   // This balance is actually used to pay for the UserOperations.

@@ -33,6 +33,7 @@ export const AppProvider = ({ children }) => {
 
   const [eoaETHBalance, setEoaETHBalance] = useState("0");
   const [eoaUSDCBalance, setEoaUSDCBalance] = useState("0");
+  const [eoaEURCBalance, setEoaEURCBalance] = useState("0");
 
   const [smartAccountAddress, setSmartAccountAddress] = useState(() => {
     try {
@@ -52,6 +53,7 @@ export const AppProvider = ({ children }) => {
 
   const [saETHBalance, setSaETHBalance] = useState("0");
   const [saUSDCBalance, setSaUSDCBalance] = useState("0");
+  const [saEURCBalance, setSaEURCBalance] = useState("0");
   const [saEntryPointDeposit, setSaEntryPointDeposit] = useState("0");
   const [saOwner, setSaOwner] = useState("");
 
@@ -167,6 +169,11 @@ export const AppProvider = ({ children }) => {
         const usdcBal = await usdc.balanceOf(address);
         setEoaUSDCBalance(usdcBal.toString());
       }
+
+      const eurcAddress = "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4";
+      const eurc = new ethers.Contract(eurcAddress, ERC20_ABI, _provider);
+      const eurcBal = await eurc.balanceOf(address);
+      setEoaEURCBalance(eurcBal.toString());
     } catch (err) {
       console.error("Error loading EOA balances:", err);
     }
@@ -195,6 +202,11 @@ export const AppProvider = ({ children }) => {
         const usdcBal = await usdc.balanceOf(saAddress);
         setSaUSDCBalance(usdcBal.toString());
       }
+
+      const eurcAddress = "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4";
+      const eurc = new ethers.Contract(eurcAddress, ERC20_ABI, _provider);
+      const eurcBal = await eurc.balanceOf(saAddress);
+      setSaEURCBalance(eurcBal.toString());
 
       const entryPoint = new ethers.Contract(import.meta.env.VITE_ENTRY_POINT, IEntryPointABI, _provider);
       const deposit = await entryPoint.balanceOf(saAddress);
@@ -539,9 +551,9 @@ export const AppProvider = ({ children }) => {
     currentView, setCurrentView,
     setupStep, setSetupStep,
     provider, signer, eoaAddress, chainId, expectedChainId,
-    eoaETHBalance, eoaUSDCBalance,
+    eoaETHBalance, eoaUSDCBalance, eoaEURCBalance,
     smartAccountAddress, setSmartAccountAddress,
-    saETHBalance, saUSDCBalance, saEntryPointDeposit, saOwner,
+    saETHBalance, saUSDCBalance, saEURCBalance, saEntryPointDeposit, saOwner,
     paymasterAddress, setPaymasterAddress,
     pmETHBalance, pmUSDCBalance, pmDeposit, pmStake, pmUnstakeDelay, pmTokenSymbol, pmTokenDecimals,
     connectWallet, disconnect, isConnecting, switchNetwork,

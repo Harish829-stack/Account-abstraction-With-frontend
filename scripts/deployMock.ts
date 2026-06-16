@@ -8,9 +8,9 @@ async function main() {
   const [owner] = await ethers.getSigners();
   console.log("Deploying MockAggregator with account:", owner.address);
 
-  // Deploy MockAggregator for USDC with initial answer of $1.00 (100000000)
+  // Deploy MockAggregator for USDC with initial answer of $1.00 (1000000)
   const MockAggregator = await ethers.getContractFactory("contracts/MockAggregator.sol:MockAggregator");
-  const mockAggregator = await MockAggregator.deploy(100000000);
+  const mockAggregator = await MockAggregator.deploy(1000000);
   await mockAggregator.waitForDeployment();
   const address = await mockAggregator.getAddress();
   

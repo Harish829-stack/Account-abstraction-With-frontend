@@ -20,8 +20,8 @@ async function main() {
   console.log(`Connecting to ERC20Paymaster at: ${PAYMASTER_ADDRESS}\n`);
 
   // We can attach to either CustomPaymaster or ERC20Paymaster since they both have deposit/addStake
-  // We'll use the ERC20Paymaster factory for the ABI
-  const PaymasterFactory = await ethers.getContractFactory("ERC20Paymaster");
+  // We'll use the MultiTokenPaymaster factory for the ABI
+  const PaymasterFactory = await ethers.getContractFactory("contracts/Erc20Paymaster.sol:MultiTokenPaymaster");
   const paymaster = PaymasterFactory.attach(PAYMASTER_ADDRESS) as any;
 
   // Amount to deposit into the EntryPoint for gas fees (e.g. 0.05 ETH)

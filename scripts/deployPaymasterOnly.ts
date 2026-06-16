@@ -41,7 +41,7 @@ async function main() {
   const paymasterTx = await PaymasterArtifact.getDeployTransaction(deployer.address, entryPointAddress, nativeUsdFeed);
   const paymasterCreationCode = paymasterTx.data;
 
-  const paymasterSalt = ethers.id("MULTI_TOKEN_PAYMASTER_SALT_V4");
+  const paymasterSalt = ethers.id("MULTI_TOKEN_PAYMASTER_SALT_V5");
   const paymasterExpectedAddress = await create3Factory.getDeployed(deployer.address, paymasterSalt);
 
   const codeAtPaymaster = await ethers.provider.getCode(paymasterExpectedAddress);

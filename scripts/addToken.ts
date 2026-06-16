@@ -17,7 +17,7 @@ interface TokenEntry {
   minTokenPriceUsd: bigint;
 }
 
-const STABLECOIN_FLOOR = 95_000_000n; // $0.95 (8 decimals)
+// Dynamic floor price calculation implemented below
 
 async function main() {
   const [owner] = await ethers.getSigners();
@@ -36,7 +36,7 @@ async function main() {
 
   let PAYMASTER_ADDRESS = process.env.MULTITOKEN_PAYMASTER || process.env.PAYMASTER;
   if (!PAYMASTER_ADDRESS || PAYMASTER_ADDRESS === "0x") {
-    const paymasterSalt = ethers.id("MULTI_TOKEN_PAYMASTER_SALT_V3");
+    const paymasterSalt = ethers.id("MULTI_TOKEN_PAYMASTER_SALT_V5");
     PAYMASTER_ADDRESS = await create3Factory.getDeployed(
       owner.address,
       paymasterSalt,
@@ -59,14 +59,20 @@ async function main() {
       symbol: "USDC",
       tokenAddress: process.env.SEPOLIA_USDC_TOKEN || process.env.USDC_TOKEN_ADDRESS || "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
       feedAddress: process.env.MOCK_AGGREGATOR || "0x79167C9Dccc113Da5b0B03425098bfD0cE211b8e",
-      minTokenPriceUsd: STABLECOIN_FLOOR,
+      minTokenPriceUsd: 0n, // calculated dynamically
+    });
+    tokens.push({
+      symbol: "EURC",
+      tokenAddress: "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4",
+      feedAddress: process.env.MOCK_AGGREGATOR || "0x79167C9Dccc113Da5b0B03425098bfD0cE211b8e", // Re-using mock aggregator for testing
+      minTokenPriceUsd: 0n,
     });
   } else if (networkName === "amoy" || networkName === "polygonAmoy") {
     tokens.push({
       symbol: "USDC",
       tokenAddress: process.env.AMOY_USDC_TOKEN || "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582",
       feedAddress: process.env.AMOY_USDC_FEED || "0x1b8739bB4CdF0089d07097A9Ae5Bd274b29C6F16",
-      minTokenPriceUsd: STABLECOIN_FLOOR,
+      minTokenPriceUsd: 0n,
     });
   }
 
@@ -76,7 +82,7 @@ async function main() {
       symbol: "MOCK",
       tokenAddress: process.env.MOCK_TOKEN_ADDRESS,
       feedAddress: process.env.MOCK_AGGREGATOR,
-      minTokenPriceUsd: STABLECOIN_FLOOR,
+      minTokenPriceUsd: 0n,
     });
   }
 
@@ -90,7 +96,7 @@ async function main() {
     console.log(`\n─── ${t.symbol} ───────────────────────────────────────────`);
     console.log(`  Token : ${t.tokenAddress}`);
     console.log(`  Feed  : ${t.feedAddress}`);
-    console.log(`  Floor : $${(Number(t.minTokenPriceUsd) / 1e8).toFixed(2)}`);
+    console.log(`  Floor : Pending dynamic calculation...`);
 
     // Check if already registered (enabled flag)
     const cfg = await paymaster.tokenConfigs(t.tokenAddress);
@@ -108,12 +114,19 @@ async function main() {
       continue;
     }
 
+    // Fetch feed decimals dynamically
+    const feedContract = await ethers.getContractAt(["function decimals() view returns (uint8)"], t.feedAddress, owner);
+    const feedDecimals = await feedContract.decimals();
+    const dynamicFloor = ethers.parseUnits("0.95", feedDecimals);
+    
+    console.log(`  Calculated dynamic floor ($0.95): ${dynamicFloor.toString()} (feed decimals: ${feedDecimals})`);
+
     // Fresh registration
     console.log(`  Calling addToken…`);
     const tx = await paymaster.addToken(
       t.tokenAddress,
       t.feedAddress,
-      t.minTokenPriceUsd,
+      dynamicFloor,
     );
     await tx.wait();
     console.log(`  ✅ ${t.symbol} added successfully!  (tx: ${tx.hash})`);

@@ -100,6 +100,7 @@ contract MultiTokenPaymaster is IPaymaster, Ownable, ReentrancyGuard {
 
     event TokenAdded(address indexed token, uint8 decimals, address feed);
     event TokenEnabled(address indexed token, bool enabled);
+    event TokenFeedUpdated(address indexed token, address newFeed, uint8 newFeedDecimals);
     event NativeUsdFeedUpdated(address indexed newFeed);
     event MaxNativePriceUpdated(uint256 newMaxPrice);
     event TokensWithdrawn(address indexed token, address indexed to, uint256 amount);
@@ -160,6 +161,21 @@ contract MultiTokenPaymaster is IPaymaster, Ownable, ReentrancyGuard {
         require(tokenConfigs[token].decimals > 0, "PM: unknown token");
         tokenConfigs[token].enabled = enabled;
         emit TokenEnabled(token, enabled);
+    }
+
+    /**
+     * @notice Update the Chainlink feed for an already registered token.
+     */
+    function updateTokenFeed(address token, address newFeed) external onlyOwner {
+        require(tokenConfigs[token].decimals > 0, "PM: unknown token");
+        require(newFeed != address(0), "PM: zero feed");
+
+        uint8 newFeedDec = AggregatorV3Interface(newFeed).decimals();
+        
+        tokenConfigs[token].tokenUsdFeed = AggregatorV3Interface(newFeed);
+        tokenConfigs[token].feedDecimals = newFeedDec;
+        
+        emit TokenFeedUpdated(token, newFeed, newFeedDec);
     }
 
     /**

@@ -89,8 +89,8 @@ function DonutChart({ eoaUSDC, saUSDC }) {
 // ─── Connected Dashboard ──────────────────────────────────────────────────────
 function ConnectedDashboard() {
   const {
-    eoaAddress, eoaETHBalance, eoaUSDCBalance,
-    smartAccountAddress, saETHBalance, saUSDCBalance, saEntryPointDeposit,
+    eoaAddress, eoaETHBalance, eoaUSDCBalance, eoaEURCBalance,
+    smartAccountAddress, saETHBalance, saUSDCBalance, saEURCBalance, saEntryPointDeposit,
     paymasterAddress, pmDeposit,
     pendingUserOps,
     setCurrentView, refreshAllData, signer, provider, env,
@@ -120,6 +120,13 @@ function ConnectedDashboard() {
   const [swapAmount, setSwapAmount] = useState('0.001');
   const [swapping, setSwapping] = useState(false);
   const [usePmForSwap, setUsePmForSwap] = useState(false);
+  const [selectedGasToken, setSelectedGasToken] = useState(env?.USDC_TOKEN || '');
+  
+  const trackedTokens = [
+    { symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 },
+    { symbol: 'EURC', address: '0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4', decimals: 6 }
+  ];
+
   const [ethPrice, setEthPrice] = useState(3300);
   const [estimatedUsdcOutput, setEstimatedUsdcOutput] = useState('0.00');
   const [isEstimatingOutput, setIsEstimatingOutput] = useState(false);
@@ -179,6 +186,8 @@ function ConnectedDashboard() {
   // Stats derived from balances
   const eoaUSDC = parseFloat(ethers.formatUnits(eoaUSDCBalance || '0', 6));
   const saUSDC = parseFloat(ethers.formatUnits(saUSDCBalance || '0', 6));
+  const eoaEURC = parseFloat(ethers.formatUnits(eoaEURCBalance || '0', 6));
+  const saEURC = parseFloat(ethers.formatUnits(saEURCBalance || '0', 6));
   const eoaETH = parseFloat(ethers.formatEther(eoaETHBalance || '0'));
   const saETH = parseFloat(ethers.formatEther(saETHBalance || '0'));
   const confirmedOps = (pendingUserOps || []).filter(op => typeof op === 'object' && op.txHash);
@@ -256,27 +265,30 @@ function ConnectedDashboard() {
         preVerificationGas: toHex(50000),
         maxFeePerGas: toHex(fee.maxFeePerGas),
         maxPriorityFeePerGas: toHex(fee.maxPriorityFeePerGas),
-        paymaster: usePmForSwap ? paymasterAddress : "0x",
-        paymasterVerificationGasLimit: usePmForSwap ? toHex(150000) : "0x",
-        paymasterPostOpGasLimit: usePmForSwap ? toHex(150000) : "0x",
-        paymasterData: usePmForSwap ? env.USDC_TOKEN : "0x",
+        paymaster: "0x",
+        paymasterVerificationGasLimit: "0x",
+        paymasterPostOpGasLimit: "0x",
+        paymasterData: "0x",
         signature: "0x"
       };
 
-      // Try to estimate gas
+      // Try to estimate gas WITHOUT paymaster to bypass paymaster simulation errors
       try {
         const est = await estimateUserOperationGas(userOp);
         userOp.callGasLimit = toHex(est.callGasLimit);
         userOp.verificationGasLimit = toHex(est.verificationGasLimit);
         userOp.preVerificationGas = toHex(est.preVerificationGas);
-        if (est.paymasterVerificationGasLimit) {
-            userOp.paymasterVerificationGasLimit = toHex(est.paymasterVerificationGasLimit);
-        }
-        if (est.paymasterPostOpGasLimit) {
-            userOp.paymasterPostOpGasLimit = toHex(est.paymasterPostOpGasLimit);
-        }
       } catch (err) {
         console.warn("Estimation failed, using defaults", err);
+      }
+
+      // Attach Paymaster exactly after estimation is done
+      if (usePmForSwap) {
+         if (!paymasterAddress) throw new Error("Paymaster address not set!");
+         userOp.paymaster = paymasterAddress;
+         userOp.paymasterVerificationGasLimit = toHex(300000);
+         userOp.paymasterPostOpGasLimit = toHex(300000);
+         userOp.paymasterData = selectedGasToken;
       }
 
       const hash = await entryPoint.getUserOpHash(packUserOp(userOp));
@@ -348,9 +360,13 @@ function ConnectedDashboard() {
               <div className="text-xs text-muted mb-1">ETH</div>
               <div className="font-bold text-lg">{eoaETH.toFixed(4)}</div>
             </div>
-            <div className="text-right">
+            <div className="text-center">
               <div className="text-xs text-muted mb-1">USDC</div>
               <div className="font-bold text-lg">{eoaUSDC.toFixed(2)}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs text-muted mb-1">EURC</div>
+              <div className="font-bold text-lg">{eoaEURC.toFixed(2)}</div>
             </div>
           </div>
         </div>
@@ -381,9 +397,13 @@ function ConnectedDashboard() {
                 <div className="text-xs text-muted mb-1">ETH</div>
                 <div className="font-bold text-lg">{saETH.toFixed(4)}</div>
               </div>
-              <div>
+              <div className="text-center">
                 <div className="text-xs text-muted mb-1">USDC</div>
                 <div className="font-bold text-lg">{saUSDC.toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-muted mb-1">EURC</div>
+                <div className="font-bold text-lg">{saEURC.toFixed(2)}</div>
               </div>
               <div className="text-right">
                 <div className="text-xs text-muted mb-1">EP Deposit</div>
@@ -816,14 +836,30 @@ function ConnectedDashboard() {
 
             {/* Paymaster Toggle */}
             <div style={{
-              display:'flex', alignItems:'center', gap:10, margin:'1rem 0',
+              display:'flex', flexDirection:'column', gap:8, margin:'1rem 0',
               padding:'0.85rem 1rem', background:'rgba(22, 163, 74,0.05)', borderRadius:16, border:'1px solid rgba(22, 163, 74,0.1)'
             }}>
-              <input type="checkbox" id="pmSwapModalToggle" checked={usePmForSwap} onChange={e => setUsePmForSwap(e.target.checked)} style={{ accentColor:'var(--primary)', width:16, height:16 }} />
-              <label htmlFor="pmSwapModalToggle" style={{ fontSize:'0.85rem', color:'#141827', cursor:'pointer', flex:1, fontWeight:600 }}>
-                Sponsor gas with Paymaster
-              </label>
-              <span className="gasless-pill" style={{ opacity: usePmForSwap ? 1 : 0, transition: 'opacity 0.2s', pointerEvents: usePmForSwap ? 'auto' : 'none' }}>Gasless</span>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <input type="checkbox" id="pmSwapModalToggle" checked={usePmForSwap} onChange={e => setUsePmForSwap(e.target.checked)} style={{ accentColor:'var(--primary)', width:16, height:16 }} />
+                <label htmlFor="pmSwapModalToggle" style={{ fontSize:'0.85rem', color:'#141827', cursor:'pointer', flex:1, fontWeight:600 }}>
+                  Sponsor gas with Paymaster
+                </label>
+                <span className="gasless-pill" style={{ opacity: usePmForSwap ? 1 : 0, transition: 'opacity 0.2s', pointerEvents: usePmForSwap ? 'auto' : 'none' }}>Gasless</span>
+              </div>
+              {usePmForSwap && (
+                <div style={{ display:'flex', alignItems:'center', gap:10, paddingLeft:26 }}>
+                  <label style={{ fontSize:'0.8rem', color:'var(--text-muted)' }}>Gas Token</label>
+                  <select 
+                    style={{ background:'rgba(0,0,0,0.05)', border:'none', borderRadius:8, padding:'4px 8px', fontSize:'0.8rem', outline:'none' }}
+                    value={selectedGasToken} 
+                    onChange={(e) => setSelectedGasToken(e.target.value)}
+                  >
+                    {trackedTokens.map(t => (
+                      <option key={t.symbol} value={t.address}>{t.symbol}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* Swap CTA */}

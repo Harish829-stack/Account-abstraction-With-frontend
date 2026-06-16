@@ -34,6 +34,13 @@ export default function SendOpView() {
   const [parameters, setParameters] = useState('');
 
   const [usePaymaster, setUsePaymaster] = useState(false);
+  const [selectedGasToken, setSelectedGasToken] = useState(env?.USDC_TOKEN || '');
+
+  const trackedTokens = [
+    { symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 },
+    { symbol: 'EURC', address: '0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4', decimals: 6 }
+  ];
+
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [callGasLimit, setCallGasLimit] = useState('120000');
@@ -160,9 +167,9 @@ export default function SendOpView() {
         maxFeePerGas: toHex(maxFeePerGas),
         maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
         paymaster: usePaymaster ? (paymasterAddress || "0x") : "0x",
-        paymasterVerificationGasLimit: usePaymaster ? toHex(150000) : "0x",
-        paymasterPostOpGasLimit: usePaymaster ? toHex(150000) : "0x",
-        paymasterData: usePaymaster ? env.USDC_TOKEN : "0x",
+        paymasterVerificationGasLimit: usePaymaster ? toHex(2000000) : "0x",
+        paymasterPostOpGasLimit: usePaymaster ? toHex(2000000) : "0x",
+        paymasterData: usePaymaster ? selectedGasToken : "0x",
         signature: "0x"
       };
 
@@ -251,31 +258,27 @@ export default function SendOpView() {
         signature: "0x"
       };
 
-      if (usePaymaster) {
-         if (!paymasterAddress) throw new Error("Paymaster address not set!");
-         userOp.paymaster = paymasterAddress;
-         userOp.paymasterVerificationGasLimit = toHex(150000);
-         userOp.paymasterPostOpGasLimit = toHex(150000);
-         userOp.paymasterData = env.USDC_TOKEN;
-      }
-
-      // Try to estimate gas dynamically right before sending
+      // Try to estimate gas dynamically right before sending WITHOUT the paymaster
+      // This ensures we get real execution gas limits without paymaster simulation failing
       try {
         const est = await estimateUserOperationGas(userOp);
         userOp.callGasLimit = toHex(est.callGasLimit);
         userOp.verificationGasLimit = toHex(est.verificationGasLimit);
         userOp.preVerificationGas = toHex(est.preVerificationGas);
-        if (est.paymasterVerificationGasLimit) {
-            userOp.paymasterVerificationGasLimit = toHex(est.paymasterVerificationGasLimit);
-        }
-        if (est.paymasterPostOpGasLimit) {
-            userOp.paymasterPostOpGasLimit = toHex(est.paymasterPostOpGasLimit);
-        }
       } catch (err) {
         console.warn("Estimation failed, using UI inputs as fallback", err);
         userOp.callGasLimit = toHex(callGasLimit);
         userOp.verificationGasLimit = toHex(verificationGasLimit);
         userOp.preVerificationGas = toHex(preVerificationGas);
+      }
+
+      // Attach Paymaster exactly after estimation is done
+      if (usePaymaster) {
+         if (!paymasterAddress) throw new Error("Paymaster address not set!");
+         userOp.paymaster = paymasterAddress;
+         userOp.paymasterVerificationGasLimit = toHex(300000);
+         userOp.paymasterPostOpGasLimit = toHex(300000);
+         userOp.paymasterData = selectedGasToken;
       }
 
       const hash = await entryPoint.getUserOpHash(packUserOp(userOp));
@@ -361,9 +364,25 @@ export default function SendOpView() {
               </div>
             )}
 
-            <div className="flex items-center gap-3 p-3 bg-white/5 rounded-md border border-white/5">
-              <input type="checkbox" id="pmToggle" className="w-4 h-4 accent-primary" checked={usePaymaster} onChange={(e) => setUsePaymaster(e.target.checked)} />
-              <label htmlFor="pmToggle" className="text-sm flex-1 cursor-pointer">Sponsor gas with Paymaster</label>
+            <div className="flex flex-col gap-2 p-3 bg-white/5 rounded-md border border-white/5">
+              <div className="flex items-center gap-3">
+                <input type="checkbox" id="pmToggle" className="w-4 h-4 accent-primary" checked={usePaymaster} onChange={(e) => setUsePaymaster(e.target.checked)} />
+                <label htmlFor="pmToggle" className="text-sm flex-1 cursor-pointer">Sponsor gas with Paymaster</label>
+              </div>
+              {usePaymaster && (
+                <div className="flex items-center gap-3 mt-1 pl-7">
+                  <label className="text-sm text-muted">Gas Token</label>
+                  <select 
+                    className="input-field px-2 py-1 text-sm bg-black/20" 
+                    value={selectedGasToken} 
+                    onChange={(e) => setSelectedGasToken(e.target.value)}
+                  >
+                    {trackedTokens.map(t => (
+                      <option key={t.symbol} value={t.address}>{t.symbol}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="mt-2 text-sm">
@@ -392,14 +411,14 @@ export default function SendOpView() {
               <div className="mt-3 p-4 bg-slate-50 border border-slate-200 rounded-xl animate-fade-in flex flex-col gap-2 shadow-sm">
                 <div className="flex justify-between items-center text-xs text-muted">
                   <span className="font-bold">Estimated Gas Fee ({usePaymaster ? "Paymaster Sponsored" : "Self-Paid"})</span>
-                  <span className="font-semibold text-primary">{usePaymaster ? "Paid in USDC" : "Paid in ETH"}</span>
+                  <span className="font-semibold text-primary">{usePaymaster ? `Paid in ${trackedTokens.find(t => t.address === selectedGasToken)?.symbol || 'Token'}` : "Paid in ETH"}</span>
                 </div>
                 <div className="flex justify-between items-baseline mt-1">
                   <span className="text-sm font-bold font-mono text-slate-700">
-                    {usePaymaster ? `${estimatedFee.usdc} USDC` : `${parseFloat(estimatedFee.eth).toFixed(6)} ETH`}
+                    {usePaymaster ? `${estimatedFee.usdc} ${trackedTokens.find(t => t.address === selectedGasToken)?.symbol || 'Token'}` : `${parseFloat(estimatedFee.eth).toFixed(6)} ETH`}
                   </span>
                   <span className="text-sm font-bold font-mono text-slate-500">
-                    {usePaymaster ? `~ ${parseFloat(estimatedFee.eth).toFixed(6)} ETH` : `~ ${estimatedFee.usdc} USDC`}
+                    {usePaymaster ? `~ ${parseFloat(estimatedFee.eth).toFixed(6)} ETH` : `~ ${estimatedFee.usdc} ${trackedTokens.find(t => t.address === selectedGasToken)?.symbol || 'Token'}`}
                   </span>
                 </div>
               </div>

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.23;
 
 contract MockAggregator {
-    uint8 public decimals = 8;
+    uint8 public decimals = 6;
     int256 public answer;
 
     constructor(int256 _initialAnswer) {

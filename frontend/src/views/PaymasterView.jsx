@@ -40,7 +40,7 @@ export default function PaymasterView() {
   // Admin Add Token States
   const [adminNewToken, setAdminNewToken] = useState('');
   const [adminNewTokenFeed, setAdminNewTokenFeed] = useState('');
-  const [adminNewTokenMinPrice, setAdminNewTokenMinPrice] = useState('1000000'); // 0.01 with 8 decimals
+  const [adminNewTokenMinPrice, setAdminNewTokenMinPrice] = useState('950000'); // $0.95 with 6 decimals
 
 
   // Deploy States
@@ -71,18 +71,40 @@ export default function PaymasterView() {
   // Approve State
   const [approveAmount, setApproveAmount] = useState('10');
   const [approving, setApproving] = useState(false);
-  const [pmAllowance, setPmAllowance] = useState('0');
   const [lastOpHash, setLastOpHash] = useState('');
 
-  const fetchPmAllowance = async () => {
-    if (!signer || !dToken || !smartAccountAddress || !paymasterAddress) return;
-    try {
-      const usdc = new ethers.Contract(dToken, ["function allowance(address owner, address spender) view returns (uint256)"], provider);
-      const allowance = await usdc.allowance(smartAccountAddress, paymasterAddress);
-      setPmAllowance(ethers.formatUnits(allowance, pmTokenDecimals || 6));
-    } catch (err) {
-      console.error("Error fetching pm allowance:", err);
+  const [selectedApproveToken, setSelectedApproveToken] = useState(env.USDC_TOKEN || '');
+  const [tokenAllowances, setTokenAllowances] = useState({});
+  const [pmTokenBalances, setPmTokenBalances] = useState({});
+
+  const trackedTokens = [
+    { symbol: 'USDC', address: env.USDC_TOKEN, decimals: 6 },
+    { symbol: 'EURC', address: '0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4', decimals: 6 }
+  ];
+
+  const fetchTokenData = async () => {
+    if (!signer || !smartAccountAddress || !paymasterAddress) return;
+    const allowances = {};
+    const pmBalances = {};
+    for (const t of trackedTokens) {
+      if (!t.address) continue;
+      try {
+        const erc20 = new ethers.Contract(t.address, [
+          "function allowance(address owner, address spender) view returns (uint256)",
+          "function balanceOf(address account) view returns (uint256)"
+        ], provider);
+        const allowance = await erc20.allowance(smartAccountAddress, paymasterAddress);
+        allowances[t.symbol] = ethers.formatUnits(allowance, t.decimals || 6);
+
+        const pmBal = await erc20.balanceOf(paymasterAddress);
+        pmBalances[t.symbol] = ethers.formatUnits(pmBal, t.decimals || 6);
+      } catch (err) {
+        allowances[t.symbol] = "0.0";
+        pmBalances[t.symbol] = "0.0";
+      }
     }
+    setTokenAllowances(allowances);
+    setPmTokenBalances(pmBalances);
   };
 
   const fetchPmOwner = async () => {
@@ -97,9 +119,9 @@ export default function PaymasterView() {
   };
 
   useEffect(() => {
-    fetchPmAllowance();
+    fetchTokenData();
     fetchPmOwner();
-  }, [smartAccountAddress, paymasterAddress, provider, dToken, refreshTrigger]);
+  }, [smartAccountAddress, paymasterAddress, provider, refreshTrigger]);
 
   // Auto-redirect
   useEffect(() => {
@@ -239,8 +261,9 @@ export default function PaymasterView() {
   );
 
   const handleApprovePaymaster = async () => {
+    const targetToken = selectedApproveToken || dToken;
     console.log("[Approve-V3] Starting approval flow via Smart Account...");
-    if (!smartAccountAddress || !approveAmount || !signer || !paymasterAddress || !dToken) {
+    if (!smartAccountAddress || !approveAmount || !signer || !paymasterAddress || !targetToken) {
       toast.error("Missing inputs: Smart Account, Paymaster, or Token address.");
       return;
     }
@@ -290,12 +313,13 @@ export default function PaymasterView() {
         return;
       }
 
-      const parsedAmount = ethers.parseUnits(approveAmount, pmTokenDecimals || 6);
+      const targetDecimals = trackedTokens.find(t => t.address.toLowerCase() === targetToken.toLowerCase())?.decimals || pmTokenDecimals || 6;
+      const parsedAmount = ethers.parseUnits(approveAmount, targetDecimals);
       
       const erc20 = new ethers.Interface(ERC20_ABI);
       const inner = erc20.encodeFunctionData("approve", [paymasterAddress, parsedAmount]);
       
-      const callData = encodeERC7579Single(dToken, 0n, inner);
+      const callData = encodeERC7579Single(targetToken, 0n, inner);
 
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
@@ -428,18 +452,16 @@ export default function PaymasterView() {
                 <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">PM ETH</span>
                 <span className="font-bold text-xl text-gradient-primary">{formatNum(pmETHBalance, 18)}</span>
               </div>
-              <div className="glass-stat-card group">
-                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">PM {pmTokenSymbol}</span>
-                <span className="font-bold text-xl text-gradient-secondary truncate">{pmUSDCBalance}</span>
-              </div>
-              <div className="glass-stat-card group">
-                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">Approved</span>
-                <span className="font-bold text-xl text-gradient-secondary truncate">{pmAllowance}</span>
-              </div>
-              <div className="glass-stat-card group">
-                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">Token</span>
-                <span className="font-bold text-sm truncate uppercase tracking-widest text-[#94A3B8]">{shortenAddress(dToken)}</span>
-              </div>
+              {trackedTokens?.map(t => {
+                const pmBal = pmTokenBalances[t.symbol] || "0.0";
+                const approvedAmt = tokenAllowances[t.symbol] || "0.0";
+                return (
+                  <div key={t.address} className="glass-stat-card group">
+                    <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">PM {t.symbol} / Approved</span>
+                    <span className="font-bold text-xl text-gradient-secondary truncate">{formatNum(pmBal, 0)} / <span className="text-sm font-normal text-white">{approvedAmt}</span></span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -451,28 +473,41 @@ export default function PaymasterView() {
            <p className="info-callout text-sm text-muted mb-0">
              <Info className="flex-shrink-0 text-secondary" />
              <span>
-                <b>Why approval?</b> The Paymaster needs permission to take USDC from your wallet to pay for your Smart Account's transaction gas. 
-                This enables "gasless" transactions where you pay in USDC instead of ETH.
-                <br/><br/>
-                <b className="text-white">Current Approved Amount:</b> {pmAllowance} {pmTokenSymbol || 'Tokens'}
+                <b>Why approval?</b> The Paymaster needs permission to take tokens from your wallet to pay for your Smart Account's transaction gas. 
+                This enables "gasless" transactions where you pay in tokens instead of ETH.
              </span>
            </p>
         </div>
         
-        <div className="flex items-center gap-4 p-4 border border-white/5 bg-white/5 rounded-xl">
-          <input 
-            type="number" 
-            className="input-field flex-1" 
-            placeholder={`Amount in ${pmTokenSymbol || 'Tokens'}`} 
-            value={approveAmount} 
-            onChange={e=>setApproveAmount(e.target.value)} 
-          />
-          <button className={`btn btn-primary ${approving ? 'opacity-50 cursor-not-allowed' : ''}`} onClick={handleApprovePaymaster} disabled={approving || !approveAmount}>
+        <div className="flex flex-col gap-4 p-4 border border-black/5 bg-white/5 rounded-xl shadow-sm">
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="text-sm text-muted mb-2 block font-semibold">Asset</label>
+              <select 
+                className="input-field w-full py-2 text-base font-semibold" 
+                value={selectedApproveToken} 
+                onChange={e=>setSelectedApproveToken(e.target.value)}
+              >
+                {trackedTokens?.map(t => (
+                  <option key={t.address} value={t.address}>{t.symbol}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="text-sm text-muted mb-2 block font-semibold">Amount</label>
+              <input 
+                type="number" 
+                className="input-field w-full py-2 text-base font-bold" 
+                placeholder="0.00" 
+                value={approveAmount} 
+                onChange={e=>setApproveAmount(e.target.value)} 
+              />
+            </div>
+          </div>
+          <button className={`btn btn-primary w-full mt-2 ${approving ? 'opacity-50 cursor-not-allowed' : ''}`} onClick={handleApprovePaymaster} disabled={approving || !approveAmount}>
             {approving ? "Approving..." : "Approve from Smart Account"}
           </button>
         </div>
-
-
       </div>
 
       {showAdminModal && (
@@ -558,8 +593,8 @@ export default function PaymasterView() {
                       </div>
                    </div>
                    <div>
-                      <label className="text-xs text-muted mb-1 block">Min Token Price (in feed decimals, e.g. 1000000 for $0.01 w/ 8 decimals)</label>
-                      <input type="number" className="input-field py-2 text-sm" placeholder="1000000" value={adminNewTokenMinPrice} onChange={e=>setAdminNewTokenMinPrice(e.target.value)} />
+                      <label className="text-xs text-muted mb-1 block">Min Token Price (in feed decimals, e.g. 950000 for $0.95 w/ 6 decimals)</label>
+                      <input type="number" className="input-field py-2 text-sm" placeholder="950000" value={adminNewTokenMinPrice} onChange={e=>setAdminNewTokenMinPrice(e.target.value)} />
                    </div>
                    <button className="btn btn-secondary w-full text-sm py-2 mt-2" onClick={handleAdminAddToken} disabled={!adminNewToken || !adminNewTokenFeed || !adminNewTokenMinPrice}>Add Token Configuration</button>
                    <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-md mt-2 flex gap-3 text-orange-200/80 text-xs items-start">
