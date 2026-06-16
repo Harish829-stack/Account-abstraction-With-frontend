@@ -4,7 +4,7 @@ import { shortenAddress } from '../utils/helpers';
 import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, LayoutDashboard, Shield } from 'lucide-react';
 
 export default function Navbar() {
-  const { eoaAddress, smartAccountAddress, disconnect, currentView, setCurrentView } = useAppContext();
+  const { eoaAddress, smartAccountAddress, disconnect, currentView, setCurrentView, chainId, switchNetwork } = useAppContext();
 
   if (!eoaAddress) return null;
 
@@ -40,7 +40,21 @@ export default function Navbar() {
           )}
         </div>
 
-        <div className="wallet-topbar__actions">
+        <div className="wallet-topbar__actions flex items-center gap-3">
+          <select 
+            className="text-xs font-semibold bg-slate-800 text-white border border-slate-600 rounded px-3 py-1.5 outline-none cursor-pointer focus:border-primary/50"
+            value={chainId ? chainId.toString() : "11155111"}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val === "11155111") switchNetwork(11155111);
+              if (val === "80002") switchNetwork(80002);
+            }}
+          >
+            <option value="11155111">Sepolia</option>
+            <option value="80002">Amoy</option>
+            <option value="coming_soon" disabled>Coming Soon...</option>
+          </select>
+
           <div className="wallet-eoa">
             EOA: {shortenAddress(eoaAddress)}
           </div>

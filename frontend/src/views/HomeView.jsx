@@ -93,7 +93,7 @@ function ConnectedDashboard() {
     smartAccountAddress, saETHBalance, saUSDCBalance, saEURCBalance, saEntryPointDeposit,
     paymasterAddress, pmDeposit,
     pendingUserOps,
-    setCurrentView, refreshAllData, signer, provider, env,
+    setCurrentView, refreshAllData, signer, provider, env, nativeToken,
     trackOp, setGlobalLoading, setSetupStep
   } = useAppContext();
   const toast = useToast();
@@ -357,7 +357,7 @@ function ConnectedDashboard() {
           <div className="wallet-summary-card__divider" />
           <div className="flex justify-between">
             <div>
-              <div className="text-xs text-muted mb-1">ETH</div>
+              <div className="text-xs text-muted mb-1">{nativeToken}</div>
               <div className="font-bold text-lg">{eoaETH.toFixed(4)}</div>
             </div>
             <div className="text-center">
@@ -394,7 +394,7 @@ function ConnectedDashboard() {
           {smartAccountAddress ? (
             <div className="flex justify-between">
               <div>
-                <div className="text-xs text-muted mb-1">ETH</div>
+                <div className="text-xs text-muted mb-1">{nativeToken}</div>
                 <div className="font-bold text-lg">{saETH.toFixed(4)}</div>
               </div>
               <div className="text-center">
@@ -589,7 +589,7 @@ function ConnectedDashboard() {
           >
             <div className="quick-action-icon quick-action-icon--secondary"><Wallet size={18} /></div>
             <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:'0.85rem', fontWeight:600, color:'#141827' }}>Fund ETH</div>
+              <div style={{ fontSize:'0.85rem', fontWeight:600, color:'#141827' }}>Fund {nativeToken}</div>
               <div style={{ fontSize:'0.65rem', color:'var(--text-muted)' }}>Top up your EOA wallet</div>
             </div>
             <ArrowRight size={15} style={{ color:'var(--text-muted)' }} />
@@ -624,7 +624,7 @@ function ConnectedDashboard() {
             <div className="quick-action-icon quick-action-icon--secondary"><Activity size={18} /></div>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:'0.85rem', fontWeight:600, color:'#141827' }}>Quick Swap</div>
-              <div style={{ fontSize:'0.65rem', color:'var(--text-muted)' }}>ETH → USDC via Uniswap V3</div>
+              <div style={{ fontSize:'0.65rem', color:'var(--text-muted)' }}>{nativeToken} → USDC via Uniswap V3</div>
             </div>
             <ArrowRight size={15} style={{ color:'var(--text-muted)' }} />
           </button>
@@ -711,7 +711,7 @@ function ConnectedDashboard() {
                         <path d="M15.925 20.858l-9.869-4.373L15.925 0v20.858z" fill="#fff" opacity="0.4"/>
                       </svg>
                     </span>
-                    <span style={{ fontSize:'0.9rem', fontWeight:700, color:'#141827' }}>ETH</span>
+                    <span style={{ fontSize:'0.9rem', fontWeight:700, color:'#141827' }}>{nativeToken}</span>
                     <ChevronDown size={16} color="#64748b" />
                   </button>
 
@@ -732,7 +732,7 @@ function ConnectedDashboard() {
                             <path d="M16.075 0v20.858l9.897-4.373L16.075 0z" fill="#fff" opacity="0.6"/>
                           </svg>
                         </span>
-                        <span style={{ fontWeight:700, color:'#141827' }}>ETH</span>
+                        <span style={{ fontWeight:700, color:'#141827' }}>{nativeToken}</span>
                       </div>
                       <div style={{ marginTop:4, paddingTop:6, borderTop:'1px solid rgba(0,0,0,0.05)', textAlign:'center', fontSize:'0.7rem', color:'var(--text-muted)' }}>
                         More currencies coming soon

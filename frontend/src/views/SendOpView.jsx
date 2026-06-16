@@ -21,7 +21,8 @@ export default function SendOpView() {
     env,
     trackOp,
     setCurrentView,
-    setGlobalLoading
+    setGlobalLoading,
+    nativeToken
   } = useAppContext();
 
   const toast = useToast();
@@ -332,14 +333,14 @@ export default function SendOpView() {
               <div className="flex flex-col gap-1 w-1/3">
                 <label className="text-sm text-muted">Asset</label>
                 <select className="input-field px-3" value={token} onChange={(e) => setToken(e.target.value)}>
-                  <option value="ETH">ETH</option>
+                  <option value="ETH">{nativeToken}</option>
                   <option value="USDC">USDC</option>
-                  <option value="UNISWAP_V3">Uniswap V3 (ETH → USDC)</option>
+                  <option value="UNISWAP_V3">Uniswap V3 ({nativeToken} → USDC)</option>
                   <option value="CONTRACT_CALL">Contract Call</option>
                 </select>
               </div>
               <div className="flex flex-col gap-1 w-2/3">
-                <label className="text-sm text-muted">{token === 'CONTRACT_CALL' ? 'Value (ETH)' : token === 'UNISWAP_V3' ? 'Swap Amount (ETH)' : 'Amount'}</label>
+                <label className="text-sm text-muted">{token === 'CONTRACT_CALL' ? `Value (${nativeToken})` : token === 'UNISWAP_V3' ? `Swap Amount (${nativeToken})` : 'Amount'}</label>
                 <input type="number" className="input-field" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
               </div>
             </div>
@@ -411,14 +412,14 @@ export default function SendOpView() {
               <div className="mt-3 p-4 bg-slate-50 border border-slate-200 rounded-xl animate-fade-in flex flex-col gap-2 shadow-sm">
                 <div className="flex justify-between items-center text-xs text-muted">
                   <span className="font-bold">Estimated Gas Fee ({usePaymaster ? "Paymaster Sponsored" : "Self-Paid"})</span>
-                  <span className="font-semibold text-primary">{usePaymaster ? `Paid in ${trackedTokens.find(t => t.address === selectedGasToken)?.symbol || 'Token'}` : "Paid in ETH"}</span>
+                  <span className="font-semibold text-primary">{usePaymaster ? `Paid in ${trackedTokens.find(t => t.address === selectedGasToken)?.symbol || 'Token'}` : `Paid in ${nativeToken}`}</span>
                 </div>
                 <div className="flex justify-between items-baseline mt-1">
                   <span className="text-sm font-bold font-mono text-slate-700">
-                    {usePaymaster ? `${estimatedFee.usdc} ${trackedTokens.find(t => t.address === selectedGasToken)?.symbol || 'Token'}` : `${parseFloat(estimatedFee.eth).toFixed(6)} ETH`}
+                    {usePaymaster ? `${estimatedFee.usdc} ${trackedTokens.find(t => t.address === selectedGasToken)?.symbol || 'Token'}` : `${parseFloat(estimatedFee.eth).toFixed(6)} ${nativeToken}`}
                   </span>
                   <span className="text-sm font-bold font-mono text-slate-500">
-                    {usePaymaster ? `~ ${parseFloat(estimatedFee.eth).toFixed(6)} ETH` : `~ ${estimatedFee.usdc} ${trackedTokens.find(t => t.address === selectedGasToken)?.symbol || 'Token'}`}
+                    {usePaymaster ? `~ ${parseFloat(estimatedFee.eth).toFixed(6)} ${nativeToken}` : `~ ${estimatedFee.usdc} ${trackedTokens.find(t => t.address === selectedGasToken)?.symbol || 'Token'}`}
                   </span>
                 </div>
               </div>

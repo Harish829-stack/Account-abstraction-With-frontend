@@ -15,7 +15,7 @@ export default function PaymasterView() {
     provider, signer, eoaAddress, smartAccountAddress, paymasterAddress, setPaymasterAddress, refreshAllData, env,
     pmETHBalance, pmUSDCBalance, pmDeposit, pmStake, pmUnstakeDelay, pmTokenSymbol, pmTokenDecimals, loadPaymasterDetails,
     saETHBalance, saUSDCBalance, saEntryPointDeposit,
-    trackOp, setCurrentView, setGlobalLoading, refreshTrigger
+    trackOp, setCurrentView, setGlobalLoading, refreshTrigger, nativeToken
   } = useAppContext();
   const toast = useToast();
 
@@ -306,7 +306,7 @@ export default function PaymasterView() {
 
       if (totalAvailableEth < requiredPrefundEth) {
         toast.error(
-          `Insufficient ETH for prefund! The EntryPoint requires your Smart Account to have at least ${requiredPrefundEth.toFixed(4)} ETH to cover the worst-case gas cost of this transaction. You currently have ${totalAvailableEth.toFixed(4)} ETH total (Balance + Deposit). Please deposit more ETH into your Smart Account first.`
+          `Insufficient ${nativeToken} for prefund! The EntryPoint requires your Smart Account to have at least ${requiredPrefundEth.toFixed(4)} ${nativeToken} to cover the worst-case gas cost of this transaction. You currently have ${totalAvailableEth.toFixed(4)} ${nativeToken} total (Balance + Deposit). Please deposit more ${nativeToken} into your Smart Account first.`
         );
         setApproving(false);
         setGlobalLoading(false);
@@ -398,8 +398,8 @@ export default function PaymasterView() {
              </div>
              <div className="flex gap-6">
                <div className="text-right">
-                  <div className="text-[10px] text-muted uppercase tracking-wider">SA ETH</div>
-                  <div className="text-xs font-bold text-gradient-primary">{formatNum(saETHBalance, 18)} <span className="font-normal text-muted">ETH</span></div>
+                  <div className={`text-[10px] text-muted uppercase tracking-wider`}>SA {nativeToken}</div>
+                  <div className="text-xs font-bold text-gradient-primary">{formatNum(saETHBalance, 18)} <span className="font-normal text-muted">{nativeToken}</span></div>
                </div>
                <div className="text-right">
                   <div className="text-[10px] text-muted uppercase tracking-wider">SA {pmTokenSymbol}</div>
@@ -449,7 +449,7 @@ export default function PaymasterView() {
                 <span className="font-bold text-xl text-gradient-primary">{formatNum(pmStake, 18)}</span>
               </div>
               <div className="glass-stat-card group">
-                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">PM ETH</span>
+                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">PM {nativeToken}</span>
                 <span className="font-bold text-xl text-gradient-primary">{formatNum(pmETHBalance, 18)}</span>
               </div>
               {trackedTokens?.map(t => {
@@ -474,7 +474,7 @@ export default function PaymasterView() {
              <Info className="flex-shrink-0 text-secondary" />
              <span>
                 <b>Why approval?</b> The Paymaster needs permission to take tokens from your wallet to pay for your Smart Account's transaction gas. 
-                This enables "gasless" transactions where you pay in tokens instead of ETH.
+                This enables "gasless" transactions where you pay in tokens instead of {nativeToken}.
              </span>
            </p>
         </div>
@@ -525,25 +525,25 @@ export default function PaymasterView() {
             <div className="flex flex-col gap-8">
               {/* Stake & Deposit */}
               <section>
-                <h3 className="text-sm font-semibold uppercase tracking-widest text-muted mb-3 flex items-center gap-2"><Lock size={16}/> EntryPoint ETH</h3>
+                <h3 className="text-sm font-semibold uppercase tracking-widest text-muted mb-3 flex items-center gap-2"><Lock size={16}/> EntryPoint {nativeToken}</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="p-4 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-3">
                     <label className="text-xs text-muted mb-[-4px]">Deposit Amount</label>
-                    <input type="number" className="input-field py-2 text-sm" placeholder="0.01 ETH" value={adminDepositAmount} onChange={e=>setAdminDepositAmount(e.target.value)} />
-                    <button className="btn btn-secondary w-full text-sm py-2 mt-1" onClick={handleAdminDeposit} disabled={!adminDepositAmount}>Deposit ETH</button>
+                    <input type="number" className="input-field py-2 text-sm" placeholder={`0.01 ${nativeToken}`} value={adminDepositAmount} onChange={e=>setAdminDepositAmount(e.target.value)} />
+                    <button className="btn btn-secondary w-full text-sm py-2 mt-1" onClick={handleAdminDeposit} disabled={!adminDepositAmount}>Deposit {nativeToken}</button>
                   </div>
                   <div className="p-4 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-3">
                     <div className="flex gap-2">
                       <div className="flex-1">
                         <label className="text-xs text-muted mb-[-4px]">Stake Amount</label>
-                        <input type="number" className="input-field py-2 text-sm w-full" placeholder="0.01 ETH" value={adminStakeAmount} onChange={e=>setAdminStakeAmount(e.target.value)} />
+                        <input type="number" className="input-field py-2 text-sm w-full" placeholder={`0.01 ${nativeToken}`} value={adminStakeAmount} onChange={e=>setAdminStakeAmount(e.target.value)} />
                       </div>
                       <div className="flex-1">
                         <label className="text-xs text-muted mb-[-4px]">Unstake Delay (Sec)</label>
                         <input type="number" className="input-field py-2 text-sm w-full" placeholder="86400" value={adminUnstakeDelay} onChange={e=>setAdminUnstakeDelay(e.target.value)} />
                       </div>
                     </div>
-                    <button className="btn btn-secondary w-full text-sm py-2 mt-1" onClick={handleAdminStake} disabled={!adminStakeAmount || !adminUnstakeDelay}>Stake ETH</button>
+                    <button className="btn btn-secondary w-full text-sm py-2 mt-1" onClick={handleAdminStake} disabled={!adminStakeAmount || !adminUnstakeDelay}>Stake {nativeToken}</button>
                   </div>
                 </div>
               </section>
@@ -560,10 +560,10 @@ export default function PaymasterView() {
                   </div>
                   <div className="flex flex-col sm:flex-row gap-4 items-end">
                      <div className="flex-1 w-full">
-                        <label className="text-xs text-muted mb-1 block">ETH Amount to Withdraw (From EntryPoint)</label>
+                        <label className="text-xs text-muted mb-1 block">{nativeToken} Amount to Withdraw (From EntryPoint)</label>
                         <div className="flex gap-2">
                           <input type="number" className="input-field py-2 text-sm w-1/3" placeholder="0.01" value={adminWithdrawEthAmount} onChange={e=>setAdminWithdrawEthAmount(e.target.value)} />
-                          <button className="btn btn-secondary py-2 px-4 whitespace-nowrap text-sm flex-1" onClick={handleAdminWithdrawETH} disabled={!adminWithdrawEthAmount || !adminEthAddress}>Withdraw ETH</button>
+                          <button className="btn btn-secondary py-2 px-4 whitespace-nowrap text-sm flex-1" onClick={handleAdminWithdrawETH} disabled={!adminWithdrawEthAmount || !adminEthAddress}>Withdraw {nativeToken}</button>
                         </div>
                      </div>
                      <div className="flex-1 w-full">

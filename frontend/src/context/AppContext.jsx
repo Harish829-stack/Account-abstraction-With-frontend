@@ -30,6 +30,8 @@ export const AppProvider = ({ children }) => {
   const [chainId, setChainId] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
+  const nativeToken = Number(chainId) === 80002 ? "POL" : "ETH";
+
 
   const [eoaETHBalance, setEoaETHBalance] = useState("0");
   const [eoaUSDCBalance, setEoaUSDCBalance] = useState("0");
@@ -440,12 +442,12 @@ export const AppProvider = ({ children }) => {
     setCurrentView("home");
   };
 
-  const switchNetwork = async () => {
+  const switchNetwork = async (targetChainId = expectedChainId) => {
     if (!window.ethereum) {
       toast.error("MetaMask is required to switch networks!");
       return;
     }
-    const hexChainId = "0x" + expectedChainId.toString(16);
+    const hexChainId = "0x" + targetChainId.toString(16);
     try {
       await window.ethereum.request({
         method: "wallet_switchEthereumChain",
@@ -454,25 +456,32 @@ export const AppProvider = ({ children }) => {
     } catch (switchError) {
       if (switchError.code === 4902) {
         try {
-          await window.ethereum.request({
-            method: "wallet_addEthereumChain",
-            params: [
-              {
+          if (targetChainId === 11155111) {
+            await window.ethereum.request({
+              method: "wallet_addEthereumChain",
+              params: [{
                 chainId: hexChainId,
                 chainName: "Sepolia Test Network",
-                nativeCurrency: {
-                  name: "Sepolia Ether",
-                  symbol: "ETH",
-                  decimals: 18,
-                },
+                nativeCurrency: { name: "Sepolia Ether", symbol: "ETH", decimals: 18 },
                 rpcUrls: ["https://sepolia.infura.io/v3/a710f8c2379a44fda67fce69cf197679"],
                 blockExplorerUrls: ["https://sepolia.etherscan.io"],
-              },
-            ],
-          });
+              }],
+            });
+          } else if (targetChainId === 80002) {
+            await window.ethereum.request({
+              method: "wallet_addEthereumChain",
+              params: [{
+                chainId: hexChainId,
+                chainName: "Polygon Amoy Testnet",
+                nativeCurrency: { name: "POL", symbol: "POL", decimals: 18 },
+                rpcUrls: ["https://rpc-amoy.polygon.technology/"],
+                blockExplorerUrls: ["https://amoy.polygonscan.com/"],
+              }],
+            });
+          }
         } catch (addError) {
           console.error("Failed to add network:", addError);
-          toast.error("Failed to add Sepolia network to MetaMask.");
+          toast.error("Failed to add network to MetaMask.");
         }
       } else {
         console.error("Failed to switch network:", switchError);
@@ -550,7 +559,7 @@ export const AppProvider = ({ children }) => {
     isTxLoading, txLoadingMessage, setGlobalLoading,
     currentView, setCurrentView,
     setupStep, setSetupStep,
-    provider, signer, eoaAddress, chainId, expectedChainId,
+    provider, signer, eoaAddress, chainId, expectedChainId, nativeToken,
     eoaETHBalance, eoaUSDCBalance, eoaEURCBalance,
     smartAccountAddress, setSmartAccountAddress,
     saETHBalance, saUSDCBalance, saEURCBalance, saEntryPointDeposit, saOwner,

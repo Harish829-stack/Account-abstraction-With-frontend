@@ -25,12 +25,13 @@ export default function AccountSetupView() {
     env,
     setGlobalLoading,
     setupStep,
-    setSetupStep
+    setSetupStep,
+    nativeToken
   } = useAppContext();
   const toast = useToast();
 
   // Stepper State
-  const steps = ["Deploy / Connect", "Fund ETH", "Pull Token", "EntryPoint"];
+  const steps = ["Deploy / Connect", `Fund ${nativeToken}`, "Pull Token", "EntryPoint"];
 
   // Option A State
   const [salt, setSalt] = useState('');
@@ -323,8 +324,8 @@ export default function AccountSetupView() {
            {/* Stats Grid */}
            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 z-10">
              <div className="glass-stat-card group">
-               <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">ETH Balance</span>
-               <span className="font-bold text-2xl text-gradient-primary">{formatNum(saETHBalance, 18)} <span className="text-sm font-normal text-muted">ETH</span></span>
+               <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">{nativeToken} Balance</span>
+               <span className="font-bold text-2xl text-gradient-primary">{formatNum(saETHBalance, 18)} <span className="text-sm font-normal text-muted">{nativeToken}</span></span>
              </div>
              <div className="glass-stat-card group">
                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">USDC Balance</span>
@@ -336,7 +337,7 @@ export default function AccountSetupView() {
              </div>
              <div className="glass-stat-card group">
                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">EP Deposit</span>
-               <span className="font-bold text-2xl text-gradient-primary">{formatNum(saEntryPointDeposit, 18)} <span className="text-sm font-normal text-muted">ETH</span></span>
+               <span className="font-bold text-2xl text-gradient-primary">{formatNum(saEntryPointDeposit, 18)} <span className="text-sm font-normal text-muted">{nativeToken}</span></span>
              </div>
            </div>
         </div>
@@ -469,13 +470,13 @@ export default function AccountSetupView() {
           <div className="glass-card max-w-2xl mx-auto animate-fade-in">
              <h3 className="flex items-center gap-2 text-gradient mb-2"><Coins size={24} /> Step 2: Fund Smart Account</h3>
              <p className="text-sm text-muted mb-6">
-               Your Smart Account needs ETH to pay for gas fees (if not using a paymaster) or to send funds to others. 
-               Current Balance: <b>{formatNum(saETHBalance, 18)} ETH</b>
+               Your Smart Account needs {nativeToken} to pay for gas fees (if not using a paymaster) or to send funds to others. 
+               Current Balance: <b>{formatNum(saETHBalance, 18)} {nativeToken}</b>
              </p>
 
              <div className="flex flex-col gap-4 p-6 bg-white/5 rounded-xl border border-white/10">
                 <div className="flex flex-col gap-1">
-                  <label className="text-sm text-muted">Amount to Deposit (ETH)</label>
+                  <label className="text-sm text-muted">Amount to Deposit ({nativeToken})</label>
                   <div className="flex gap-2">
                     <input 
                         type="number" 
@@ -489,7 +490,7 @@ export default function AccountSetupView() {
                       onClick={handleDepositSA}
                       disabled={pendingSDeposit || !depositSAmount}
                     >
-                      {pendingSDeposit ? "Funding..." : "Deposit ETH"}
+                      {pendingSDeposit ? "Funding..." : `Deposit ${nativeToken}`}
                     </button>
                   </div>
                 </div>
@@ -559,14 +560,14 @@ export default function AccountSetupView() {
           <div className="glass-card max-w-2xl mx-auto animate-fade-in">
              <h3 className="flex items-center gap-2 text-gradient mb-2"><Landmark size={24} /> Step 4: EntryPoint Deposit</h3>
              <p className="text-sm text-muted mb-6">
-               If you don't want to use a Paymaster, you must deposit ETH into the EntryPoint for your Smart Account. 
-               Current Deposit: <b>{formatNum(saEntryPointDeposit, 18)} ETH</b>
+               If you don't want to use a Paymaster, you must deposit {nativeToken} into the EntryPoint for your Smart Account. 
+               Current Deposit: <b>{formatNum(saEntryPointDeposit, 18)} {nativeToken}</b>
              </p>
 
              <div className="flex flex-col gap-6">
                <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 shadow-sm">
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-bold text-slate-700">Amount to Deposit (ETH)</label>
+                    <label className="text-sm font-bold text-slate-700">Amount to Deposit ({nativeToken})</label>
                     <div className="flex gap-3 mt-1">
                       <input 
                           type="number" 

@@ -10,9 +10,11 @@ import BatchSendView from './views/BatchSendView';
 import { AlertTriangle } from 'lucide-react';
 
 function App() {
-  const { currentView, eoaAddress, chainId, expectedChainId, switchNetwork, isTxLoading, txLoadingMessage } = useAppContext();
+  const { currentView, eoaAddress, chainId, switchNetwork, isTxLoading, txLoadingMessage } = useAppContext();
   const isConnected = !!eoaAddress;
-  const isNetworkMismatch = isConnected && chainId && Number(chainId) !== Number(expectedChainId);
+  
+  const SUPPORTED_CHAINS = [11155111, 80002];
+  const isNetworkMismatch = isConnected && chainId && !SUPPORTED_CHAINS.includes(Number(chainId));
 
   const renderGlobalLoader = () => {
     if (!isTxLoading) return null;
@@ -46,13 +48,13 @@ function App() {
             <div className="network-alert__text">
               <h4>Network Mismatch</h4>
               <p>
-                Connected to Chain ID <b>{chainId}</b>, but this app requires Sepolia (Chain ID <b>{expectedChainId}</b>).
+                Connected to Chain ID <b>{chainId}</b>, but this app requires Sepolia or Amoy.
               </p>
             </div>
           </div>
           <button 
             className="network-alert__action"
-            onClick={switchNetwork}
+            onClick={() => switchNetwork(11155111)}
           >
             Switch to Sepolia
           </button>
