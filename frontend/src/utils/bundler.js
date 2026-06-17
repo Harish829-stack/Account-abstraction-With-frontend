@@ -6,7 +6,11 @@ export async function estimateUserOperationGas(userOp) {
     try {
       const chainId = await window.ethereum.request({ method: 'eth_chainId' });
       if (parseInt(chainId, 16) === 80002) {
-        rpcUrl = rpcUrl.replace("11155111", "80002");
+        if (import.meta.env.VITE_PIMLICO_BUNDLER_URL) {
+          rpcUrl = import.meta.env.VITE_PIMLICO_BUNDLER_URL.replace("137", "80002");
+        } else {
+          rpcUrl = rpcUrl.replace("11155111", "80002");
+        }
       }
     } catch (e) { console.warn("Failed to get chainId", e); }
   }
@@ -89,7 +93,11 @@ export async function sendUserOperation(userOp) {
     try {
       const chainId = await window.ethereum.request({ method: 'eth_chainId' });
       if (parseInt(chainId, 16) === 80002) {
-        rpcUrl = rpcUrl.replace("11155111", "80002");
+        if (import.meta.env.VITE_PIMLICO_BUNDLER_URL) {
+          rpcUrl = import.meta.env.VITE_PIMLICO_BUNDLER_URL.replace("137", "80002");
+        } else {
+          rpcUrl = rpcUrl.replace("11155111", "80002");
+        }
       }
     } catch (e) { console.warn("Failed to get chainId", e); }
   }
@@ -145,7 +153,11 @@ export async function getUserOpReceipt(userOpHash) {
     try {
       const chainId = await window.ethereum.request({ method: 'eth_chainId' });
       if (parseInt(chainId, 16) === 80002) {
-        rpcUrl = rpcUrl.replace("11155111", "80002");
+        if (import.meta.env.VITE_PIMLICO_BUNDLER_URL) {
+          rpcUrl = import.meta.env.VITE_PIMLICO_BUNDLER_URL.replace("137", "80002");
+        } else {
+          rpcUrl = rpcUrl.replace("11155111", "80002");
+        }
       }
     } catch (e) { console.warn("Failed to get chainId", e); }
   }

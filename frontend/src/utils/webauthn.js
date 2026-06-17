@@ -66,10 +66,25 @@ export async function installWebAuthnValidator(
  );
 
 
- // Direct EOA call — same as: account.installModule(1, validatorAddr, initData) in ProfileView
- const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
- const tx = await account.installModule(1, webAuthnValidatorAddr, initData);
- await tx.wait();
+  // Direct EOA call — same as: account.installModule(1, validatorAddr, initData) in ProfileView
+  const provider = signer.provider;
+  const feeData = await provider.getFeeData();
+  const overrides = {};
+  if (feeData.maxPriorityFeePerGas) {
+      let maxPriority = feeData.maxPriorityFeePerGas;
+      let maxFee = feeData.maxFeePerGas;
+      const network = await provider.getNetwork();
+      if (Number(network.chainId) === 80002) {
+          maxPriority = maxPriority < 30000000000n ? 30000000000n : maxPriority;
+          maxFee = maxFee < 35000000000n ? 35000000000n : maxFee;
+      }
+      overrides.maxPriorityFeePerGas = maxPriority;
+      overrides.maxFeePerGas = maxFee;
+  }
+
+  const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
+  const tx = await account.installModule(1, webAuthnValidatorAddr, initData, overrides);
+  await tx.wait();
 
 
  return tx;
@@ -81,6 +96,39 @@ export async function isWebAuthnInstalled(smartAccountAddress, webAuthnValidator
  const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
  return account.isModuleInstalled(1, webAuthnValidatorAddr, "0x");
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DIAGNOSTIC: Compare on-chain stored public key vs locally saved credential
+// Returns { match, onChain: {qx, qy}, local: {qx, qy} }
+// ─────────────────────────────────────────────────────────────────────────────
+export async function verifyPublicKeyMatch(smartAccountAddress, webAuthnValidatorAddr, provider) {
+  const validatorABI = [
+    "function pubKeyX(address) view returns (bytes32)",
+    "function pubKeyY(address) view returns (bytes32)",
+  ];
+  const validator = new ethers.Contract(webAuthnValidatorAddr, validatorABI, provider);
+  const [onChainQx, onChainQy] = await Promise.all([
+    validator.pubKeyX(smartAccountAddress),
+    validator.pubKeyY(smartAccountAddress),
+  ]);
+
+  const local = loadPasskeyCredential();
+  const localQx = local ? `0x${local.publicKey.qx}` : null;
+  const localQy = local ? `0x${local.publicKey.qy}` : null;
+
+  const match = (
+    onChainQx.toLowerCase() === localQx?.toLowerCase() &&
+    onChainQy.toLowerCase() === localQy?.toLowerCase()
+  );
+
+  return {
+    match,
+    onChain: { qx: onChainQx, qy: onChainQy },
+    local: { qx: localQx, qy: localQy },
+  };
+}
+
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -97,26 +145,36 @@ export async function isWebAuthnInstalled(smartAccountAddress, webAuthnValidator
 // Returns: packed bytes ready to set as userOp.signature
 // ─────────────────────────────────────────────────────────────────────────────
 export async function signUserOpWithPasskey(userOpHash, credentialId, validatorAddress) {
- // Sign the userOpHash with the passkey — browser prompts Touch ID / Face ID / PIN
- const { signature, metadata } = await WebAuthnP256.sign({
-   challenge: userOpHash,   // the EntryPoint hash — becomes the WebAuthn challenge
-   credentialId,
- });
+  const { signature, metadata } = await WebAuthnP256.sign({
+    challenge: userOpHash,
+    credentialId,
+    userVerification: "required",
+  });
 
 
- // Encode the full WebAuthn assertion — must match WebAuthnValidator.sol's abi.decode()
- // Layout: (bytes32 r, bytes32 s, uint256 challengeIndex, uint256 typeIndex, bytes authData, string clientDataJSON)
- const webAuthnSig = ethers.AbiCoder.defaultAbiCoder().encode(
-   ["bytes32", "bytes32", "uint256", "uint256", "bytes", "string"],
-   [
-     `0x${signature.r.toString(16).padStart(64, "0")}`,
-     `0x${signature.s.toString(16).padStart(64, "0")}`,
-     BigInt(metadata.challengeIndex),
-     BigInt(metadata.typeIndex),
-     metadata.authenticatorData,
-     metadata.clientDataJSON,
-   ]
- );
+
+  // OpenZeppelin P256 requires s <= N/2 to prevent signature malleability
+  const N = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+  const HALF_N = N / 2n;
+  let r = signature.r;
+  let s = signature.s;
+  if (s > HALF_N) {
+    s = N - s;
+  }
+
+  // Encode the full WebAuthn assertion — must match WebAuthnValidator.sol's abi.decode()
+  // Layout: (bytes32 r, bytes32 s, uint256 challengeIndex, uint256 typeIndex, bytes authData, string clientDataJSON)
+  const webAuthnSig = ethers.AbiCoder.defaultAbiCoder().encode(
+    ["bytes32", "bytes32", "uint256", "uint256", "bytes", "string"],
+    [
+      `0x${r.toString(16).padStart(64, "0")}`,
+      `0x${s.toString(16).padStart(64, "0")}`,
+      BigInt(metadata.challengeIndex),
+      BigInt(metadata.typeIndex),
+      metadata.authenticatorData,
+      metadata.clientDataJSON,
+    ]
+  );
 
 
  // Prepend the validator address (20 bytes) — Implementation.sol uses this to route to our validator
@@ -148,11 +206,46 @@ export async function sendUserOpWithPasskey({
  const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
 
 
- const feeData = await provider.getFeeData();
  const verificationGasLimit = 1_000_000n; // High — P256 verification is expensive
  const callGasLimit = 300_000n;
- const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || 1_500_000_000n;
- const maxFeePerGas = feeData.maxFeePerGas || 5_000_000_000n;
+ let maxPriorityFeePerGas = 1_500_000_000n;
+ let maxFeePerGas = 5_000_000_000n;
+
+ const BUNDLER_URL = env.BUNDLER_RPC || import.meta.env.VITE_SKANDHA_RPC_URL;
+
+ try {
+   // Fetch real-time gas prices directly from the blockchain node
+   const feeData = await provider.getFeeData();
+   const chainPriority = feeData.maxPriorityFeePerGas || 1_500_000_000n;
+   const chainMaxFee = feeData.maxFeePerGas || 5_000_000_000n;
+   
+   // Try fetching from Pimlico bundler
+   let pimlicoPriority = 0n;
+   let pimlicoMaxFee = 0n;
+   const gasRes = await fetch(BUNDLER_URL, {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'pimlico_getUserOperationGasPrice', params: [] })
+   }).then(r => r.json());
+   
+   if (gasRes.result && gasRes.result.fast) {
+     pimlicoPriority = BigInt(gasRes.result.fast.maxPriorityFeePerGas);
+     pimlicoMaxFee = BigInt(gasRes.result.fast.maxFeePerGas);
+   }
+   
+   // Take the MAXIMUM of the chain's minimum and the bundler's estimate to prevent "below minimum" errors
+   maxPriorityFeePerGas = pimlicoPriority > chainPriority ? pimlicoPriority : chainPriority;
+   maxFeePerGas = pimlicoMaxFee > chainMaxFee ? pimlicoMaxFee : chainMaxFee;
+   
+   // Add a 10% buffer to prevent sudden block fluctuations from reverting the tx
+   maxPriorityFeePerGas = (maxPriorityFeePerGas * 11n) / 10n;
+   maxFeePerGas = (maxFeePerGas * 11n) / 10n;
+ } catch (e) {
+   console.warn("Dynamic gas fetch failed, falling back to basic provider fees:", e);
+   const feeData = await provider.getFeeData();
+   maxPriorityFeePerGas = (feeData.maxPriorityFeePerGas || 1_500_000_000n) * 2n;
+   maxFeePerGas = (feeData.maxFeePerGas || 5_000_000_000n) * 2n;
+ }
 
 
  const accountGasLimits = ethers.concat([
@@ -189,7 +282,7 @@ export async function sendUserOpWithPasskey({
 
 
  // Submit to bundler (same RPC format as SessionKeyView)
- const BUNDLER_URL = env.BUNDLER_RPC || import.meta.env.VITE_SKANDHA_RPC_URL;
+
  if (!BUNDLER_URL) throw new Error("Missing bundler URL in env");
 
 

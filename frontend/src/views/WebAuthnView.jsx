@@ -10,6 +10,7 @@ import {
  installWebAuthnValidator,
  isWebAuthnInstalled,
  signUserOpWithPasskey,
+ verifyPublicKeyMatch,
 } from '../utils/webauthn';
 
 
@@ -18,7 +19,7 @@ const WEBAUTHN_VALIDATOR_ADDR = import.meta.env.VITE_WEBAUTHN_VALIDATOR || '0x00
 
 
 export default function WebAuthnView() {
- const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, trackOp, chainId } = useAppContext();
+ const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, trackOp, chainId, isAmoy } = useAppContext();
  const toast = useToast();
 
 
@@ -136,6 +137,41 @@ export default function WebAuthnView() {
    }
  };
 
+ const handleUninstall = async () => {
+    if (!smartAccountAddress || !signer || !validatorAddr) return;
+    setInstalling(true);
+    setGlobalLoading(true, 'Uninstalling WebAuthn Validator Module...');
+    try {
+      const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
+
+      const provider = signer.provider;
+      const feeData = await provider.getFeeData();
+      const overrides = {};
+      if (feeData.maxPriorityFeePerGas) {
+          let maxPriority = feeData.maxPriorityFeePerGas;
+          let maxFee = feeData.maxFeePerGas;
+          const network = await provider.getNetwork();
+          if (Number(network.chainId) === 80002) {
+              maxPriority = maxPriority < 30000000000n ? 30000000000n : maxPriority;
+              maxFee = maxFee < 35000000000n ? 35000000000n : maxFee;
+          }
+          overrides.maxPriorityFeePerGas = maxPriority;
+          overrides.maxFeePerGas = maxFee;
+      }
+
+      const tx = await account.uninstallModule(1, validatorAddr, "0x", overrides);
+      await tx.wait();
+      toast.success('WebAuthn Validator uninstalled! You can now install a new passkey.');
+      await refreshStatus();
+    } catch (err) {
+      console.error(err);
+      toast.error(err.reason || err.message || 'Uninstallation failed.');
+    } finally {
+      setInstalling(false);
+      setGlobalLoading(false);
+    }
+  };
+
 
  // ─────────────────────────────────────────────────────────────────
  // STEP 3 — Send UserOp signed by passkey (biometric — no MetaMask)
@@ -158,9 +194,25 @@ export default function WebAuthnView() {
      return;
    }
 
+   // ── CRITICAL: Verify on-chain key matches local passkey before building UserOp ──
+   try {
+     const keyCheck = await verifyPublicKeyMatch(smartAccountAddress, validatorAddr, provider);
+     if (!keyCheck.match) {
+       console.error('[WebAuthn] Public key mismatch!', { onChain: keyCheck.onChain, local: keyCheck.local });
+       toast.error(
+         `Key mismatch! Your browser passkey doesn't match what's installed on-chain. ` +
+         `Go to Setup → Uninstall → Register Passkey again → Install Module.`,
+         { duration: 10000 }
+       );
+       return;
+     }
+   } catch (checkErr) {
+     console.warn('[WebAuthn] Key check failed, proceeding anyway:', checkErr.message);
+   }
 
    setSending(true);
    setGlobalLoading(true, 'Waiting for biometric sign...');
+
    try {
      const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
      const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
@@ -176,15 +228,52 @@ export default function WebAuthnView() {
 
 
      // Build UserOp
-     const feeData = await provider.getFeeData();
      const verificationGasLimit = 1_000_000n; // High: P256 is ~300k gas
      const callGasLimit = 300_000n;
-     let maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || 1_500_000_000n;
-     let maxFeePerGas = feeData.maxFeePerGas || 5_000_000_000n;
+     let maxPriorityFeePerGas = 1_500_000_000n;
+     let maxFeePerGas = 5_000_000_000n;
 
-     if (Number(chainId) === 80002) {
-       maxPriorityFeePerGas = maxPriorityFeePerGas < 35_000_000_000n ? 35_000_000_000n : maxPriorityFeePerGas;
-       maxFeePerGas = maxFeePerGas < 36_000_000_000n ? 36_000_000_000n : maxFeePerGas;
+     let BUNDLER_URL = import.meta.env.VITE_SKANDHA_RPC_URL;
+     if (isAmoy) {
+       if (import.meta.env.VITE_PIMLICO_BUNDLER_URL) {
+         BUNDLER_URL = import.meta.env.VITE_PIMLICO_BUNDLER_URL.replace("137", "80002");
+       } else if (BUNDLER_URL) {
+         BUNDLER_URL = BUNDLER_URL.replace("11155111", "80002");
+       }
+     }
+
+     try {
+       // Fetch real-time gas prices directly from the blockchain node
+       const feeData = await provider.getFeeData();
+       const chainPriority = feeData.maxPriorityFeePerGas || 1_500_000_000n;
+       const chainMaxFee = feeData.maxFeePerGas || 5_000_000_000n;
+       
+       // Try fetching from Pimlico bundler
+       let pimlicoPriority = 0n;
+       let pimlicoMaxFee = 0n;
+       const gasRes = await fetch(BUNDLER_URL, {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'pimlico_getUserOperationGasPrice', params: [] })
+       }).then(r => r.json());
+       
+       if (gasRes.result && gasRes.result.fast) {
+         pimlicoPriority = BigInt(gasRes.result.fast.maxPriorityFeePerGas);
+         pimlicoMaxFee = BigInt(gasRes.result.fast.maxFeePerGas);
+       }
+       
+       // Take the MAXIMUM of the chain's minimum and the bundler's estimate to prevent "below minimum" errors
+       maxPriorityFeePerGas = pimlicoPriority > chainPriority ? pimlicoPriority : chainPriority;
+       maxFeePerGas = pimlicoMaxFee > chainMaxFee ? pimlicoMaxFee : chainMaxFee;
+       
+       // Add a 10% buffer to prevent sudden block fluctuations from reverting the tx
+       maxPriorityFeePerGas = (maxPriorityFeePerGas * 11n) / 10n;
+       maxFeePerGas = (maxFeePerGas * 11n) / 10n;
+     } catch (e) {
+       console.warn("Dynamic gas fetch failed, falling back to basic provider fees:", e);
+       const feeData = await provider.getFeeData();
+       maxPriorityFeePerGas = (feeData.maxPriorityFeePerGas || 1_500_000_000n) * 2n;
+       maxFeePerGas = (feeData.maxFeePerGas || 5_000_000_000n) * 2n;
      }
 
 
@@ -229,8 +318,7 @@ export default function WebAuthnView() {
      setGlobalLoading(true, 'Submitting to bundler...');
 
 
-     // Submit to bundler — same format as SessionKeyView
-     const BUNDLER_URL = env.SKANDHA_RPC_URL || import.meta.env.VITE_SKANDHA_RPC_URL;
+   
      if (!BUNDLER_URL) throw new Error('Missing VITE_SKANDHA_RPC_URL in .env');
 
 
@@ -468,7 +556,7 @@ export default function WebAuthnView() {
                    <span className={`w-6 h-6 rounded-full text-xs font-black flex items-center justify-center shrink-0 ${
                      savedCredential ? 'bg-purple-500 text-black' : 'bg-slate-600 text-slate-400'
                    }`}>2</span>
-                   <h4 className="text-sm font-bold text-purple-300 m-0">Install Validator Module (EOA Tx)</h4>
+                   <h4 className="text-sm font-bold text-purple-300 m-0">Install/Uninstall Validator Module</h4>
                  </div>
                  <p className="text-xs text-slate-400 -mt-1">
                    Registers the passkey's P256 public key on-chain. MetaMask will ask you to sign <em>one transaction</em>. After this, MetaMask is no longer needed.
@@ -495,6 +583,15 @@ export default function WebAuthnView() {
                        ? 'Installing...'
                        : 'Install Module (MetaMask signs once)'}
                  </button>
+                 {isInstalled && (
+                   <button
+                     className="w-full py-2.5 rounded-lg font-bold text-white bg-red-500/20 hover:bg-red-500/40 border border-red-500/50 transition-all flex items-center justify-center gap-2"
+                     onClick={handleUninstall}
+                     disabled={installing}
+                   >
+                     Uninstall Module (Reset Passkey)
+                   </button>
+                 )}
                </div>
 
 

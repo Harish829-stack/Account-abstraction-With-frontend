@@ -97,29 +97,59 @@ export const AppProvider = ({ children }) => {
     setLoadingOps(true);
     try {
       const entryPointAddress = import.meta.env.VITE_ENTRY_POINT;
-      const epContract = new ethers.Contract(entryPointAddress, IEntryPointABI, _provider);
-      const filter = epContract.filters.UserOperationEvent(null, saAddress);
-
-      const blockNum = await _provider.getBlockNumber();
-      const events = await epContract.queryFilter(filter, Math.max(0, blockNum - 1000), "latest");
-
-      const last10 = events.slice(-10).reverse();
-      const formattedOps = await Promise.all(last10.map(async (e) => {
-        let timestamp = null;
-        try {
-          const block = await _provider.getBlock(e.blockNumber);
-          if (block) timestamp = block.timestamp * 1000;
-        } catch (err) {
-          console.warn("Could not fetch block timestamp", err);
-        }
-        return {
-          userOpHash: e.args[0],
-          status: e.args[4] ? 'Success' : 'Reverted',
-          txHash: e.transactionHash,
-          timestamp
-        };
-      }));
-      setRecentOps(formattedOps);
+      const isAmoyChain = Number((await _provider.getNetwork()).chainId) === 80002;
+      const chainId = isAmoyChain ? 80002 : 11155111;
+      
+      // Etherscan V2 API unifies all chains under a single API endpoint and key!
+      const apiKey = import.meta.env.VITE_ETHERSCAN_API_KEY;
+      const baseUrl = "https://api.etherscan.io/v2/api";
+      
+      const topic0 = "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f"; // UserOperationEvent
+      const paddedSender = ethers.zeroPadValue(saAddress, 32);
+      
+      // Remove offset so it fetches all logs, as sort=desc is ignored by some explorer API endpoints
+      const url = `${baseUrl}?chainid=${chainId}&module=logs&action=getLogs&fromBlock=0&toBlock=latest&address=${entryPointAddress}&topic0=${topic0}&topic0_2_opr=and&topic2=${paddedSender}&apikey=${apiKey}`;
+      
+      const res = await fetch(url);
+      const data = await res.json();
+      
+      let formattedOps = [];
+      
+      if (data.status === "1" && Array.isArray(data.result)) {
+        // Successfully fetched from Explorer API
+        // Reverse the array to guarantee newest is on top (descending order)
+        formattedOps = data.result.reverse().map(log => {
+          // data structure of UserOperationEvent: 
+          // topic1 = userOpHash, topic2 = sender, topic3 = paymaster
+          // data = [nonce, success, actualGasCost, actualGasUsed]
+          const decodedData = ethers.AbiCoder.defaultAbiCoder().decode(["uint256", "bool", "uint256", "uint256"], log.data);
+          return {
+            userOpHash: log.topics[1],
+            status: decodedData[1] ? 'Success' : 'Reverted',
+            txHash: log.transactionHash,
+            timestamp: log.timeStamp ? parseInt(log.timeStamp, 16) * 1000 : null
+          };
+        });
+      } else {
+        // Fallback to strict tiny RPC range if API fails or API key is missing
+        console.warn("Explorer API failed or no logs, falling back to strict RPC getLogs", data);
+        const epContract = new ethers.Contract(entryPointAddress, IEntryPointABI, _provider);
+        const filter = epContract.filters.UserOperationEvent(null, saAddress);
+        const blockNum = await _provider.getBlockNumber();
+        const events = await epContract.queryFilter(filter, Math.max(0, blockNum - 100), blockNum);
+        const last10 = events.slice(-10).reverse();
+        
+        formattedOps = await Promise.all(last10.map(async (e) => {
+          return {
+            userOpHash: e.args[0],
+            status: e.args[4] ? 'Success' : 'Reverted',
+            txHash: e.transactionHash,
+            timestamp: null // Skip block timestamp fetch to save RPC calls
+          };
+        }));
+      }
+      
+      setRecentOps(formattedOps.slice(0, 10));
     } catch (err) {
       console.error("Error fetching UserOps:", err);
     } finally {
@@ -316,15 +346,17 @@ export const AppProvider = ({ children }) => {
     refreshAllDataRef.current = refreshAllData;
   }, [refreshAllData]);
 
-  // Real-time block listener
+  // Real-time block listener (throttled to avoid RPC spam)
   useEffect(() => {
     if (!provider) return;
 
     console.log("[AppContext] Subscribing to block events for real-time updates");
-    const onBlock = () => {
-      console.log("[AppContext] New block mined, refreshing all balances...");
-      if (refreshAllDataRef.current) {
-        refreshAllDataRef.current();
+    const onBlock = (blockNum) => {
+      // Throttle to every 5 blocks (~10 seconds on Amoy) to prevent Infura rate limits
+      if (blockNum % 5 === 0) {
+        if (refreshAllDataRef.current) {
+          refreshAllDataRef.current();
+        }
       }
     };
 
@@ -343,7 +375,8 @@ export const AppProvider = ({ children }) => {
   useEffect(() => { providerRef.current = provider; }, [provider]);
 
   useEffect(() => {
-    const POLL_INTERVAL_MS = 3000;
+    // Increase poll interval to 12s to prevent 429 Too Many Requests on Infura free tier
+    const POLL_INTERVAL_MS = 12000;
     const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
     const markConfirmed = (opHash, txHash, label) => {
@@ -392,10 +425,10 @@ export const AppProvider = ({ children }) => {
             try {
               const epContract = new ethers.Contract(entryPointAddress, IEntryPointABI, _provider);
               const currentBlock = await _provider.getBlockNumber();
-              // Search last 500 blocks (approx 100 min on Sepolia)
-              const fromBlock = Math.max(0, currentBlock - 500);
+              // Search last 150 blocks (infura testnet strict limit)
+              const fromBlock = Math.max(0, currentBlock - 150);
               const filter = epContract.filters.UserOperationEvent(op.opHash);
-              const events = await epContract.queryFilter(filter, fromBlock, 'latest');
+              const events = await epContract.queryFilter(filter, fromBlock, currentBlock);
               if (events.length > 0) {
                 const txHash = events[0].transactionHash;
                 console.log(`[Tracker] Found op ${op.opHash.slice(0, 10)}... via on-chain fallback! TxHash: ${txHash}`);
@@ -426,9 +459,18 @@ export const AppProvider = ({ children }) => {
       await window.ethereum.request({ method: "eth_requestAccounts" });
       const browserProvider = new ethers.BrowserProvider(window.ethereum);
       const network = await browserProvider.getNetwork();
+      const currentChainId = Number(network.chainId);
 
-      setProvider(browserProvider);
-      setChainId(Number(network.chainId));
+      // Use dedicated Infura RPC for read operations if available in .env to bypass MetaMask rate limits
+      let readProvider = browserProvider;
+      if (currentChainId === 80002 && import.meta.env.VITE_AMOY_RPC_URL) {
+        readProvider = new ethers.JsonRpcProvider(import.meta.env.VITE_AMOY_RPC_URL);
+      } else if (currentChainId === 11155111 && import.meta.env.VITE_SEPOLIA_RPC_URL) {
+        readProvider = new ethers.JsonRpcProvider(import.meta.env.VITE_SEPOLIA_RPC_URL);
+      }
+
+      setProvider(readProvider);
+      setChainId(currentChainId);
 
       const _signer = await browserProvider.getSigner();
       setSigner(_signer);
@@ -548,9 +590,17 @@ export const AppProvider = ({ children }) => {
           if (accounts.length > 0) {
             const browserProvider = new ethers.BrowserProvider(window.ethereum);
             const network = await browserProvider.getNetwork();
+            const currentChainId = Number(network.chainId);
 
-            setProvider(browserProvider);
-            setChainId(Number(network.chainId));
+            let readProvider = browserProvider;
+            if (currentChainId === 80002 && import.meta.env.VITE_AMOY_RPC_URL) {
+              readProvider = new ethers.JsonRpcProvider(import.meta.env.VITE_AMOY_RPC_URL);
+            } else if (currentChainId === 11155111 && import.meta.env.VITE_SEPOLIA_RPC_URL) {
+              readProvider = new ethers.JsonRpcProvider(import.meta.env.VITE_SEPOLIA_RPC_URL);
+            }
+
+            setProvider(readProvider);
+            setChainId(currentChainId);
 
             const _signer = await browserProvider.getSigner();
             setSigner(_signer);
