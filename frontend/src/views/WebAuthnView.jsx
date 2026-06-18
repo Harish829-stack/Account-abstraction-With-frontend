@@ -5,13 +5,15 @@ import { useToast } from '../context/ToastContext';
 import { Fingerprint, ShieldCheck, Zap, Settings, ChevronRight, XCircle, CheckCircle, AlertTriangle, Loader } from 'lucide-react';
 import { SmartAccountABI, IEntryPointABI } from '../utils/abis';
 import {
- registerPasskey,
- loadPasskeyCredential,
- installWebAuthnValidator,
- isWebAuthnInstalled,
- signUserOpWithPasskey,
- verifyPublicKeyMatch,
+  registerPasskey,
+  loadPasskeyCredential,
+  installWebAuthnValidator,
+  isWebAuthnInstalled,
+  signUserOpWithPasskey,
+  verifyPublicKeyMatch,
 } from '../utils/webauthn';
+import { getDynamicGasFees, estimateUserOperationGas } from '../utils/bundler';
+import { packUserOp, toHex } from '../utils/helpers';
 
 
 // ── Replace with your deployed WebAuthnValidator address after deploying ──
@@ -145,19 +147,8 @@ export default function WebAuthnView() {
       const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
 
       const provider = signer.provider;
-      const feeData = await provider.getFeeData();
-      const overrides = {};
-      if (feeData.maxPriorityFeePerGas) {
-          let maxPriority = feeData.maxPriorityFeePerGas;
-          let maxFee = feeData.maxFeePerGas;
-          const network = await provider.getNetwork();
-          if (Number(network.chainId) === 80002) {
-              maxPriority = maxPriority < 30000000000n ? 30000000000n : maxPriority;
-              maxFee = maxFee < 35000000000n ? 35000000000n : maxFee;
-          }
-          overrides.maxPriorityFeePerGas = maxPriority;
-          overrides.maxFeePerGas = maxFee;
-      }
+      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+      const overrides = { maxPriorityFeePerGas, maxFeePerGas };
 
       const tx = await account.uninstallModule(1, validatorAddr, "0x", overrides);
       await tx.wait();
@@ -228,10 +219,7 @@ export default function WebAuthnView() {
 
 
      // Build UserOp
-     const verificationGasLimit = 1_000_000n; // High: P256 is ~300k gas
-     const callGasLimit = 300_000n;
-     let maxPriorityFeePerGas = 1_500_000_000n;
-     let maxFeePerGas = 5_000_000_000n;
+     const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
 
      let BUNDLER_URL = import.meta.env.VITE_SKANDHA_RPC_URL;
      if (isAmoy) {
@@ -241,97 +229,69 @@ export default function WebAuthnView() {
          BUNDLER_URL = BUNDLER_URL.replace("11155111", "80002");
        }
      }
-
-     try {
-       // Fetch real-time gas prices directly from the blockchain node
-       const feeData = await provider.getFeeData();
-       const chainPriority = feeData.maxPriorityFeePerGas || 1_500_000_000n;
-       const chainMaxFee = feeData.maxFeePerGas || 5_000_000_000n;
-       
-       // Try fetching from Pimlico bundler
-       let pimlicoPriority = 0n;
-       let pimlicoMaxFee = 0n;
-       const gasRes = await fetch(BUNDLER_URL, {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'pimlico_getUserOperationGasPrice', params: [] })
-       }).then(r => r.json());
-       
-       if (gasRes.result && gasRes.result.fast) {
-         pimlicoPriority = BigInt(gasRes.result.fast.maxPriorityFeePerGas);
-         pimlicoMaxFee = BigInt(gasRes.result.fast.maxFeePerGas);
-       }
-       
-       // Take the MAXIMUM of the chain's minimum and the bundler's estimate to prevent "below minimum" errors
-       maxPriorityFeePerGas = pimlicoPriority > chainPriority ? pimlicoPriority : chainPriority;
-       maxFeePerGas = pimlicoMaxFee > chainMaxFee ? pimlicoMaxFee : chainMaxFee;
-       
-       // Add a 10% buffer to prevent sudden block fluctuations from reverting the tx
-       maxPriorityFeePerGas = (maxPriorityFeePerGas * 11n) / 10n;
-       maxFeePerGas = (maxFeePerGas * 11n) / 10n;
-     } catch (e) {
-       console.warn("Dynamic gas fetch failed, falling back to basic provider fees:", e);
-       const feeData = await provider.getFeeData();
-       maxPriorityFeePerGas = (feeData.maxPriorityFeePerGas || 1_500_000_000n) * 2n;
-       maxFeePerGas = (feeData.maxFeePerGas || 5_000_000_000n) * 2n;
-     }
-
-
-     const accountGasLimits = ethers.concat([
-       ethers.zeroPadValue(ethers.toBeHex(verificationGasLimit), 16),
-       ethers.zeroPadValue(ethers.toBeHex(callGasLimit), 16),
-     ]);
-     const gasFees = ethers.concat([
-       ethers.zeroPadValue(ethers.toBeHex(maxPriorityFeePerGas), 16),
-       ethers.zeroPadValue(ethers.toBeHex(maxFeePerGas), 16),
-     ]);
-
-
      const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
 
-
-     const userOp = {
+     const unpackedUserOp = {
        sender: smartAccountAddress,
-       nonce,
-       initCode: '0x',
-       callData,
-       accountGasLimits,
-       preVerificationGas: 100_000n,
-       gasFees,
-       paymasterAndData: '0x',
-       signature: '0x',
+       nonce: toHex(nonce),
+       factory: "0x",
+       factoryData: "0x",
+       callData: callData,
+       callGasLimit: "0x0",
+       verificationGasLimit: "0x0",
+       preVerificationGas: "0x0",
+       maxFeePerGas: toHex(maxFeePerGas),
+       maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
+       paymaster: "0x",
+       paymasterVerificationGasLimit: "0x",
+       paymasterPostOpGasLimit: "0x",
+       paymasterData: "0x",
+       signature: "0x"
      };
 
+     try {
+       const est = await estimateUserOperationGas(unpackedUserOp);
+       unpackedUserOp.callGasLimit = toHex(est.callGasLimit);
+       unpackedUserOp.verificationGasLimit = toHex(est.verificationGasLimit);
+       unpackedUserOp.preVerificationGas = toHex(est.preVerificationGas);
+     } catch (e) {
+       console.warn("WebAuthn estimation failed, using fallbacks:", e);
+       unpackedUserOp.callGasLimit = toHex(200000);
+       unpackedUserOp.verificationGasLimit = toHex(250000);
+       unpackedUserOp.preVerificationGas = toHex(50000);
+     }
+
+     const packedOp = packUserOp(unpackedUserOp);
 
      // Get hash → sign with passkey (triggers biometric)
-     const userOpHash = await entryPoint.getUserOpHash(userOp);
-
+     const userOpHash = await entryPoint.getUserOpHash(packedOp);
 
      setGlobalLoading(true, 'Biometric authentication prompt...');
-     userOp.signature = await signUserOpWithPasskey(
+     const rawSignature = await signUserOpWithPasskey(
        userOpHash,
        savedCredential.id,
        validatorAddr
      );
-
+     
+     // Update both formats with signature
+     unpackedUserOp.signature = rawSignature;
+     packedOp.signature = rawSignature;
 
      setGlobalLoading(true, 'Submitting to bundler...');
 
-
-   
      if (!BUNDLER_URL) throw new Error('Missing VITE_SKANDHA_RPC_URL in .env');
 
-
+     // Pimlico v0.7 bundler expects unpacked fields
      const rpcUserOp = {
-       sender: userOp.sender,
-       nonce: ethers.toBeHex(userOp.nonce),
-       callData: userOp.callData,
-       callGasLimit: ethers.toBeHex(callGasLimit),
-       verificationGasLimit: ethers.toBeHex(verificationGasLimit),
-       preVerificationGas: ethers.toBeHex(100_000n),
-       maxFeePerGas: ethers.toBeHex(maxFeePerGas),
-       maxPriorityFeePerGas: ethers.toBeHex(maxPriorityFeePerGas),
-       signature: ethers.hexlify(userOp.signature),
+       sender: unpackedUserOp.sender,
+       nonce: unpackedUserOp.nonce,
+       callData: unpackedUserOp.callData,
+       callGasLimit: unpackedUserOp.callGasLimit,
+       verificationGasLimit: unpackedUserOp.verificationGasLimit,
+       preVerificationGas: unpackedUserOp.preVerificationGas,
+       maxFeePerGas: unpackedUserOp.maxFeePerGas,
+       maxPriorityFeePerGas: unpackedUserOp.maxPriorityFeePerGas,
+       signature: unpackedUserOp.signature,
      };
 
 

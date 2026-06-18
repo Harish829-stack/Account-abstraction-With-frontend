@@ -1,6 +1,7 @@
 import { WebAuthnP256 } from "ox";
 import { ethers } from "ethers";
 import { SmartAccountABI, IEntryPointABI } from "./abis";
+import { getDynamicGasFees } from "./bundler";
 
 
 const STORAGE_KEY = "webauthn_credential";
@@ -68,19 +69,12 @@ export async function installWebAuthnValidator(
 
   // Direct EOA call — same as: account.installModule(1, validatorAddr, initData) in ProfileView
   const provider = signer.provider;
-  const feeData = await provider.getFeeData();
-  const overrides = {};
-  if (feeData.maxPriorityFeePerGas) {
-      let maxPriority = feeData.maxPriorityFeePerGas;
-      let maxFee = feeData.maxFeePerGas;
-      const network = await provider.getNetwork();
-      if (Number(network.chainId) === 80002) {
-          maxPriority = maxPriority < 30000000000n ? 30000000000n : maxPriority;
-          maxFee = maxFee < 35000000000n ? 35000000000n : maxFee;
-      }
-      overrides.maxPriorityFeePerGas = maxPriority;
-      overrides.maxFeePerGas = maxFee;
-  }
+  const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+  
+  const overrides = {
+    maxPriorityFeePerGas,
+    maxFeePerGas
+  };
 
   const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
   const tx = await account.installModule(1, webAuthnValidatorAddr, initData, overrides);
@@ -205,52 +199,13 @@ export async function sendUserOpWithPasskey({
 }) {
  const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
 
-
- const verificationGasLimit = 1_000_000n; // High — P256 verification is expensive
- const callGasLimit = 300_000n;
- let maxPriorityFeePerGas = 1_500_000_000n;
- let maxFeePerGas = 5_000_000_000n;
-
  const BUNDLER_URL = env.BUNDLER_RPC || import.meta.env.VITE_SKANDHA_RPC_URL;
 
- try {
-   // Fetch real-time gas prices directly from the blockchain node
-   const feeData = await provider.getFeeData();
-   const chainPriority = feeData.maxPriorityFeePerGas || 1_500_000_000n;
-   const chainMaxFee = feeData.maxFeePerGas || 5_000_000_000n;
-   
-   // Try fetching from Pimlico bundler
-   let pimlicoPriority = 0n;
-   let pimlicoMaxFee = 0n;
-   const gasRes = await fetch(BUNDLER_URL, {
-     method: 'POST',
-     headers: { 'Content-Type': 'application/json' },
-     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'pimlico_getUserOperationGasPrice', params: [] })
-   }).then(r => r.json());
-   
-   if (gasRes.result && gasRes.result.fast) {
-     pimlicoPriority = BigInt(gasRes.result.fast.maxPriorityFeePerGas);
-     pimlicoMaxFee = BigInt(gasRes.result.fast.maxFeePerGas);
-   }
-   
-   // Take the MAXIMUM of the chain's minimum and the bundler's estimate to prevent "below minimum" errors
-   maxPriorityFeePerGas = pimlicoPriority > chainPriority ? pimlicoPriority : chainPriority;
-   maxFeePerGas = pimlicoMaxFee > chainMaxFee ? pimlicoMaxFee : chainMaxFee;
-   
-   // Add a 10% buffer to prevent sudden block fluctuations from reverting the tx
-   maxPriorityFeePerGas = (maxPriorityFeePerGas * 11n) / 10n;
-   maxFeePerGas = (maxFeePerGas * 11n) / 10n;
- } catch (e) {
-   console.warn("Dynamic gas fetch failed, falling back to basic provider fees:", e);
-   const feeData = await provider.getFeeData();
-   maxPriorityFeePerGas = (feeData.maxPriorityFeePerGas || 1_500_000_000n) * 2n;
-   maxFeePerGas = (feeData.maxFeePerGas || 5_000_000_000n) * 2n;
- }
-
+ const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
 
  const accountGasLimits = ethers.concat([
-   ethers.zeroPadValue(ethers.toBeHex(verificationGasLimit), 16),
-   ethers.zeroPadValue(ethers.toBeHex(callGasLimit), 16),
+   ethers.zeroPadValue(ethers.toBeHex(0), 16),
+   ethers.zeroPadValue(ethers.toBeHex(0), 16),
  ]);
 
 
@@ -269,7 +224,7 @@ export async function sendUserOpWithPasskey({
    initCode: "0x",
    callData,
    accountGasLimits,
-   preVerificationGas: 100_000n,
+   preVerificationGas: "0x0",
    gasFees,
    paymasterAndData: "0x",
    signature: "0x", // placeholder — filled below
@@ -290,9 +245,9 @@ export async function sendUserOpWithPasskey({
    sender: userOp.sender,
    nonce: ethers.toBeHex(userOp.nonce),
    callData: userOp.callData,
-   callGasLimit: ethers.toBeHex(callGasLimit),
-   verificationGasLimit: ethers.toBeHex(verificationGasLimit),
-   preVerificationGas: ethers.toBeHex(100_000n),
+   callGasLimit: "0x0",
+   verificationGasLimit: "0x0",
+   preVerificationGas: "0x0",
    maxFeePerGas: ethers.toBeHex(maxFeePerGas),
    maxPriorityFeePerGas: ethers.toBeHex(maxPriorityFeePerGas),
    signature: ethers.hexlify(userOp.signature),

@@ -5,17 +5,29 @@ import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { Shield, CheckCircle, UserPlus, PlayCircle, Settings, ChevronRight, XCircle, Trash2 } from 'lucide-react';
 import { SmartAccountABI, IEntryPointABI, SocialRecoveryValidatorABI } from '../utils/abis';
+import { estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
 import SessionKeyView from './SessionKeyView';
 
 export default function ProfileView() {
-  const { eoaAddress, smartAccountAddress, signer, provider, env, refreshAllData, refreshTrigger, setGlobalLoading } = useAppContext();
+  const { eoaAddress, smartAccountAddress, signer, provider, env, refreshAllData, refreshTrigger, setGlobalLoading, isAmoy } = useAppContext();
   const toast = useToast();
 
   // --- SOCIAL RECOVERY STATE ---
   const [showRecovery, setShowRecovery] = useState(false);
-  const [validatorAddr, setValidatorAddr] = useState("0x9F610079905994f44968428fdA4c0a806f8C99df");
+  const defaultValidator = isAmoy ? (import.meta.env.VITE_AMOY_SOCIAL_RECOVERY || "") : (import.meta.env.VITE_SEPOLIA_SOCIAL_RECOVERY || "");
+  const [validatorAddr, setValidatorAddr] = useState(defaultValidator);
+
+  useEffect(() => {
+    setValidatorAddr(
+      isAmoy
+        ? (import.meta.env.VITE_AMOY_SOCIAL_RECOVERY || "")
+        : (import.meta.env.VITE_SEPOLIA_SOCIAL_RECOVERY || "")
+    );
+  }, [isAmoy]);
   const [isRecoveryInstalled, setIsRecoveryInstalled] = useState(false);
   const [checkingRecovery, setCheckingRecovery] = useState(true);
+  const [recoveryDetails, setRecoveryDetails] = useState(null);
+  const [queryingRecovery, setQueryingRecovery] = useState(false);
 
   // Install State
   const [guardianOne, setGuardianOne] = useState("");
@@ -75,7 +87,9 @@ export default function ProfileView() {
         [[guardianOne, guardianTwo, guardianThree], Number(threshold), 0]
       );
       const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
-      const tx = await account.installModule(1, validatorAddr, initData);
+      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+      const overrides = { maxPriorityFeePerGas, maxFeePerGas };
+      const tx = await account.installModule(1, validatorAddr, initData, overrides);
       await tx.wait();
       
       toast.success("Social Recovery Module Installed Successfully!");
@@ -89,14 +103,63 @@ export default function ProfileView() {
     }
   };
 
+  const queryRecoveryDetails = async () => {
+      if (!smartAccountAddress || !provider || !validatorAddr) return;
+      setQueryingRecovery(true);
+      try {
+          const recoveryValidator = new ethers.Contract(validatorAddr, SocialRecoveryValidatorABI, provider);
+          
+          const config = await recoveryValidator.recoveryConfigs(smartAccountAddress);
+          if (config.threshold === 0n) {
+              setRecoveryDetails(null);
+              return;
+          }
+
+          const filter = recoveryValidator.filters.SocialRecoveryInstalled(smartAccountAddress);
+          let events = [];
+          try {
+             events = await recoveryValidator.queryFilter(filter, -50000, "latest");
+          } catch(e) {
+             console.warn("Query from -50000 failed, trying from 0", e);
+             events = await recoveryValidator.queryFilter(filter, 0, "latest");
+          }
+          
+          let guardians = [];
+          if (events.length > 0) {
+              const latestEvent = events[events.length - 1];
+              guardians = [...latestEvent.args.guardians];
+          }
+
+          setRecoveryDetails({
+              threshold: Number(config.threshold),
+              delay: Number(config.delay),
+              guardianCount: Number(config.guardianCount),
+              guardians: guardians
+          });
+      } catch (err) {
+          console.error("Error querying recovery details:", err);
+          toast.error("Failed to query recovery details");
+      } finally {
+          setQueryingRecovery(false);
+      }
+  };
+
   const handleUninstallRecovery = async () => {
     if (!smartAccountAddress || !signer || !validatorAddr) return;
     setGlobalLoading(true, "Uninstalling Module...");
     try {
         const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
-        // Pass empty array to prevent decode revert
-        const deInitData = ethers.AbiCoder.defaultAbiCoder().encode(["address[]"], [[]]);
-        const tx = await account.uninstallModule(1, validatorAddr, deInitData);
+        
+        // Pass the actual guardians to properly delete them from the mapping on-chain
+        let guardiansToClear = [];
+        if (recoveryDetails && recoveryDetails.guardians) {
+            guardiansToClear = recoveryDetails.guardians;
+        }
+
+        const deInitData = ethers.AbiCoder.defaultAbiCoder().encode(["address[]"], [guardiansToClear]);
+        const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+        const overrides = { maxPriorityFeePerGas, maxFeePerGas };
+        const tx = await account.uninstallModule(1, validatorAddr, deInitData, overrides);
         await tx.wait();
         toast.success("Module Uninstalled.");
         await checkRecoveryModule();
@@ -125,7 +188,9 @@ export default function ProfileView() {
             return;
         }
 
-        const tx = await recoveryValidator.approveRecovery(targetSmartAccount, newOwner);
+        const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+        const overrides = { maxPriorityFeePerGas, maxFeePerGas };
+        const tx = await recoveryValidator.approveRecovery(targetSmartAccount, newOwner, overrides);
         await tx.wait();
         toast.success(`Approval successful!`);
         setAppStatus("done");
@@ -147,7 +212,9 @@ export default function ProfileView() {
     setGlobalLoading(true, "Revoking Recovery...");
     try {
         const recoveryValidator = new ethers.Contract(validatorAddr, SocialRecoveryValidatorABI, signer);
-        const tx = await recoveryValidator.revokeRecovery(targetSmartAccount, newOwner);
+        const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+        const overrides = { maxPriorityFeePerGas, maxFeePerGas };
+        const tx = await recoveryValidator.revokeRecovery(targetSmartAccount, newOwner, overrides);
         await tx.wait();
         toast.success(`Revoked successfully!`);
         setAppStatus("idle");
@@ -172,14 +239,16 @@ export default function ProfileView() {
           }
 
           const account = new ethers.Contract(targetSmartAccount, SmartAccountABI, provider);
-          const inner = account.interface.encodeFunctionData("changeOwner", [newOwner]);
-          const callData = encodeERC7579Single(targetSmartAccount, 0n, inner);
+          const callData = account.interface.encodeFunctionData("changeOwner", [newOwner]);
           const signature = ethers.concat([
               validatorAddr,
               ethers.AbiCoder.defaultAbiCoder().encode(["address"], [newOwner])
           ]);
 
+          const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, signer);
           const nonce = await entryPoint.getNonce(targetSmartAccount, 0);
+
+          const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
 
           const userOp = {
               sender: targetSmartAccount,
@@ -187,17 +256,29 @@ export default function ProfileView() {
               factory: "0x",
               factoryData: "0x",
               callData: callData,
-              callGasLimit: toHex(100000),
-              verificationGasLimit: toHex(150000),
-              preVerificationGas: toHex(50000),
-              maxFeePerGas: toHex(5000000000n),
-              maxPriorityFeePerGas: toHex(1500000000n),
+              callGasLimit: "0x0",
+              verificationGasLimit: "0x0",
+              preVerificationGas: "0x0",
+              maxFeePerGas: toHex(maxFeePerGas),
+              maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
               paymaster: "0x",
               paymasterVerificationGasLimit: "0x",
               paymasterPostOpGasLimit: "0x",
               paymasterData: "0x",
               signature: signature
           };
+
+          try {
+             const est = await estimateUserOperationGas(userOp);
+             userOp.callGasLimit = toHex(est.callGasLimit);
+             userOp.verificationGasLimit = toHex(est.verificationGasLimit);
+             userOp.preVerificationGas = toHex(est.preVerificationGas);
+          } catch(e) {
+             console.warn("Bundler estimation failed, using fallback limits", e);
+             userOp.callGasLimit = toHex(100000);
+             userOp.verificationGasLimit = toHex(150000);
+             userOp.preVerificationGas = toHex(50000);
+          }
 
           const packedOp = packUserOp(userOp);
 
@@ -289,6 +370,12 @@ export default function ProfileView() {
                                 <Settings size={15} /> Setup
                             </button>
                             <button 
+                                className={`px-4 py-2 text-sm font-bold rounded-md whitespace-nowrap transition-all flex items-center gap-2 ${activeTab === 'query' ? 'bg-gradient-to-r from-indigo-500 to-blue-400 text-black shadow-[0_0_15px_rgba(99,102,241,0.4)]' : 'text-emerald-500/70 hover:text-emerald-400 hover:bg-emerald-500/10'}`}
+                                onClick={() => { setActiveTab('query'); queryRecoveryDetails(); }}
+                            >
+                                <Settings size={15} /> Query Details
+                            </button>
+                            <button 
                                 className={`px-4 py-2 text-sm font-bold rounded-md whitespace-nowrap transition-all flex items-center gap-2 ${activeTab === 'approve' ? 'bg-gradient-to-r from-emerald-500 to-teal-400 text-black shadow-[0_0_15px_rgba(16,185,129,0.4)]' : 'text-emerald-500/70 hover:text-emerald-400 hover:bg-emerald-500/10'}`}
                                 onClick={() => setActiveTab('approve')}
                             >
@@ -356,20 +443,88 @@ export default function ProfileView() {
                                             </button>
                                         </>
                                     ) : (
-                                        <>
-                                            <div>
-                                                <h3 className="text-lg font-bold text-red-500 drop-shadow-sm">Uninstall Module</h3>
-                                                <p className="text-xs text-red-100/50 mt-1">Remove the Social Recovery module from your smart account.</p>
-                                            </div>
-                                            <div className="p-4 bg-red-950/40 border border-red-500/30 rounded-lg shadow-[inset_0_0_15px_rgba(220,38,38,0.1)]">
-                                                <p className="text-sm text-red-400 m-0 font-medium">Warning: This will completely disable social recovery for your account. You will need to re-install it if you wish to use it again.</p>
-                                            </div>
+                                        <div className="text-center p-6 bg-emerald-950/20 border border-emerald-500/20 rounded-xl">
+                                            <CheckCircle className="text-emerald-400 mx-auto mb-3" size={32} />
+                                            <h3 className="text-emerald-300 font-bold">Module is Installed</h3>
+                                            <p className="text-emerald-400/60 text-sm mt-2">Go to the "Query Details" tab to view your guardians or uninstall the module.</p>
                                             <button 
-                                                className="w-full py-3.5 rounded-lg font-bold text-white bg-gradient-to-r from-red-600 to-rose-500 hover:from-red-500 hover:to-rose-400 shadow-[0_0_20px_rgba(220,38,38,0.3)] transition-all mt-2 border-none"
-                                                onClick={handleUninstallRecovery}
+                                                className="mt-4 px-4 py-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-md text-sm font-bold hover:bg-emerald-500/30 transition-all"
+                                                onClick={() => { setActiveTab('query'); queryRecoveryDetails(); }}
                                             >
-                                                Uninstall Now
+                                                View Details
                                             </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* QUERY TAB */}
+                            {activeTab === 'query' && (
+                                <div className="flex flex-col gap-4 animate-fade-in">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h3 className="text-lg font-bold text-indigo-400 drop-shadow-sm">Social Recovery Configuration</h3>
+                                            <p className="text-xs text-indigo-100/50 mt-1">View your current threshold and guardians.</p>
+                                        </div>
+                                        <button 
+                                            onClick={queryRecoveryDetails}
+                                            disabled={queryingRecovery}
+                                            className="px-3 py-1.5 bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded-md text-xs font-bold hover:bg-indigo-500/30 transition-all disabled:opacity-50"
+                                        >
+                                            {queryingRecovery ? "Querying..." : "Refresh"}
+                                        </button>
+                                    </div>
+                                    
+                                    {!recoveryDetails && !queryingRecovery && (
+                                        <div className="text-center p-6 bg-white/5 rounded-xl border border-white/10 text-slate-400 text-sm">
+                                            No active social recovery configuration found.
+                                        </div>
+                                    )}
+
+                                    {recoveryDetails && (
+                                        <>
+                                            <div className="grid grid-cols-3 gap-4 mb-2">
+                                                <div className="p-4 bg-indigo-950/20 border border-indigo-500/30 rounded-xl text-center">
+                                                    <div className="text-2xl font-bold text-indigo-300">{recoveryDetails.guardianCount}</div>
+                                                    <div className="text-xs text-indigo-400/70">Guardians</div>
+                                                </div>
+                                                <div className="p-4 bg-indigo-950/20 border border-indigo-500/30 rounded-xl text-center">
+                                                    <div className="text-2xl font-bold text-indigo-300">{recoveryDetails.threshold}</div>
+                                                    <div className="text-xs text-indigo-400/70">Threshold</div>
+                                                </div>
+                                                <div className="p-4 bg-indigo-950/20 border border-indigo-500/30 rounded-xl text-center">
+                                                    <div className="text-2xl font-bold text-indigo-300">{recoveryDetails.delay}s</div>
+                                                    <div className="text-xs text-indigo-400/70">Execution Delay</div>
+                                                </div>
+                                            </div>
+
+                                            {recoveryDetails.guardians.length > 0 && (
+                                                <div className="bg-black/40 rounded-xl border border-white/5 overflow-hidden">
+                                                    <div className="px-4 py-2 bg-white/5 text-xs font-bold text-slate-400 border-b border-white/5">
+                                                        Registered Guardians
+                                                    </div>
+                                                    {recoveryDetails.guardians.map((g, i) => (
+                                                        <div key={i} className="px-4 py-3 border-b border-white/5 last:border-0 text-sm font-mono text-slate-200">
+                                                            {g}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            <div className="mt-4 p-4 bg-red-950/20 border border-red-500/20 rounded-xl">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <h4 className="text-sm font-bold text-red-400">Uninstall Module</h4>
+                                                        <p className="text-xs text-red-400/70 mt-1">Completely disable social recovery for this account.</p>
+                                                    </div>
+                                                    <button 
+                                                        onClick={handleUninstallRecovery}
+                                                        className="px-4 py-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 font-bold rounded-lg border border-red-500/50 transition-all text-sm"
+                                                    >
+                                                        Uninstall Now
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </>
                                     )}
                                 </div>

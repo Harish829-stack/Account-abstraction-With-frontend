@@ -4,7 +4,7 @@ import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { formatNum, shortenAddress, toHex, getEthPriceInUsd, packUserOp, encodeERC7579Single } from '../utils/helpers';
-import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
+import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
 import { IEntryPointABI, SmartAccountABI } from '../utils/abis';
 import {
   Zap, ShieldCheck, Layers, Gift, Clock, Network,
@@ -255,7 +255,7 @@ function ConnectedDashboard() {
 
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
-      const fee = await provider.getFeeData();
+      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
 
       const userOp = {
         sender: smartAccountAddress,
@@ -263,11 +263,11 @@ function ConnectedDashboard() {
         factory: "0x",
         factoryData: "0x",
         callData: callData,
-        callGasLimit: toHex(300000), // Swaps take more gas
-        verificationGasLimit: toHex(150000),
-        preVerificationGas: toHex(50000),
-        maxFeePerGas: toHex(fee.maxFeePerGas),
-        maxPriorityFeePerGas: toHex(fee.maxPriorityFeePerGas),
+        callGasLimit: "0x0",
+        verificationGasLimit: "0x0",
+        preVerificationGas: "0x0",
+        maxFeePerGas: toHex(maxFeePerGas),
+        maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
         paymaster: "0x",
         paymasterVerificationGasLimit: "0x",
         paymasterPostOpGasLimit: "0x",

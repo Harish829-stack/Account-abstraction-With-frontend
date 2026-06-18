@@ -1,20 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { shortenAddress, packUserOp, encodeERC7579Single, toHex } from '../utils/helpers';
-import { sendUserOperation, estimateUserOperationGas } from '../utils/bundler';
+import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { Key, PlusCircle, Zap, Settings, ChevronRight, XCircle } from 'lucide-react';
 import { SmartAccountABI, IEntryPointABI, SessionKeyValidatorABI } from '../utils/abis';
 
 export default function SessionKeyView() {
-  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading } = useAppContext();
+  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, isAmoy } = useAppContext();
   const toast = useToast();
 
   const [showSessionKeys, setShowSessionKeys] = useState(false);
-  const [validatorAddr, setValidatorAddr] = useState("0xDb7D3A988EAb49957e4478138dD14bC9900BC4cC");
+  const defaultValidator = isAmoy
+    ? (import.meta.env.VITE_AMOY_SESSION_KEY || "")
+    : (import.meta.env.VITE_SEPOLIA_SESSION_KEY || "");
+  const [validatorAddr, setValidatorAddr] = useState(defaultValidator);
+
+  useEffect(() => {
+    setValidatorAddr(
+      isAmoy
+        ? (import.meta.env.VITE_AMOY_SESSION_KEY || "")
+        : (import.meta.env.VITE_SEPOLIA_SESSION_KEY || "")
+    );
+  }, [isAmoy]);
   const [isSkInstalled, setIsSkInstalled] = useState(false);
   const [checkingSk, setCheckingSk] = useState(true);
+  const [sessionKeyDetails, setSessionKeyDetails] = useState(null);
+  
+  const [allSessionKeys, setAllSessionKeys] = useState([]);
+  const [querying, setQuerying] = useState(false);
 
   // Form State
   const [burnerKey, setBurnerKey] = useState("");
@@ -49,8 +64,31 @@ export default function SessionKeyView() {
           const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
           const installed = await account.isModuleInstalled(1, validatorAddr, "0x");
           setIsSkInstalled(installed);
+
+          const storedKey = localStorage.getItem("session_burner_key");
+          if (installed && storedKey) {
+              const burnerWallet = new ethers.Wallet(storedKey);
+              const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
+              const skData = await skValidator.sessionKeys(burnerWallet.address, smartAccountAddress);
+              
+              if (skData.enabled) {
+                  setSessionKeyDetails({
+                      address: burnerWallet.address,
+                      target: skData.target,
+                      selector: skData.selector,
+                      maxValue: ethers.formatEther(skData.maxValue),
+                      validUntil: Number(skData.validUntil),
+                      remainingUses: Number(skData.remainingUses)
+                  });
+              } else {
+                  setSessionKeyDetails(null);
+              }
+          } else {
+              setSessionKeyDetails(null);
+          }
       } catch (err) {
           setIsSkInstalled(false);
+          setSessionKeyDetails(null);
       } finally {
           setCheckingSk(false);
       }
@@ -65,6 +103,108 @@ export default function SessionKeyView() {
       setBurnerKey(wallet.privateKey);
       localStorage.setItem("session_burner_key", wallet.privateKey);
       toast.success("New Burner Key generated and saved to Local Storage!");
+  };
+
+  const queryAllSessionKeys = async () => {
+      if (!smartAccountAddress || !provider || !validatorAddr) return;
+      setQuerying(true);
+      try {
+          const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
+          const filter = skValidator.filters.SessionKeyAdded(smartAccountAddress);
+          
+          let events = [];
+          try {
+             // Amoy testnet often has strict block range limits, attempt last 50,000 blocks first
+             events = await skValidator.queryFilter(filter, -50000, "latest");
+          } catch(e) {
+             console.warn("Query from -50000 failed, trying from 0", e);
+             events = await skValidator.queryFilter(filter, 0, "latest");
+          }
+          
+          const uniqueKeys = new Set();
+          events.forEach(e => uniqueKeys.add(e.args.sessionKey));
+
+          const activeKeys = [];
+          for (let key of uniqueKeys) {
+              const skData = await skValidator.sessionKeys(key, smartAccountAddress);
+              if (skData.enabled) {
+                  activeKeys.push({
+                      address: key,
+                      target: skData.target,
+                      selector: skData.selector,
+                      maxValue: ethers.formatEther(skData.maxValue),
+                      validUntil: Number(skData.validUntil),
+                      remainingUses: Number(skData.remainingUses)
+                  });
+              }
+          }
+          setAllSessionKeys(activeKeys);
+      } catch (err) {
+          console.error("Error querying session keys:", err);
+          toast.error("Failed to query session keys");
+      } finally {
+          setQuerying(false);
+      }
+  };
+
+  const handleRevokeSpecificKey = async (keyAddress) => {
+      if (!smartAccountAddress || !signer || !validatorAddr) return;
+      setGlobalLoading(true, `Revoking Key ${shortenAddress(keyAddress)}...`);
+      try {
+          const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
+          const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
+          const innerCall = skValidator.interface.encodeFunctionData("revokeSessionKey", [keyAddress]);
+          const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+          
+          const tx = await account.getFunction("execute(address,uint256,bytes)")(
+              validatorAddr, 
+              0, 
+              innerCall, 
+              { maxPriorityFeePerGas, maxFeePerGas }
+          );
+          await tx.wait();
+          toast.success(`Key Revoked Successfully!`);
+          
+          if (burnerKey) {
+             const currentBurnerWallet = new ethers.Wallet(burnerKey);
+             if (currentBurnerWallet.address.toLowerCase() === keyAddress.toLowerCase()) {
+                 localStorage.removeItem("session_burner_key");
+                 setBurnerKey("");
+                 setSessionKeyDetails(null);
+             }
+          }
+          await queryAllSessionKeys();
+      } catch (err) {
+          console.error(err);
+          toast.error(err.reason || err.message || "Failed to revoke key");
+      } finally {
+          setGlobalLoading(false);
+      }
+  };
+
+  const handleRevokeOrUninstall = async () => {
+      if (!smartAccountAddress || !signer || !validatorAddr) return;
+      setGlobalLoading(true, "Revoking Session Key...");
+      try {
+          const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
+          const burnerWallet = new ethers.Wallet(burnerKey);
+          const deInitData = ethers.AbiCoder.defaultAbiCoder().encode(["address[]"], [[burnerWallet.address]]);
+          const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+          
+          const tx = await account.uninstallModule(1, validatorAddr, deInitData, { maxPriorityFeePerGas, maxFeePerGas });
+          await tx.wait();
+          toast.success("Module Uninstalled & Session Key Revoked!");
+          
+          localStorage.removeItem("session_burner_key");
+          setBurnerKey("");
+          setSessionKeyDetails(null);
+          await checkSkModule();
+      } catch (err) {
+          console.error(err);
+          toast.error(err.reason || err.message || "Failed to uninstall module");
+      } finally {
+          setGlobalLoading(false);
+      }
   };
 
   const handleInstallAndAddKey = async () => {
@@ -104,14 +244,72 @@ export default function SessionKeyView() {
           toast.success("Module Installed & Session Key Added!");
           await checkSkModule();
       } else {
-          // Module already installed, just add the key using execute
-          const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, signer);
+          // Module already installed — send addSessionKey as a UserOperation through the bundler.
+          // Smart accounts reject direct EOA calls to execute(); it must come from the EntryPoint.
+          const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
           const innerCall = skValidator.interface.encodeFunctionData("addSessionKey", [keyData]);
-          const mode = "0x0100000000000000000000000000000000000000000000000000000000000000";
-          const execData = ethers.solidityPacked(["address", "uint256", "bytes"], [validatorAddr, 0, innerCall]);
-          const tx = await account["execute(bytes32,bytes)"](mode, execData);
-          await tx.wait();
-          toast.success("Session Key Added successfully!");
+
+          // Encode as a plain execute(address,uint256,bytes) call
+          const accountIface = new ethers.Interface(SmartAccountABI);
+          const callData = accountIface.encodeFunctionData("execute(address,uint256,bytes)", [
+              validatorAddr,
+              0,
+              innerCall,
+          ]);
+
+          const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
+          // Retry getNonce up to 3 times with 1s delay to handle Infura 429 rate limits
+          let nonce;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              nonce = await entryPoint.getNonce(smartAccountAddress, 0);
+              break;
+            } catch (e) {
+              if (attempt === 2) throw e;
+              await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+            }
+          }
+          const { maxPriorityFeePerGas: maxPriority, maxFeePerGas: maxFee } = await getDynamicGasFees(provider);
+
+          const rpcUserOp = {
+              sender: smartAccountAddress,
+              nonce: toHex(nonce),
+              factory: "0x",
+              factoryData: "0x",
+              callData,
+              callGasLimit: "0x0",
+              verificationGasLimit: "0x0",
+              preVerificationGas: "0x0",
+              maxFeePerGas: toHex(maxFee),
+              maxPriorityFeePerGas: toHex(maxPriority),
+              paymaster: "0x",
+              paymasterVerificationGasLimit: "0x",
+              paymasterPostOpGasLimit: "0x",
+              paymasterData: "0x",
+              signature: "0x",
+          };
+
+          try {
+              const est = await estimateUserOperationGas(rpcUserOp);
+              rpcUserOp.callGasLimit = toHex(est.callGasLimit);
+              rpcUserOp.verificationGasLimit = toHex(est.verificationGasLimit);
+              rpcUserOp.preVerificationGas = toHex(est.preVerificationGas);
+          } catch (estErr) {
+              console.warn("Gas estimation failed, using fallback:", estErr.message);
+          }
+
+          const packedOp = packUserOp(rpcUserOp);
+          const userOpHash = await entryPoint.getUserOpHash(packedOp);
+
+          // Sign with the EOA owner. The contract's validateUserOp uses native ECDSA when
+          // signature length == 65 (no prefix needed). Prepending an address would make it
+          // 85 bytes and cause it to route to a validator module → AA23.
+          const rawSig = await signer.signMessage(ethers.getBytes(userOpHash));
+          rpcUserOp.signature = rawSig; // exactly 65 bytes
+
+          const opHash = await sendUserOperation(rpcUserOp);
+          toast.success(`Session Key adding! OpHash: ${opHash.slice(0, 12)}...`);
+          await checkSkModule();
       }
     } catch (err) {
       console.error(err);
@@ -138,11 +336,7 @@ export default function SessionKeyView() {
           
           const callData = account.interface.encodeFunctionData("execute(address,uint256,bytes)", [target, value, data]);
 
-          const feeData = await provider.getFeeData();
-          const verificationGasLimit = 250000n;
-          const callGasLimit = 100000n;
-          const maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || 1500000000n;
-          const maxFeePerGas = feeData.maxFeePerGas || (feeData.gasPrice ? feeData.gasPrice * 2n : 10000000000n);
+          const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
 
           const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
 
@@ -152,9 +346,9 @@ export default function SessionKeyView() {
               factory: "0x",
               factoryData: "0x",
               callData: callData,
-              callGasLimit: toHex(100000),
-              verificationGasLimit: toHex(250000),
-              preVerificationGas: toHex(50000),
+              callGasLimit: "0x0",
+              verificationGasLimit: "0x0",
+              preVerificationGas: "0x0",
               maxFeePerGas: toHex(maxFeePerGas),
               maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
               paymaster: "0x",
@@ -248,6 +442,12 @@ export default function SessionKeyView() {
                                 <Settings size={15} /> Setup
                             </button>
                             <button 
+                                className={`px-4 py-2 text-sm font-bold rounded-md whitespace-nowrap transition-all flex items-center gap-2 ${activeTab === 'query' ? 'bg-gradient-to-r from-purple-500 to-fuchsia-400 text-black shadow-[0_0_15px_rgba(168,85,247,0.4)]' : 'text-amber-500/70 hover:text-amber-400 hover:bg-amber-500/10'}`}
+                                onClick={() => { setActiveTab('query'); queryAllSessionKeys(); }}
+                            >
+                                <Settings size={15} /> Query All
+                            </button>
+                            <button 
                                 className={`px-4 py-2 text-sm font-bold rounded-md whitespace-nowrap transition-all flex items-center gap-2 ${activeTab === 'execute' ? 'bg-gradient-to-r from-blue-500 to-cyan-400 text-black shadow-[0_0_15px_rgba(59,130,246,0.4)]' : 'text-amber-500/70 hover:text-amber-400 hover:bg-amber-500/10'}`}
                                 onClick={() => setActiveTab('execute')}
                             >
@@ -263,50 +463,135 @@ export default function SessionKeyView() {
                                             <h3 className="text-lg font-bold text-amber-400 drop-shadow-sm">Create Session Key</h3>
                                             <p className="text-xs text-amber-100/50 mt-1">Configure restrictions for your burner key.</p>
                                         </div>
-                                        <button onClick={generateKey} className="px-3 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-md text-xs font-bold hover:bg-amber-500/30 transition-all flex items-center gap-1">
-                                            <PlusCircle size={14}/> Generate Key
+                                        {!sessionKeyDetails && (
+                                            <button onClick={generateKey} className="px-3 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-md text-xs font-bold hover:bg-amber-500/30 transition-all flex items-center gap-1">
+                                                <PlusCircle size={14}/> Generate Key
+                                            </button>
+                                        )}
+                                    </div>
+                                    
+                                    {!sessionKeyDetails ? (
+                                        <>
+                                            <div className="grid gap-4">
+                                                <div>
+                                                    <label className="text-xs text-slate-400 mb-1 block">Validator Address</label>
+                                                    <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" placeholder="0x..." value={validatorAddr} onChange={(e) => setValidatorAddr(e.target.value)} />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs text-slate-400 mb-1 block">Burner Private Key (Stored locally)</label>
+                                                    <input type="password" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" placeholder="0x..." value={burnerKey} onChange={(e) => setBurnerKey(e.target.value)} />
+                                                </div>
+
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="text-xs text-slate-400 mb-1 block">Target Contract (0x0 for any)</label>
+                                                        <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={targetAddr} onChange={(e) => setTargetAddr(e.target.value)} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-slate-400 mb-1 block">Function Selector (0x0 for any)</label>
+                                                        <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={selector} onChange={(e) => setSelector(e.target.value)} />
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="text-xs text-slate-400 mb-1 block">Max Value (ETH)</label>
+                                                        <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={maxValue} onChange={(e) => setMaxValue(e.target.value)} />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs text-slate-400 mb-1 block">Valid For (Minutes)</label>
+                                                        <input type="number" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={validForMinutes} onChange={(e) => setValidForMinutes(e.target.value)} />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <button 
+                                                className="w-full mt-2 py-3 rounded-lg font-bold text-black bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all border-none"
+                                                onClick={handleInstallAndAddKey}
+                                            >
+                                                {isSkInstalled ? "Add Session Key" : "Install Module & Add Key"}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <div className="p-4 bg-amber-950/40 border border-amber-500/30 rounded-xl">
+                                            <h4 className="text-sm font-bold text-amber-400 mb-3">Active Session Key Details</h4>
+                                            <div className="grid grid-cols-2 gap-3 text-sm">
+                                                <div className="text-slate-400">Burner Key:</div>
+                                                <div className="text-slate-200 font-mono truncate">{sessionKeyDetails.address}</div>
+                                                <div className="text-slate-400">Target Contract:</div>
+                                                <div className="text-slate-200 font-mono truncate">{sessionKeyDetails.target === ethers.ZeroAddress ? 'Any Contract' : sessionKeyDetails.target}</div>
+                                                <div className="text-slate-400">Max Value:</div>
+                                                <div className="text-slate-200">{sessionKeyDetails.maxValue} ETH</div>
+                                                <div className="text-slate-400">Remaining Uses:</div>
+                                                <div className="text-slate-200">{sessionKeyDetails.remainingUses}</div>
+                                                <div className="text-slate-400">Expires:</div>
+                                                <div className="text-slate-200">{new Date(sessionKeyDetails.validUntil * 1000).toLocaleString()}</div>
+                                            </div>
+                                            <button 
+                                                className="w-full mt-5 py-3 rounded-lg font-bold text-white bg-red-500/20 hover:bg-red-500/40 border border-red-500/50 transition-all text-sm flex items-center justify-center gap-2"
+                                                onClick={handleRevokeOrUninstall}
+                                            >
+                                                <XCircle size={16} /> Revoke Key & Uninstall Module
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {activeTab === 'query' && (
+                                <div className="flex flex-col gap-4 animate-fade-in">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h3 className="text-lg font-bold text-purple-400 drop-shadow-sm">All Installed Session Keys</h3>
+                                            <p className="text-xs text-purple-100/50 mt-1">Found {allSessionKeys.length} active keys linked to your Smart Account.</p>
+                                        </div>
+                                        <button 
+                                            onClick={queryAllSessionKeys}
+                                            disabled={querying}
+                                            className="px-3 py-1.5 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded-md text-xs font-bold hover:bg-purple-500/30 transition-all disabled:opacity-50"
+                                        >
+                                            {querying ? "Querying..." : "Refresh"}
                                         </button>
                                     </div>
                                     
-                                    <div className="grid gap-4">
-                                        <div>
-                                            <label className="text-xs text-slate-400 mb-1 block">Validator Address</label>
-                                            <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" placeholder="0x..." value={validatorAddr} onChange={(e) => setValidatorAddr(e.target.value)} />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-slate-400 mb-1 block">Burner Private Key (Stored locally)</label>
-                                            <input type="password" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" placeholder="0x..." value={burnerKey} onChange={(e) => setBurnerKey(e.target.value)} />
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="text-xs text-slate-400 mb-1 block">Target Contract (0x0 for any)</label>
-                                                <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={targetAddr} onChange={(e) => setTargetAddr(e.target.value)} />
+                                    <div className="flex flex-col gap-3">
+                                        {allSessionKeys.length === 0 && !querying && (
+                                            <div className="text-center p-6 bg-white/5 rounded-xl border border-white/10 text-slate-400 text-sm">
+                                                No active session keys found.
                                             </div>
-                                            <div>
-                                                <label className="text-xs text-slate-400 mb-1 block">Function Selector (0x0 for any)</label>
-                                                <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={selector} onChange={(e) => setSelector(e.target.value)} />
+                                        )}
+                                        
+                                        {allSessionKeys.map((sk, idx) => (
+                                            <div key={idx} className="p-4 bg-purple-950/20 border border-purple-500/30 rounded-xl hover:border-purple-500/50 transition-all">
+                                                <div className="flex items-start justify-between mb-3">
+                                                    <div>
+                                                        <div className="text-sm font-mono text-purple-200">{sk.address}</div>
+                                                        <div className="text-xs text-purple-400/70 mt-0.5">Expires: {new Date(sk.validUntil * 1000).toLocaleString()}</div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => handleRevokeSpecificKey(sk.address)}
+                                                        className="px-3 py-1 bg-red-500/20 hover:bg-red-500/40 text-red-400 border border-red-500/30 rounded-md text-xs font-bold transition-all"
+                                                    >
+                                                        Revoke Key
+                                                    </button>
+                                                </div>
+                                                <div className="grid grid-cols-3 gap-2 text-xs bg-black/40 p-2 rounded-lg border border-white/5">
+                                                    <div>
+                                                        <span className="text-slate-500 block">Target</span>
+                                                        <span className="text-slate-300 truncate block">{sk.target === ethers.ZeroAddress ? 'Any' : shortenAddress(sk.target)}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-slate-500 block">Max ETH</span>
+                                                        <span className="text-slate-300 block">{sk.maxValue}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-slate-500 block">Uses Left</span>
+                                                        <span className="text-slate-300 block">{sk.remainingUses}</span>
+                                                    </div>
+                                                </div>
                                             </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="text-xs text-slate-400 mb-1 block">Max Value (ETH)</label>
-                                                <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={maxValue} onChange={(e) => setMaxValue(e.target.value)} />
-                                            </div>
-                                            <div>
-                                                <label className="text-xs text-slate-400 mb-1 block">Valid For (Minutes)</label>
-                                                <input type="number" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={validForMinutes} onChange={(e) => setValidForMinutes(e.target.value)} />
-                                            </div>
-                                        </div>
+                                        ))}
                                     </div>
-
-                                    <button 
-                                        className="w-full mt-2 py-3 rounded-lg font-bold text-black bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all border-none"
-                                        onClick={handleInstallAndAddKey}
-                                    >
-                                        {isSkInstalled ? "Add Session Key" : "Install Module & Add Key"}
-                                    </button>
                                 </div>
                             )}
 

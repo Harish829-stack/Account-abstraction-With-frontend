@@ -7,6 +7,7 @@ import "./Interfaces.sol";
 
 interface IRecoveryAccount {
     function changeOwner(address newOwner) external;
+    function execute(address dest, uint256 value, bytes calldata func) external;
 }
 
 contract SocialRecoveryValidator is IValidator {

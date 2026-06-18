@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { SmartAccountABI, ERC20_ABI, IEntryPointABI } from '../utils/abis';
-import { sendUserOperation, estimateUserOperationGas } from '../utils/bundler';
+import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
 import { toHex, getEthPriceInUsd, formatNum, packUserOp, encodeERC7579Batch } from '../utils/helpers';
 import { Layers, Settings, ExternalLink, Plus, Trash2, Send, CheckCircle2, RotateCcw } from 'lucide-react';
 
@@ -42,9 +42,9 @@ export default function BatchSendView() {
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  const [callGasLimit, setCallGasLimit] = useState('300000');
-  const [verificationGasLimit, setVerificationGasLimit] = useState('200000');
-  const [preVerificationGas, setPreVerificationGas] = useState('70000');
+  const [callGasLimit, setCallGasLimit] = useState('');
+  const [verificationGasLimit, setVerificationGasLimit] = useState('');
+  const [preVerificationGas, setPreVerificationGas] = useState('');
 
   const [pending, setPending] = useState(false);
   const [isEstimating, setIsEstimating] = useState(false);
@@ -150,21 +150,7 @@ export default function BatchSendView() {
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
 
-      // Robust fee calculation bypassing eth_maxPriorityFeePerGas
-      let maxFeePerGas = 40000000000n;
-      let maxPriorityFeePerGas = 40000000000n;
-      try {
-        const fee = await provider.getFeeData();
-        maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
-        maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
-        
-        if (isAmoy && maxPriorityFeePerGas < 35000000000n) {
-           maxPriorityFeePerGas = 35000000000n; // enforce 35 Gwei minimum for Amoy
-           maxFeePerGas = (maxFeePerGas < maxPriorityFeePerGas) ? maxPriorityFeePerGas : maxFeePerGas;
-        }
-      } catch (feeErr) {
-        console.warn("Failed to get EIP-1559 fees via getFeeData:", feeErr);
-      }
+      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
 
       const userOp = {
         sender: smartAccountAddress,
@@ -172,9 +158,9 @@ export default function BatchSendView() {
         factory: "0x",
         factoryData: "0x",
         callData: buildBatchCalldata(),
-        callGasLimit: toHex(callGasLimit),
-        verificationGasLimit: toHex(verificationGasLimit),
-        preVerificationGas: toHex(preVerificationGas),
+        callGasLimit: "0x0",
+        verificationGasLimit: "0x0",
+        preVerificationGas: "0x0",
         maxFeePerGas: toHex(maxFeePerGas),
         maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
         paymaster: usePaymaster ? (paymasterAddress || "0x") : "0x",
@@ -221,21 +207,7 @@ export default function BatchSendView() {
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
 
-      // Robust fee calculation bypassing eth_maxPriorityFeePerGas
-      let maxFeePerGas = 40000000000n;
-      let maxPriorityFeePerGas = 40000000000n;
-      try {
-        const fee = await provider.getFeeData();
-        maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
-        maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
-        
-        if (isAmoy && maxPriorityFeePerGas < 35000000000n) {
-           maxPriorityFeePerGas = 35000000000n; // enforce 35 Gwei minimum for Amoy
-           maxFeePerGas = (maxFeePerGas < maxPriorityFeePerGas) ? maxPriorityFeePerGas : maxFeePerGas;
-        }
-      } catch (feeErr) {
-        console.warn("Failed to get EIP-1559 fees via getFeeData:", feeErr);
-      }
+      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
 
       const userOp = {
         sender: smartAccountAddress,
@@ -243,9 +215,9 @@ export default function BatchSendView() {
         factory: "0x",
         factoryData: "0x",
         callData: buildBatchCalldata(),
-        callGasLimit: toHex(callGasLimit),
-        verificationGasLimit: toHex(verificationGasLimit),
-        preVerificationGas: toHex(preVerificationGas),
+        callGasLimit: "0x0",
+        verificationGasLimit: "0x0",
+        preVerificationGas: "0x0",
         maxFeePerGas: toHex(maxFeePerGas),
         maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
         paymaster: "0x",
@@ -263,9 +235,13 @@ export default function BatchSendView() {
         userOp.preVerificationGas = toHex(est.preVerificationGas);
       } catch (err) {
         console.warn("Estimation failed, using UI inputs as fallback", err);
-        userOp.callGasLimit = toHex(callGasLimit);
-        userOp.verificationGasLimit = toHex(verificationGasLimit);
-        userOp.preVerificationGas = toHex(preVerificationGas);
+        if (callGasLimit && verificationGasLimit && preVerificationGas) {
+            userOp.callGasLimit = toHex(callGasLimit);
+            userOp.verificationGasLimit = toHex(verificationGasLimit);
+            userOp.preVerificationGas = toHex(preVerificationGas);
+        } else {
+            throw err;
+        }
       }
 
       // Attach Paymaster exactly after estimation is done

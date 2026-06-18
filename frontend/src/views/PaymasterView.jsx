@@ -4,7 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { ERC20PaymasterABI, IEntryPointABI, ERC20_ABI, SmartAccountABI } from '../utils/abis';
 import pmArtifact from '../utils/ERC20Paymaster.json';
 import { shortenAddress, formatNum, toHex, packUserOp, encodeERC7579Single } from '../utils/helpers';
-import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas } from '../utils/bundler';
+import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
 import { useToast } from '../context/ToastContext';
 import { DollarSign, ShieldAlert, ArrowDownCircle, ArrowUpCircle, Lock, Unlock, PlayCircle, CheckCircle, RotateCcw, ChevronRight, Info, Settings, X, Plus, AlertTriangle } from 'lucide-react';
 import Stepper from '../components/Stepper';
@@ -286,21 +286,7 @@ export default function PaymasterView() {
     setApproving(true);
     setGlobalLoading(true, "Approving Paymaster via Smart Account...");
     try {
-      // Robust EIP-1559 gas fee estimation for public bundlers
-      let maxFeePerGas = 40000000000n; // 40 Gwei fallback
-      let maxPriorityFeePerGas = 40000000000n; // 40 Gwei fallback
-      try {
-        const fee = await provider.getFeeData();
-        maxPriorityFeePerGas = fee.maxPriorityFeePerGas || maxPriorityFeePerGas;
-        maxFeePerGas = fee.maxFeePerGas || (fee.gasPrice ? fee.gasPrice * 2n : maxFeePerGas);
-        
-        if (isAmoy && maxPriorityFeePerGas < 35000000000n) {
-           maxPriorityFeePerGas = 35000000000n; // enforce 35 Gwei minimum for Amoy
-           maxFeePerGas = (maxFeePerGas < maxPriorityFeePerGas) ? maxPriorityFeePerGas : maxFeePerGas;
-        }
-      } catch (feeErr) {
-        console.warn("Failed to get EIP-1559 fees via getFeeData:", feeErr);
-      }
+      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
 
       // EntryPoint gas prefund (maxCost) validation check
       const totalGasLimit = 150000n + 150000n + 50000n; // callGasLimit + verificationGasLimit + preVerificationGas
@@ -339,9 +325,9 @@ export default function PaymasterView() {
         factory: "0x", 
         factoryData: "0x",
         callData: callData,
-        callGasLimit: toHex(150000), 
-        verificationGasLimit: toHex(150000),
-        preVerificationGas: toHex(50000),
+        callGasLimit: "0x0", 
+        verificationGasLimit: "0x0",
+        preVerificationGas: "0x0",
         maxFeePerGas: toHex(maxFeePerGas),
         maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
         paymaster: "0x", // SA pays gas in ETH for its own approval
@@ -358,6 +344,9 @@ export default function PaymasterView() {
         userOp.preVerificationGas = toHex(BigInt(est.preVerificationGas) + 5000n);
       } catch (err) {
         console.warn("Estimation failed, using defaults", err);
+        userOp.callGasLimit = toHex(150000);
+        userOp.verificationGasLimit = toHex(150000);
+        userOp.preVerificationGas = toHex(50000);
       }
 
       const hash = await entryPoint.getUserOpHash(packUserOp(userOp));
