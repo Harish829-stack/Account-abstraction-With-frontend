@@ -5,14 +5,19 @@ import "@account-abstraction/contracts/interfaces/PackedUserOperation.sol";
 
 import "./Interfaces.sol";
 
+type ModeCode is bytes32;
+
 interface IRecoveryAccount {
     function changeOwner(address newOwner) external;
     function execute(address dest, uint256 value, bytes calldata func) external;
+    function executeBatch(address[] calldata dest, uint256[] calldata value, bytes[] calldata func) external;
+    function executeFromExecutor(ModeCode mode, bytes calldata executionCalldata) external returns (bytes[] memory returnData);
 }
 
 contract SocialRecoveryValidator is IValidator {
     bytes4 internal constant ERC1271_INVALID_VALUE = 0xffffffff;
     uint256 internal constant MODULE_TYPE_VALIDATOR = 1;
+    uint256 internal constant MODULE_TYPE_EXECUTOR = 2;
 
     struct RecoveryConfig {
         uint48 delay;
@@ -83,11 +88,13 @@ contract SocialRecoveryValidator is IValidator {
     }
 
     function onUninstall(bytes calldata data) external override {
-        address[] memory guardians = abi.decode(data, (address[]));
         address smartAccount = msg.sender;
 
-        for (uint256 i = 0; i < guardians.length; i++) {
-            delete isGuardian[smartAccount][guardians[i]];
+        if (data.length >= 32) {
+            address[] memory guardians = abi.decode(data, (address[]));
+            for (uint256 i = 0; i < guardians.length; i++) {
+                delete isGuardian[smartAccount][guardians[i]];
+            }
         }
 
         delete recoveryConfigs[smartAccount];
@@ -133,6 +140,22 @@ contract SocialRecoveryValidator is IValidator {
         emit RecoveryRevoked(smartAccount, msg.sender, newOwner, request.approvalCount);
     }
 
+    function executeRecovery(address newOwner) external {
+        address smartAccount = msg.sender;
+        if (!_canRecover(smartAccount, newOwner)) revert("Cannot recover");
+
+        delete recoveryRequests[smartAccount][newOwner];
+
+        bytes memory executionCalldata = abi.encode(
+            smartAccount,
+            uint256(0),
+            abi.encodeCall(IRecoveryAccount.changeOwner, (newOwner))
+        );
+        ModeCode mode = ModeCode.wrap(bytes32(0));
+        
+        IRecoveryAccount(smartAccount).executeFromExecutor(mode, executionCalldata);
+    }
+
     function validateUserOp(
         PackedUserOperation calldata userOp,
         bytes32
@@ -146,8 +169,10 @@ contract SocialRecoveryValidator is IValidator {
             return 1;
         }
 
-        bytes memory expectedCallData =
-            abi.encodeCall(IRecoveryAccount.changeOwner, (newOwner));
+        bytes memory expectedCallData = abi.encodeCall(
+            IRecoveryAccount.execute,
+            (address(this), 0, abi.encodeCall(this.executeRecovery, (newOwner)))
+        );
 
         if (keccak256(userOp.callData) != keccak256(expectedCallData)) {
             return 1;
@@ -165,7 +190,7 @@ contract SocialRecoveryValidator is IValidator {
     }
 
     function isModuleType(uint256 moduleTypeId) external pure override returns (bool) {
-        return moduleTypeId == MODULE_TYPE_VALIDATOR;
+        return moduleTypeId == MODULE_TYPE_VALIDATOR || moduleTypeId == MODULE_TYPE_EXECUTOR;
     }
 
     function isInitialized(address smartAccount) external view override returns (bool) {

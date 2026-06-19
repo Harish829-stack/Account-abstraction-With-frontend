@@ -37,7 +37,6 @@ export default function SessionKeyView() {
   const [selector, setSelector] = useState("0x00000000");
   const [maxValue, setMaxValue] = useState("0.1");
   const [validForMinutes, setValidForMinutes] = useState("60");
-  const [remainingUses, setRemainingUses] = useState("10");
   
   // Execution Form State
   const [execTarget, setExecTarget] = useState("");
@@ -77,8 +76,7 @@ export default function SessionKeyView() {
                       target: skData.target,
                       selector: skData.selector,
                       maxValue: ethers.formatEther(skData.maxValue),
-                      validUntil: Number(skData.validUntil),
-                      remainingUses: Number(skData.remainingUses)
+                      validUntil: Number(skData.validUntil)
                   });
               } else {
                   setSessionKeyDetails(null);
@@ -133,8 +131,7 @@ export default function SessionKeyView() {
                       target: skData.target,
                       selector: skData.selector,
                       maxValue: ethers.formatEther(skData.maxValue),
-                      validUntil: Number(skData.validUntil),
-                      remainingUses: Number(skData.remainingUses)
+                      validUntil: Number(skData.validUntil)
                   });
               }
           }
@@ -227,8 +224,7 @@ export default function SessionKeyView() {
           selector || "0x00000000",
           parsedValue,
           0, // validAfter
-          validUntilTimestamp,
-          Number(remainingUses)
+          validUntilTimestamp
       ];
 
       const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
@@ -236,7 +232,7 @@ export default function SessionKeyView() {
       if (!isSkInstalled) {
           // Install module with the key data
           const initData = ethers.AbiCoder.defaultAbiCoder().encode(
-              ["tuple(address,address,bytes4,uint256,uint48,uint48,uint48)[]"],
+              ["tuple(address,address,bytes4,uint256,uint48,uint48)[]"],
               [[keyData]]
           );
           const tx = await account.installModule(1, validatorAddr, initData);
@@ -522,8 +518,6 @@ export default function SessionKeyView() {
                                                 <div className="text-slate-200 font-mono truncate">{sessionKeyDetails.target === ethers.ZeroAddress ? 'Any Contract' : sessionKeyDetails.target}</div>
                                                 <div className="text-slate-400">Max Value:</div>
                                                 <div className="text-slate-200">{sessionKeyDetails.maxValue} ETH</div>
-                                                <div className="text-slate-400">Remaining Uses:</div>
-                                                <div className="text-slate-200">{sessionKeyDetails.remainingUses}</div>
                                                 <div className="text-slate-400">Expires:</div>
                                                 <div className="text-slate-200">{new Date(sessionKeyDetails.validUntil * 1000).toLocaleString()}</div>
                                             </div>
@@ -575,7 +569,7 @@ export default function SessionKeyView() {
                                                         Revoke Key
                                                     </button>
                                                 </div>
-                                                <div className="grid grid-cols-3 gap-2 text-xs bg-black/40 p-2 rounded-lg border border-white/5">
+                                                <div className="grid grid-cols-2 gap-2 text-xs bg-black/40 p-2 rounded-lg border border-white/5">
                                                     <div>
                                                         <span className="text-slate-500 block">Target</span>
                                                         <span className="text-slate-300 truncate block">{sk.target === ethers.ZeroAddress ? 'Any' : shortenAddress(sk.target)}</span>
@@ -583,10 +577,6 @@ export default function SessionKeyView() {
                                                     <div>
                                                         <span className="text-slate-500 block">Max ETH</span>
                                                         <span className="text-slate-300 block">{sk.maxValue}</span>
-                                                    </div>
-                                                    <div>
-                                                        <span className="text-slate-500 block">Uses Left</span>
-                                                        <span className="text-slate-300 block">{sk.remainingUses}</span>
                                                     </div>
                                                 </div>
                                             </div>
