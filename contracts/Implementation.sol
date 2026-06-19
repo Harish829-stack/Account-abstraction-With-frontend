@@ -58,6 +58,7 @@ contract ModularImplementation is BaseAccount, ERC165, Initializable, UUPSUpgrad
         bytes32 userOpHash,
         uint256 missingAccountFunds
     ) external override onlyEntryPoint returns (uint256 validationData) {
+        require(userOp.signature.length >= 20, "Invalid signature length");
         // Native ECDSA Owner validation (65 bytes)
         if (userOp.signature.length == 65) {
             validationData = _validateSignature(userOpHash, userOp.signature);
@@ -145,16 +146,46 @@ contract ModularImplementation is BaseAccount, ERC165, Initializable, UUPSUpgrad
 
     // --- ERC-7579 Methods ---
 
+    bytes1 internal constant CALLTYPE_SINGLE = 0x00;
+    bytes1 internal constant CALLTYPE_BATCH = 0x01;
+
+    function _getCallType(ModeCode mode) internal pure returns (bytes1) {
+        return bytes1(ModeCode.unwrap(mode));
+    }
+
     function execute(ModeCode mode, bytes calldata executionCalldata) external onlyEntryPointOrOwner {
-        (address target, uint256 value, bytes memory data) = abi.decode(executionCalldata, (address, uint256, bytes));
-        _call(target, value, data);
+        bytes1 callType = _getCallType(mode);
+        if (callType == CALLTYPE_SINGLE) {
+            (address target, uint256 value, bytes memory data) = abi.decode(executionCalldata, (address, uint256, bytes));
+            _call(target, value, data);
+        } else if (callType == CALLTYPE_BATCH) {
+            (address[] memory dests, uint256[] memory values, bytes[] memory funcs) = abi.decode(executionCalldata, (address[], uint256[], bytes[]));
+            require(dests.length == funcs.length && dests.length == values.length, "length mismatch");
+            for (uint256 i = 0; i < dests.length; i++) {
+                _call(dests[i], values[i], funcs[i]);
+            }
+        } else {
+            revert("Unsupported CallType");
+        }
     }
 
     function executeFromExecutor(ModeCode mode, bytes calldata executionCalldata) external returns (bytes[] memory returnData) {
         require(executors[msg.sender], "Not authorized executor");
-        (address target, uint256 value, bytes memory data) = abi.decode(executionCalldata, (address, uint256, bytes));
-        emit ExecutedFromExecutor(target, value);
-        _call(target, value, data);
+        bytes1 callType = _getCallType(mode);
+        if (callType == CALLTYPE_SINGLE) {
+            (address target, uint256 value, bytes memory data) = abi.decode(executionCalldata, (address, uint256, bytes));
+            emit ExecutedFromExecutor(target, value);
+            _call(target, value, data);
+        } else if (callType == CALLTYPE_BATCH) {
+            (address[] memory dests, uint256[] memory values, bytes[] memory funcs) = abi.decode(executionCalldata, (address[], uint256[], bytes[]));
+            require(dests.length == funcs.length && dests.length == values.length, "length mismatch");
+            for (uint256 i = 0; i < dests.length; i++) {
+                emit ExecutedFromExecutor(dests[i], values[i]);
+                _call(dests[i], values[i], funcs[i]);
+            }
+        } else {
+            revert("Unsupported CallType");
+        }
         returnData = new bytes[](0);
         return returnData;
     }

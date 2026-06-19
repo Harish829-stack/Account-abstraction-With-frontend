@@ -239,7 +239,16 @@ export default function ProfileView() {
           }
 
           const account = new ethers.Contract(targetSmartAccount, SmartAccountABI, provider);
-          const callData = account.interface.encodeFunctionData("changeOwner", [newOwner]);
+          
+          const recoveryValidatorContract = new ethers.Contract(validatorAddr, SocialRecoveryValidatorABI, provider);
+          const clearRecoveryData = recoveryValidatorContract.interface.encodeFunctionData("clearRecovery", [newOwner]);
+          const changeOwnerData = account.interface.encodeFunctionData("changeOwner", [newOwner]);
+
+          const callData = account.interface.encodeFunctionData("executeBatch", [
+              [validatorAddr, targetSmartAccount],
+              [0, 0],
+              [clearRecoveryData, changeOwnerData]
+          ]);
           const signature = ethers.concat([
               validatorAddr,
               ethers.AbiCoder.defaultAbiCoder().encode(["address"], [newOwner])

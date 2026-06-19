@@ -13,9 +13,12 @@ contract SessionKeyValidator is IValidator {
 
     bytes4 internal constant ERC1271_INVALID_VALUE = 0xffffffff;
     uint256 internal constant MODULE_TYPE_VALIDATOR = 1;
+    uint256 internal constant MODULE_TYPE_EXECUTOR = 2;
     bytes4 internal constant EXECUTE_SELECTOR = bytes4(keccak256("execute(address,uint256,bytes)"));
     bytes4 internal constant EXECUTE_BATCH_SELECTOR = bytes4(keccak256("executeBatch(address[],uint256[],bytes[])"));
     bytes4 internal constant EXECUTE_7579_SELECTOR = bytes4(keccak256("execute(bytes32,bytes)"));
+    bytes4 internal constant EXECUTE_SESSION_SELECTOR = bytes4(keccak256("executeSession(address,address,uint256,bytes)"));
+    bytes4 internal constant EXECUTE_SESSION_BATCH_SELECTOR = bytes4(keccak256("executeSessionBatch(address,address[],uint256[],bytes[])"));
 
     struct SessionKeyData {
         address sessionKey;
@@ -24,7 +27,7 @@ contract SessionKeyValidator is IValidator {
         uint256 maxValue;
         uint48 validAfter;
         uint48 validUntil;
-        uint48 remainingUses;
+        uint256 maxUses;
     }
 
     struct SessionKey {
@@ -33,8 +36,9 @@ contract SessionKeyValidator is IValidator {
         uint256 maxValue;
         uint48 validAfter;
         uint48 validUntil;
-        uint48 remainingUses;
         bool enabled;
+        uint256 maxUses;
+        uint256 uses;
     }
 
     // ERC-4337 Associated Storage Rule: 
@@ -50,14 +54,12 @@ contract SessionKeyValidator is IValidator {
         bytes4 selector,
         uint256 maxValue,
         uint48 validAfter,
-        uint48 validUntil,
-        uint48 remainingUses
+        uint48 validUntil
     );
     event SessionKeyRevoked(address indexed smartAccount, address indexed sessionKey);
 
     error InvalidSessionKey();
     error InvalidValidityWindow();
-    error InvalidUseLimit();
     error SessionKeyNotEnabled();
 
     function onInstall(bytes calldata data) external override {
@@ -72,7 +74,7 @@ contract SessionKeyValidator is IValidator {
     function onUninstall(bytes calldata data) external override {
         address[] memory keys = abi.decode(data, (address[]));
         for (uint256 i = 0; i < keys.length; i++) {
-            delete sessionKeys[msg.sender][keys[i]];
+            delete sessionKeys[keys[i]][msg.sender];
             emit SessionKeyRevoked(msg.sender, keys[i]);
         }
     }
@@ -86,6 +88,46 @@ contract SessionKeyValidator is IValidator {
 
         delete sessionKeys[sessionKey][msg.sender];
         emit SessionKeyRevoked(msg.sender, sessionKey);
+    }
+
+    error MaxUsesExceeded();
+
+    function executeSession(address sessionKey, address target, uint256 value, bytes calldata callData) external {
+        address smartAccount = msg.sender;
+        SessionKey storage policy = sessionKeys[sessionKey][smartAccount];
+        
+        if (!policy.enabled) revert SessionKeyNotEnabled();
+        if (policy.maxUses > 0 && policy.uses >= policy.maxUses) revert MaxUsesExceeded();
+        
+        policy.uses += 1;
+
+        bytes memory executionCalldata = abi.encode(
+            target,
+            value,
+            callData
+        );
+        ModeCode mode = ModeCode.wrap(bytes32(0));
+        
+        IERC7579Account(smartAccount).executeFromExecutor(mode, executionCalldata);
+    }
+    
+    function executeSessionBatch(address sessionKey, address[] calldata targets, uint256[] calldata values, bytes[] calldata callDatas) external {
+        address smartAccount = msg.sender;
+        SessionKey storage policy = sessionKeys[sessionKey][smartAccount];
+        
+        if (!policy.enabled) revert SessionKeyNotEnabled();
+        if (policy.maxUses > 0 && policy.uses >= policy.maxUses) revert MaxUsesExceeded();
+        
+        policy.uses += 1;
+
+        bytes memory executionCalldata = abi.encode(
+            smartAccount,
+            uint256(0),
+            abi.encodeWithSignature("executeBatch(address[],uint256[],bytes[])", targets, values, callDatas)
+        );
+        ModeCode mode = ModeCode.wrap(bytes32(0));
+        
+        IERC7579Account(smartAccount).executeFromExecutor(mode, executionCalldata);
     }
 
     function validateUserOp(
@@ -121,8 +163,7 @@ contract SessionKeyValidator is IValidator {
             }
         }
 
-        // Removed remainingUses -= 1 to comply with ERC-4337 SSTORE rules
-        // (Validators cannot write to their own storage during validation)
+        // Session keys are now strictly time-bounded to comply with ERC-4337 SSTORE rules
 
         uint256 validationData = 0;
         validationData |= uint256(policy.validUntil) << 160;
@@ -144,7 +185,7 @@ contract SessionKeyValidator is IValidator {
     }
 
     function isModuleType(uint256 moduleTypeId) external pure override returns (bool) {
-        return moduleTypeId == MODULE_TYPE_VALIDATOR;
+        return moduleTypeId == MODULE_TYPE_VALIDATOR || moduleTypeId == MODULE_TYPE_EXECUTOR;
     }
 
     function isInitialized(address /*smartAccount*/) external pure override returns (bool) {
@@ -158,9 +199,6 @@ contract SessionKeyValidator is IValidator {
         if (keyData.validUntil != 0 && keyData.validAfter > keyData.validUntil) {
             revert InvalidValidityWindow();
         }
-        if (keyData.remainingUses == 0) {
-            revert InvalidUseLimit();
-        }
 
         sessionKeys[keyData.sessionKey][smartAccount] = SessionKey({
             target: keyData.target,
@@ -168,8 +206,9 @@ contract SessionKeyValidator is IValidator {
             maxValue: keyData.maxValue,
             validAfter: keyData.validAfter,
             validUntil: keyData.validUntil,
-            remainingUses: keyData.remainingUses,
-            enabled: true
+            enabled: true,
+            maxUses: keyData.maxUses,
+            uses: 0
         });
 
         emit SessionKeyAdded(
@@ -179,8 +218,7 @@ contract SessionKeyValidator is IValidator {
             keyData.selector,
             keyData.maxValue,
             keyData.validAfter,
-            keyData.validUntil,
-            keyData.remainingUses
+            keyData.validUntil
         );
     }
 
@@ -188,7 +226,7 @@ contract SessionKeyValidator is IValidator {
         if (!policy.enabled) return false;
         // NOTE: We cannot check block.timestamp during validateUserOp per ERC-4337 rules.
         // The EntryPoint handles timestamp validation via the returned validUntil/validAfter in validationData.
-        return policy.remainingUses > 0;
+        return true;
     }
 
     function _isCallAllowed(
@@ -205,7 +243,7 @@ contract SessionKeyValidator is IValidator {
 
     function _decodeExecution(
         bytes calldata callData
-    ) internal pure returns (bool decoded, address[] memory targets, uint256[] memory values, bytes4[] memory selectors) {
+    ) internal view returns (bool decoded, address[] memory targets, uint256[] memory values, bytes4[] memory selectors) {
         if (callData.length < 4) return (false, new address[](0), new uint256[](0), new bytes4[](0));
 
         bytes4 accountSelector = bytes4(callData[0:4]);
@@ -217,47 +255,33 @@ contract SessionKeyValidator is IValidator {
             uint256 value;
             (target, value, innerData) = abi.decode(params, (address, uint256, bytes));
             
-            targets = new address[](1);
-            values = new uint256[](1);
-            selectors = new bytes4[](1);
-            
-            targets[0] = target;
-            values[0] = value;
-            selectors[0] = innerData.length >= 4 ? bytes4(innerData) : bytes4(0);
-            
-            return (true, targets, values, selectors);
-        }
+            if (target != address(this)) return (false, new address[](0), new uint256[](0), new bytes4[](0));
+            if (innerData.length < 4) return (false, new address[](0), new uint256[](0), new bytes4[](0));
 
-        if (accountSelector == EXECUTE_7579_SELECTOR) {
-            bytes memory executionCalldata;
-            (, executionCalldata) = abi.decode(params, (ModeCode, bytes));
-            bytes memory innerData;
-            address target;
-            uint256 value;
-            (target, value, innerData) = abi.decode(executionCalldata, (address, uint256, bytes));
-            
-            targets = new address[](1);
-            values = new uint256[](1);
-            selectors = new bytes4[](1);
-            
-            targets[0] = target;
-            values[0] = value;
-            selectors[0] = innerData.length >= 4 ? bytes4(innerData) : bytes4(0);
-            
-            return (true, targets, values, selectors);
-        }
-
-        if (accountSelector == EXECUTE_BATCH_SELECTOR) {
-            bytes[] memory innerDataArray;
-            (targets, values, innerDataArray) = abi.decode(params, (address[], uint256[], bytes[]));
-            if (targets.length != values.length || targets.length != innerDataArray.length) {
-                return (false, new address[](0), new uint256[](0), new bytes4[](0));
+            bytes4 sessionSelector = bytes4(innerData[0:4]);
+            if (sessionSelector == EXECUTE_SESSION_SELECTOR) {
+                (, address t, uint256 v, bytes memory cd) = abi.decode(innerData[4:], (address, address, uint256, bytes));
+                targets = new address[](1);
+                values = new uint256[](1);
+                selectors = new bytes4[](1);
+                
+                targets[0] = t;
+                values[0] = v;
+                selectors[0] = cd.length >= 4 ? bytes4(cd) : bytes4(0);
+                
+                return (true, targets, values, selectors);
+            } else if (sessionSelector == EXECUTE_SESSION_BATCH_SELECTOR) {
+                (, address[] memory ts, uint256[] memory vs, bytes[] memory cds) = abi.decode(innerData[4:], (address, address[], uint256[], bytes[]));
+                if (ts.length != vs.length || ts.length != cds.length) return (false, new address[](0), new uint256[](0), new bytes4[](0));
+                
+                targets = ts;
+                values = vs;
+                selectors = new bytes4[](ts.length);
+                for (uint256 i = 0; i < ts.length; i++) {
+                    selectors[i] = cds[i].length >= 4 ? bytes4(cds[i]) : bytes4(0);
+                }
+                return (true, targets, values, selectors);
             }
-            selectors = new bytes4[](targets.length);
-            for (uint256 i = 0; i < targets.length; i++) {
-                selectors[i] = innerDataArray[i].length >= 4 ? bytes4(innerDataArray[i]) : bytes4(0);
-            }
-            return (true, targets, values, selectors);
         }
 
         return (false, new address[](0), new uint256[](0), new bytes4[](0));
