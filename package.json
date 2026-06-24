@@ -28,9 +28,14 @@
   "type": "module",
   "dependencies": {
     "@account-abstraction/contracts": "^0.7.0",
-    "@chainlink/contracts": "^1.4.0",
     "@openzeppelin/contracts": "^5.6.1",
-    "axios": "^1.13.6",
-    "dotenv": "^17.3.1"
+    "@chainlink/contracts": "^1.4.0",
+    "dotenv": "^17.3.1",
+    "account-abstraction": "https://github.com/eth-infinitism/account-abstraction#v0.7.0",
+    "solady": "github:vectorized/solady#v0.1.9",
+    "sentinellist": "github:rhinestonewtf/sentinellist#v1.0.0",
+    "excessively-safe-call": "github:nomad-xyz/ExcessivelySafeCall",
+    "@biconomy/composability": "github:bcnmy/composability#v1.1.0",
+    "erc7739-validator-base": "https://github.com/erc7579/erc7739Validator#v1.0.0"
   }
 }

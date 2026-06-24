@@ -1,0 +1,9 @@
+@openzeppelin/=node_modules/@openzeppelin/
+account-abstraction/=node_modules/account-abstraction/contracts/
+solady/=node_modules/solady/src/
+excessively-safe-call/=node_modules/excessively-safe-call/src/
+sentinellist/=node_modules/sentinellist/src/
+erc7739Validator/=node_modules/erc7739-validator-base/src/
+composability/=node_modules/@biconomy/composability/contracts/
+contracts/=contracts/
+forge-std/=node_modules/forge-std/src/

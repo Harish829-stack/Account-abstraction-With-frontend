@@ -13,23 +13,38 @@ export const IEntryPointABI = [
   "error FailedOp(uint256 opIndex, string reason)"
 ];
 
-export const SmartAccountFactoryABI = [
-  "function getAddress(address owner, uint256 salt) view returns (address)",
-  "function createAccount(address owner, uint256 salt) returns (address)"
+export const K1ValidatorFactoryABI = [
+  "function createAccount(address eoaOwner, uint256 index, address[] calldata attesters, uint8 threshold) external payable returns (address payable)",
+  "function computeAccountAddress(address eoaOwner, uint256 index, address[] calldata attesters, uint8 threshold) external view returns (address payable)",
+  "event AccountCreated(address indexed account, address indexed owner, uint256 indexed index)"
 ];
 
 export const SmartAccountABI = [
-  "function owner() view returns (address)",
-  "function execute(bytes32 mode, bytes calldata executionCalldata) external",
-  "function execute(address dest, uint256 value, bytes calldata func) external",
-  "function executeBatch(address[] calldata dest, uint256[] calldata value, bytes[] calldata func) external",
+  // ERC-7579 execute
+  "function execute(bytes32 mode, bytes calldata executionCalldata) external payable",
+  // ERC-7579 module management
+  "function installModule(uint256 moduleTypeId, address module, bytes calldata initData) external payable",
+  "function uninstallModule(uint256 moduleTypeId, address module, bytes calldata deInitData) external payable",
+  "function isModuleInstalled(uint256 moduleTypeId, address module, bytes calldata additionalContext) external view returns (bool)",
+  "function supportsModule(uint256 moduleTypeId) external view returns (bool)",
+  // Nexus-specific
+  "function accountId() external pure returns (string memory)",
+  "function isInitialized() external view returns (bool)",
+  "function initializeAccount(bytes calldata initData) external payable",
+  "function getImplementation() external view returns (address)",
+  "function upgradeToAndCall(address newImplementation, bytes calldata data) external payable",
+  // EntryPoint deposit helpers
   "function addDeposit() payable",
   "function getDeposit() view returns (uint256)",
-  "function withdrawDepositTo(address payable withdrawAddress, uint256 amount) external",
-  "function changeOwner(address newOwner) external",
-  "function installModule(uint256 moduleTypeId, address module, bytes calldata initData) external",
-  "function uninstallModule(uint256 moduleTypeId, address module, bytes calldata additionalContext) external",
-  "function isModuleInstalled(uint256 moduleTypeId, address module, bytes calldata additionalContext) external view returns (bool)"
+  "function withdrawDepositTo(address payable withdrawAddress, uint256 amount) external"
+];
+
+export const K1ValidatorABI = [
+  "function transferOwnership(address newOwner) external",
+  "function getOwner(address smartAccount) external view returns (address)",
+  "function isOwner(address smartAccount, address owner) external view returns (bool)",
+  "function onInstall(bytes calldata data) external",
+  "function onUninstall(bytes calldata data) external"
 ];
 
 export const ERC20PaymasterABI = [
@@ -65,14 +80,15 @@ export const SocialRecoveryValidatorABI = [
   "function canRecover(address smartAccount, address newOwner) view returns (bool)",
   "function hasApproved(address smartAccount, address newOwner, address guardian) view returns (bool)",
   "function recoveryConfigs(address) view returns (uint48 delay, uint16 threshold, uint16 guardianCount)",
+  "function getGuardians(address account) view returns (address[])",
   "event SocialRecoveryInstalled(address indexed smartAccount, uint16 threshold, uint48 delay, address[] guardians)",
   "event SocialRecoveryUninstalled(address indexed smartAccount)"
 ];
 
 export const SessionKeyValidatorABI = [
-  "function addSessionKey(tuple(address sessionKey, address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil) keyData) external",
+  "function addSessionKey(tuple(address sessionKey, address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil, uint256 maxUses) keyData) external",
   "function revokeSessionKey(address sessionKey) external",
-  "function sessionKeys(address account, address sessionKey) view returns (address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil, bool enabled)",
+  "function sessionKeys(address account, address sessionKey) view returns (address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil, bool enabled, uint256 maxUses, uint256 uses)",
   "event SessionKeyAdded(address indexed smartAccount, address indexed sessionKey, address indexed target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil)",
   "event SessionKeyRevoked(address indexed smartAccount, address indexed sessionKey)"
 ];

@@ -1,48 +1,32 @@
 import hardhatToolboxMochaEthersPlugin from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
 import hardhatVerifyPlugin from "@nomicfoundation/hardhat-verify";
-
 import { defineConfig } from "hardhat/config";
 import "dotenv/config";
 
 export default defineConfig({
   plugins: [
     hardhatToolboxMochaEthersPlugin,
-    hardhatVerifyPlugin 
+    hardhatVerifyPlugin,
   ],
 
   solidity: {
     profiles: {
       default: {
-        version: "0.8.28",
+        version: "0.8.27",
         settings: {
-          optimizer: {
-            enabled: true,
-            runs: 1000,
-          },
-        },
-      },
-      production: {
-        version: "0.8.28",
-        settings: {
+          viaIR: true,
           optimizer: {
             enabled: true,
             runs: 200,
+            details: { yul: true },
           },
+          evmVersion: "cancun",
         },
       },
     },
   },
 
   networks: {
-    hardhatMainnet: {
-      type: "edr-simulated",
-      chainType: "l1",
-    },
-    hardhatOp: {
-      type: "edr-simulated",
-      chainType: "op",
-    },
-
     sepolia: {
       type: "http",
       chainType: "l1",
@@ -57,4 +41,10 @@ export default defineConfig({
     },
   },
 
+  etherscan: {
+    apiKey: {
+      sepolia: process.env.ETHERSCAN_API_KEY || "",
+      polygonAmoy: process.env.POLYGONSCAN_API_KEY || "",
+    },
+  },
 });

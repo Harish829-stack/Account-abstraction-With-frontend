@@ -1,24 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0
-pragma solidity ^0.8.23;
+pragma solidity ^0.8.27;
 
-import "@account-abstraction/contracts/interfaces/PackedUserOperation.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import { PackedUserOperation } from "account-abstraction/interfaces/PackedUserOperation.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import { IValidator } from "./interfaces/modules/IValidator.sol";
+import { MODULE_TYPE_VALIDATOR } from "./types/Constants.sol";
 
-import "./Interfaces.sol";
-
+/// @title SessionKeyValidator
+/// @notice ERC-7579 compliant session key validator for Nexus accounts.
+/// @dev In Nexus, the validator address is embedded in the nonce key — not in the signature prefix.
+///      Signature layout for validateUserOp: [sessionKey(20)] ++ [sig(65)] = 85 bytes total
 contract SessionKeyValidator is IValidator {
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
 
     bytes4 internal constant ERC1271_INVALID_VALUE = 0xffffffff;
-    uint256 internal constant MODULE_TYPE_VALIDATOR = 1;
-    uint256 internal constant MODULE_TYPE_EXECUTOR = 2;
-    bytes4 internal constant EXECUTE_SELECTOR = bytes4(keccak256("execute(address,uint256,bytes)"));
-    bytes4 internal constant EXECUTE_BATCH_SELECTOR = bytes4(keccak256("executeBatch(address[],uint256[],bytes[])"));
     bytes4 internal constant EXECUTE_7579_SELECTOR = bytes4(keccak256("execute(bytes32,bytes)"));
-    bytes4 internal constant EXECUTE_SESSION_SELECTOR = bytes4(keccak256("executeSession(address,address,uint256,bytes)"));
-    bytes4 internal constant EXECUTE_SESSION_BATCH_SELECTOR = bytes4(keccak256("executeSessionBatch(address,address[],uint256[],bytes[])"));
 
     struct SessionKeyData {
         address sessionKey;
@@ -41,11 +39,18 @@ contract SessionKeyValidator is IValidator {
         uint256 uses;
     }
 
-    // ERC-4337 Associated Storage Rule: 
-    // The Smart Account (sender) MUST be the innermost mapping key (the second address)
-    // so that the final storage slot calculation is keccak256(sender . Y).
+    struct Execution {
+        address target;
+        uint256 value;
+        bytes callData;
+    }
+
+    // ERC-4337 Associated Storage Rule:
     // mapping(sessionKey => mapping(smartAccount => SessionKey))
     mapping(address => mapping(address => SessionKey)) public sessionKeys;
+
+    // Track number of active session keys per account for isInitialized
+    mapping(address => uint256) private _sessionKeyCount;
 
     event SessionKeyAdded(
         address indexed smartAccount,
@@ -62,9 +67,10 @@ contract SessionKeyValidator is IValidator {
     error InvalidValidityWindow();
     error SessionKeyNotEnabled();
 
+    // ─── IModule ────────────────────────────────────────────────────────────────
+
     function onInstall(bytes calldata data) external override {
         if (data.length == 0) return;
-
         SessionKeyData[] memory keys = abi.decode(data, (SessionKeyData[]));
         for (uint256 i = 0; i < keys.length; i++) {
             _addSessionKey(msg.sender, keys[i]);
@@ -72,73 +78,42 @@ contract SessionKeyValidator is IValidator {
     }
 
     function onUninstall(bytes calldata data) external override {
+        // Guard: empty data means just uninstall cleanly with no key cleanup
+        if (data.length < 32) return;
         address[] memory keys = abi.decode(data, (address[]));
         for (uint256 i = 0; i < keys.length; i++) {
-            delete sessionKeys[keys[i]][msg.sender];
-            emit SessionKeyRevoked(msg.sender, keys[i]);
+            if (sessionKeys[keys[i]][msg.sender].enabled) {
+                delete sessionKeys[keys[i]][msg.sender];
+                if (_sessionKeyCount[msg.sender] > 0) _sessionKeyCount[msg.sender]--;
+                emit SessionKeyRevoked(msg.sender, keys[i]);
+            }
         }
     }
 
-    function addSessionKey(SessionKeyData calldata keyData) external {
-        _addSessionKey(msg.sender, keyData);
+    function isModuleType(uint256 moduleTypeId) external pure override returns (bool) {
+        return moduleTypeId == MODULE_TYPE_VALIDATOR;
     }
 
-    function revokeSessionKey(address sessionKey) external {
-        if (!sessionKeys[sessionKey][msg.sender].enabled) revert SessionKeyNotEnabled();
-
-        delete sessionKeys[sessionKey][msg.sender];
-        emit SessionKeyRevoked(msg.sender, sessionKey);
+    /// @notice Required by Nexus — indicates whether this module is initialized for a given account.
+    function isInitialized(address smartAccount) external view override returns (bool) {
+        return _sessionKeyCount[smartAccount] > 0;
     }
 
-    error MaxUsesExceeded();
+    // ─── IValidator ─────────────────────────────────────────────────────────────
 
-    function executeSession(address sessionKey, address target, uint256 value, bytes calldata callData) external {
-        address smartAccount = msg.sender;
-        SessionKey storage policy = sessionKeys[sessionKey][smartAccount];
-        
-        if (!policy.enabled) revert SessionKeyNotEnabled();
-        if (policy.maxUses > 0 && policy.uses >= policy.maxUses) revert MaxUsesExceeded();
-        
-        policy.uses += 1;
-
-        bytes memory executionCalldata = abi.encode(
-            target,
-            value,
-            callData
-        );
-        ModeCode mode = ModeCode.wrap(bytes32(0));
-        
-        IERC7579Account(smartAccount).executeFromExecutor(mode, executionCalldata);
-    }
-    
-    function executeSessionBatch(address sessionKey, address[] calldata targets, uint256[] calldata values, bytes[] calldata callDatas) external {
-        address smartAccount = msg.sender;
-        SessionKey storage policy = sessionKeys[sessionKey][smartAccount];
-        
-        if (!policy.enabled) revert SessionKeyNotEnabled();
-        if (policy.maxUses > 0 && policy.uses >= policy.maxUses) revert MaxUsesExceeded();
-        
-        policy.uses += 1;
-
-        bytes memory executionCalldata = abi.encode(
-            smartAccount,
-            uint256(0),
-            abi.encodeWithSignature("executeBatch(address[],uint256[],bytes[])", targets, values, callDatas)
-        );
-        ModeCode mode = ModeCode.wrap(bytes32(0));
-        
-        IERC7579Account(smartAccount).executeFromExecutor(mode, executionCalldata);
-    }
-
+    /// @notice Validates a UserOp signed by a session key.
+    /// @dev In Nexus, the validator address is in the nonce key — NOT in the signature prefix.
+    ///      Signature layout: [sessionKey(20 bytes)] ++ [ecdsa sig(65 bytes)] = 85 bytes
     function validateUserOp(
         PackedUserOperation calldata userOp,
         bytes32 userOpHash
     ) external override returns (uint256) {
-        if (userOp.sender != msg.sender || userOp.signature.length != 105) {
+        // Expect exactly 85 bytes: 20 (sessionKey) + 65 (sig)
+        if (userOp.sender != msg.sender || userOp.signature.length != 85) {
             return 1;
         }
 
-        address sessionKey = address(bytes20(userOp.signature[20:40]));
+        address sessionKey = address(bytes20(userOp.signature[0:20]));
         SessionKey storage policyRef = sessionKeys[sessionKey][userOp.sender];
         SessionKey memory policy = policyRef;
 
@@ -146,13 +121,15 @@ contract SessionKeyValidator is IValidator {
             return 1;
         }
 
-        bytes calldata signature = userOp.signature[40:105];
+        bytes calldata signature = userOp.signature[20:85];
         address recovered = userOpHash.toEthSignedMessageHash().recover(signature);
         if (recovered != sessionKey) {
             return 1;
         }
 
-        (bool decoded, address[] memory targets, uint256[] memory values, bytes4[] memory selectors) = _decodeExecution(userOp.callData);
+        // Decode the ERC-7579 execute calldata and check policy
+        (bool decoded, address[] memory targets, uint256[] memory values, bytes4[] memory selectors) 
+            = _decodeExecution(userOp.callData);
         if (!decoded) {
             return 1;
         }
@@ -163,8 +140,7 @@ contract SessionKeyValidator is IValidator {
             }
         }
 
-        // Session keys are now strictly time-bounded to comply with ERC-4337 SSTORE rules
-
+        // Pack validAfter and validUntil into the return value for EntryPoint time-range validation
         uint256 validationData = 0;
         validationData |= uint256(policy.validUntil) << 160;
         validationData |= uint256(policy.validAfter) << (160 + 48);
@@ -179,18 +155,25 @@ contract SessionKeyValidator is IValidator {
         if (signature.length != 65) return ERC1271_INVALID_VALUE;
         address recovered = hash.recover(signature);
         if (sessionKeys[recovered][sender].enabled) {
-            return bytes4(0x1626ba7e); // ERC1271_MAGIC_VALUE
+            return bytes4(0x1626ba7e);
         }
         return ERC1271_INVALID_VALUE;
     }
 
-    function isModuleType(uint256 moduleTypeId) external pure override returns (bool) {
-        return moduleTypeId == MODULE_TYPE_VALIDATOR || moduleTypeId == MODULE_TYPE_EXECUTOR;
+    // ─── Session Key Management ──────────────────────────────────────────────────
+
+    function addSessionKey(SessionKeyData calldata keyData) external {
+        _addSessionKey(msg.sender, keyData);
     }
 
-    function isInitialized(address /*smartAccount*/) external pure override returns (bool) {
-        return true;
+    function revokeSessionKey(address sessionKey) external {
+        if (!sessionKeys[sessionKey][msg.sender].enabled) revert SessionKeyNotEnabled();
+        delete sessionKeys[sessionKey][msg.sender];
+        if (_sessionKeyCount[msg.sender] > 0) _sessionKeyCount[msg.sender]--;
+        emit SessionKeyRevoked(msg.sender, sessionKey);
     }
+
+    // ─── Internal ────────────────────────────────────────────────────────────────
 
     function _addSessionKey(address smartAccount, SessionKeyData memory keyData) internal {
         if (keyData.sessionKey == address(0) || keyData.sessionKey == smartAccount) {
@@ -211,6 +194,8 @@ contract SessionKeyValidator is IValidator {
             uses: 0
         });
 
+        _sessionKeyCount[smartAccount]++;
+
         emit SessionKeyAdded(
             smartAccount,
             keyData.sessionKey,
@@ -224,8 +209,7 @@ contract SessionKeyValidator is IValidator {
 
     function _isPolicyActive(SessionKey memory policy) internal pure returns (bool) {
         if (!policy.enabled) return false;
-        // NOTE: We cannot check block.timestamp during validateUserOp per ERC-4337 rules.
-        // The EntryPoint handles timestamp validation via the returned validUntil/validAfter in validationData.
+        if (policy.maxUses > 0 && policy.uses >= policy.maxUses) return false;
         return true;
     }
 
@@ -241,49 +225,99 @@ contract SessionKeyValidator is IValidator {
         return true;
     }
 
+    /// @dev Decodes ERC-7579 execute(bytes32 mode, bytes calldata executionCalldata) calldata
+    ///      and returns the targets, values, and selectors for policy checking.
     function _decodeExecution(
         bytes calldata callData
-    ) internal view returns (bool decoded, address[] memory targets, uint256[] memory values, bytes4[] memory selectors) {
+    ) internal view returns (
+        bool decoded,
+        address[] memory targets,
+        uint256[] memory values,
+        bytes4[] memory selectors
+    ) {
         if (callData.length < 4) return (false, new address[](0), new uint256[](0), new bytes4[](0));
 
         bytes4 accountSelector = bytes4(callData[0:4]);
-        bytes calldata params = callData[4:];
+        if (accountSelector != EXECUTE_7579_SELECTOR) {
+            return (false, new address[](0), new uint256[](0), new bytes4[](0));
+        }
 
-        if (accountSelector == EXECUTE_SELECTOR) {
-            bytes memory innerData;
+        // Decode: (bytes32 mode, bytes calldata executionCalldata)
+        (bytes32 mode, bytes memory execData) = abi.decode(callData[4:], (bytes32, bytes));
+        bytes1 callType = bytes1(mode);
+
+        if (callType == 0x00) {
+            // Single execution: raw packed address(20) ++ uint256(32) ++ calldata
+            if (execData.length < 52) return (false, new address[](0), new uint256[](0), new bytes4[](0));
             address target;
             uint256 value;
-            (target, value, innerData) = abi.decode(params, (address, uint256, bytes));
-            
-            if (target != address(this)) return (false, new address[](0), new uint256[](0), new bytes4[](0));
-            if (innerData.length < 4) return (false, new address[](0), new uint256[](0), new bytes4[](0));
-
-            bytes4 sessionSelector = bytes4(innerData[0:4]);
-            if (sessionSelector == EXECUTE_SESSION_SELECTOR) {
-                (, address t, uint256 v, bytes memory cd) = abi.decode(innerData[4:], (address, address, uint256, bytes));
-                targets = new address[](1);
-                values = new uint256[](1);
-                selectors = new bytes4[](1);
-                
-                targets[0] = t;
-                values[0] = v;
-                selectors[0] = cd.length >= 4 ? bytes4(cd) : bytes4(0);
-                
-                return (true, targets, values, selectors);
-            } else if (sessionSelector == EXECUTE_SESSION_BATCH_SELECTOR) {
-                (, address[] memory ts, uint256[] memory vs, bytes[] memory cds) = abi.decode(innerData[4:], (address, address[], uint256[], bytes[]));
-                if (ts.length != vs.length || ts.length != cds.length) return (false, new address[](0), new uint256[](0), new bytes4[](0));
-                
-                targets = ts;
-                values = vs;
-                selectors = new bytes4[](ts.length);
-                for (uint256 i = 0; i < ts.length; i++) {
-                    selectors[i] = cds[i].length >= 4 ? bytes4(cds[i]) : bytes4(0);
-                }
-                return (true, targets, values, selectors);
+            bytes memory cd;
+            assembly {
+                target := shr(96, mload(add(execData, 32)))
+                value := mload(add(execData, 52))
             }
+            cd = new bytes(execData.length - 52);
+            for (uint256 i = 0; i < cd.length; i++) {
+                cd[i] = execData[52 + i];
+            }
+            targets = new address[](1);
+            values = new uint256[](1);
+            selectors = new bytes4[](1);
+            targets[0] = target;
+            values[0] = value;
+            selectors[0] = cd.length >= 4 ? bytes4(cd) : bytes4(0);
+            return (true, targets, values, selectors);
+        } else if (callType == 0x01) {
+            // Batch execution: abi.encode(tuple(address,uint256,bytes)[])
+            // Nexus encodes batch as: Execution[] = abi.encode(tuple(address target, uint256 value, bytes callData)[])
+            (address[] memory bTargets, uint256[] memory bValues, bytes[] memory bCallDatas) =
+                _decodeBatch(execData);
+            selectors = new bytes4[](bTargets.length);
+            for (uint256 i = 0; i < bTargets.length; i++) {
+                selectors[i] = bCallDatas[i].length >= 4 ? bytes4(bCallDatas[i]) : bytes4(0);
+            }
+            return (true, bTargets, bValues, selectors);
         }
 
         return (false, new address[](0), new uint256[](0), new bytes4[](0));
+    }
+
+    function _decodeBatch(bytes memory data) internal view returns (
+        address[] memory targets,
+        uint256[] memory values,
+        bytes[] memory callDatas
+    ) {
+        // Nexus batch = abi.encode(tuple(address target, uint256 value, bytes callData)[])
+        (targets, values, callDatas) = (new address[](0), new uint256[](0), new bytes[](0));
+        // Use a simple approach: decode as a dynamic struct array
+        // Struct: (address target, uint256 value, bytes callData)
+        // abi.decode works here since batch is abi-encoded
+        bytes memory wrapped = abi.encode(data); // wrap for decoding
+        // Actually decode directly:
+        try this._tryDecodeBatch(data) returns (
+            address[] memory t,
+            uint256[] memory v,
+            bytes[] memory c
+        ) {
+            return (t, v, c);
+        } catch {
+            return (new address[](0), new uint256[](0), new bytes[](0));
+        }
+    }
+
+    function _tryDecodeBatch(bytes calldata data) external pure returns (
+        address[] memory targets,
+        uint256[] memory values,
+        bytes[] memory callDatas
+    ) {
+        Execution[] memory execs = abi.decode(data, (Execution[]));
+        targets = new address[](execs.length);
+        values = new uint256[](execs.length);
+        callDatas = new bytes[](execs.length);
+        for (uint256 i = 0; i < execs.length; i++) {
+            targets[i] = execs[i].target;
+            values[i] = execs[i].value;
+            callDatas[i] = execs[i].callData;
+        }
     }
 }

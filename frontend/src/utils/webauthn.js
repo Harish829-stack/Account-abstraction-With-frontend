@@ -2,6 +2,7 @@ import { WebAuthnP256 } from "ox";
 import { ethers } from "ethers";
 import { SmartAccountABI, IEntryPointABI } from "./abis";
 import { getDynamicGasFees } from "./bundler";
+import { encodeERC7579Single, buildAndSendAccountOp } from "./helpers";
 
 
 const STORAGE_KEY = "webauthn_credential";
@@ -58,30 +59,24 @@ export async function installWebAuthnValidator(
  webAuthnValidatorAddr,
  qx,
  qy,
- signer
+ signer,
+ k1ValidatorAddr
 ) {
- // Encode qx + qy as bytes32 pair — matches WebAuthnValidator.sol's onInstall(data)
  const initData = ethers.AbiCoder.defaultAbiCoder().encode(
    ["bytes32", "bytes32"],
    [`0x${qx}`, `0x${qy}`]
  );
 
-
-  // Direct EOA call — same as: account.installModule(1, validatorAddr, initData) in ProfileView
   const provider = signer.provider;
-  const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
-  
-  const overrides = {
-    maxPriorityFeePerGas,
-    maxFeePerGas
-  };
+  const entryPoint = import.meta.env.VITE_ENTRY_POINT;
 
-  const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
-  const tx = await account.installModule(1, webAuthnValidatorAddr, initData, overrides);
-  await tx.wait();
+  const accountIface = new ethers.Interface(SmartAccountABI);
+  const innerCallData = accountIface.encodeFunctionData("installModule", [1, webAuthnValidatorAddr, initData]);
+  const callData = encodeERC7579Single(smartAccountAddress, 0n, innerCallData);
 
+  const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, entryPoint, k1ValidatorAddr);
 
- return tx;
+  return opHash;
 }
 
 
@@ -171,9 +166,9 @@ export async function signUserOpWithPasskey(userOpHash, credentialId, validatorA
   );
 
 
- // Prepend the validator address (20 bytes) — Implementation.sol uses this to route to our validator
- // Same pattern as SessionKeyView: ethers.concat([validatorAddr, sessionKey, rawSig])
- return ethers.concat([validatorAddress, webAuthnSig]);
+ // In Nexus, the validator address is put in the nonce key, NOT in the signature prefix!
+ // So we must return ONLY the raw ABI-encoded webAuthn assertion.
+ return webAuthnSig;
 }
 
 

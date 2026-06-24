@@ -158,9 +158,14 @@ export default function SendOpView() {
 
       const est = await estimateUserOperationGas(userOp);
       
-      setCallGasLimit(BigInt(est.callGasLimit).toString());
-      setVerificationGasLimit(BigInt(est.verificationGasLimit).toString());
-      const pvg = BigInt(est.preVerificationGas).toString();
+      // Add 20% margin to ensure execution succeeds despite state fluctuations
+      const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
+      const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
+      const pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
+
+      setCallGasLimit(callGasWithMargin.toString());
+      setVerificationGasLimit(vgfWithMargin.toString());
+      const pvg = pvgWithMargin.toString();
       setPreVerificationGas(pvg);
 
       // Compute dual-currency gas fees
@@ -225,9 +230,15 @@ export default function SendOpView() {
       // This ensures we get real execution gas limits without paymaster simulation failing
       try {
         const est = await estimateUserOperationGas(userOp);
-        userOp.callGasLimit = toHex(est.callGasLimit);
-        userOp.verificationGasLimit = toHex(est.verificationGasLimit);
-        userOp.preVerificationGas = toHex(est.preVerificationGas);
+        
+        // Add 20% margin
+        const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
+        const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
+        const pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
+
+        userOp.callGasLimit = toHex(callGasWithMargin);
+        userOp.verificationGasLimit = toHex(vgfWithMargin);
+        userOp.preVerificationGas = toHex(pvgWithMargin);
       } catch (err) {
         console.warn("Estimation failed, using UI inputs as fallback", err);
         if (callGasLimit && verificationGasLimit && preVerificationGas) {

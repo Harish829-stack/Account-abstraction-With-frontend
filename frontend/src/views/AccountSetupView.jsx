@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { ethers, getAddress } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { shortenAddress, formatNum } from '../utils/helpers';
-import { SmartAccountFactoryABI, SmartAccountABI } from '../utils/abis';
+import { shortenAddress, formatNum, encodeERC7579Single, buildAndSendAccountOp } from '../utils/helpers';
+import { K1ValidatorFactoryABI, SmartAccountABI, K1ValidatorABI } from '../utils/abis';
 import { PlusCircle, Link as LinkIcon, AlertTriangle, ArrowRight, Shield, Download, RotateCcw, Coins, Landmark, ChevronRight, ArrowDownCircle } from 'lucide-react';
 import Stepper from '../components/Stepper';
 
@@ -86,8 +86,8 @@ export default function AccountSetupView() {
       setPredicting(true);
       if (active) setPredictionError(null);
       try {
-        const factory = new ethers.Contract(env.FACTORY, SmartAccountFactoryABI, provider);
-        const predicted = await factory.getFunction("getAddress")(eoaAddress, salt);
+        const factory = new ethers.Contract(env.FACTORY, K1ValidatorFactoryABI, provider);
+        const predicted = await factory.getFunction("computeAccountAddress")(eoaAddress, salt, [], 0);
         if (active) setPredictedAddress(predicted);
       } catch (err) {
         console.error("Failed to predict:", err);
@@ -113,10 +113,10 @@ export default function AccountSetupView() {
     setDeploying(true);
     setGlobalLoading(true, "Deploying Smart Account...");
     try {
-      const factory = new ethers.Contract(env.FACTORY, SmartAccountFactoryABI, signer);
-      const tx = await factory.createAccount(eoaAddress, salt);
+      const factory = new ethers.Contract(env.FACTORY, K1ValidatorFactoryABI, signer);
+      const tx = await factory.createAccount(eoaAddress, salt, [], 0);
       await tx.wait();
-      const deployedAddress = await factory.getFunction("getAddress")(eoaAddress, salt);
+      const deployedAddress = await factory.getFunction("computeAccountAddress")(eoaAddress, salt, [], 0);
       setSmartAccountAddress(deployedAddress);
       toast.success("Smart Account deployed successfully!");
     } catch (err) {
@@ -215,13 +215,16 @@ export default function AccountSetupView() {
     setPendingEPWithdraw(true);
     setGlobalLoading(true, "Withdrawing ETH from EntryPoint...");
     try {
-      const saContract = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
-      const tx = await saContract.withdrawDepositTo(withdrawEPTo, ethers.parseEther(withdrawEPAmount));
-      await tx.wait();
+      const saInterface = new ethers.Interface(SmartAccountABI);
+      const innerCallData = saInterface.encodeFunctionData("withdrawDepositTo", [withdrawEPTo, ethers.parseEther(withdrawEPAmount)]);
+      const callData = encodeERC7579Single(smartAccountAddress, 0n, innerCallData);
+
+      const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+      
       setWithdrawEPAmount('');
       setWithdrawEPTo('');
       await refreshAllData();
-      toast.success("Deposit successfully withdrawn from EntryPoint!");
+      toast.success(`Deposit successfully withdrawn from EntryPoint! OpHash: ${shortenAddress(opHash)}`);
     } catch (err) {
       if (err.code === 4001) toast.error("Transaction rejected by user");
       else toast.error(err.reason || err.message || "Failed to withdraw");
@@ -244,13 +247,16 @@ export default function AccountSetupView() {
     setPendingOwnerXfer(true);
     setGlobalLoading(true, "Transferring Ownership...");
     try {
-      const saContract = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
-      const tx = await saContract.changeOwner(newOwner);
-      await tx.wait();
+      const k1Interface = new ethers.Interface(K1ValidatorABI);
+      const innerCallData = k1Interface.encodeFunctionData("transferOwnership", [newOwner]);
+      const callData = encodeERC7579Single(env.K1_VALIDATOR, 0n, innerCallData);
+
+      const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+      
       setNewOwner('');
       setConfirmTransfer(false);
       await refreshAllData();
-      toast.success("Ownership transferred successfully!");
+      toast.success(`Ownership transferred successfully! OpHash: ${shortenAddress(opHash)}`);
     } catch (err) {
       if (err.code === 4001) toast.error("Transaction rejected by user");
       else toast.error(err.reason || err.message || "Failed to transfer ownership");

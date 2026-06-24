@@ -13,11 +13,7 @@ import {
   verifyPublicKeyMatch,
 } from '../utils/webauthn';
 import { getDynamicGasFees, estimateUserOperationGas } from '../utils/bundler';
-import { packUserOp, toHex } from '../utils/helpers';
-
-
-// ── Replace with your deployed WebAuthnValidator address after deploying ──
-const WEBAUTHN_VALIDATOR_ADDR = import.meta.env.VITE_WEBAUTHN_VALIDATOR || '0x0000000000000000000000000000000000000000';
+import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579Single, getNonceForValidator } from '../utils/helpers';
 
 
 export default function WebAuthnView() {
@@ -41,7 +37,11 @@ export default function WebAuthnView() {
 
  // ── Setup form ──
  const [username, setUsername] = useState('');
- const [validatorAddr, setValidatorAddr] = useState(WEBAUTHN_VALIDATOR_ADDR);
+ const [validatorAddr, setValidatorAddr] = useState(env.WEBAUTHN_VALIDATOR || "");
+
+ useEffect(() => {
+   setValidatorAddr(env.WEBAUTHN_VALIDATOR || "");
+ }, [env.WEBAUTHN_VALIDATOR]);
  const [registering, setRegistering] = useState(false);
  const [installing, setInstalling] = useState(false);
 
@@ -127,7 +127,7 @@ export default function WebAuthnView() {
    setInstalling(true);
    setGlobalLoading(true, 'Installing WebAuthn Validator Module...');
    try {
-     await installWebAuthnValidator(smartAccountAddress, validatorAddr, qx, qy, signer);
+     await installWebAuthnValidator(smartAccountAddress, validatorAddr, qx, qy, signer, env.K1_VALIDATOR);
      toast.success('WebAuthn Validator installed! Your smart account can now be controlled by your passkey.');
      await refreshStatus();
    } catch (err) {
@@ -144,15 +144,13 @@ export default function WebAuthnView() {
     setInstalling(true);
     setGlobalLoading(true, 'Uninstalling WebAuthn Validator Module...');
     try {
-      const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
+      const accountIface = new ethers.Interface(SmartAccountABI);
+      const innerCallData = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, "0x"]);
+      const callData = encodeERC7579Single(smartAccountAddress, 0n, innerCallData);
 
-      const provider = signer.provider;
-      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
-      const overrides = { maxPriorityFeePerGas, maxFeePerGas };
-
-      const tx = await account.uninstallModule(1, validatorAddr, "0x", overrides);
-      await tx.wait();
-      toast.success('WebAuthn Validator uninstalled! You can now install a new passkey.');
+      const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+      
+      toast.success(`WebAuthn Validator uninstalled! OpHash: ${shortenAddress(opHash)}`);
       await refreshStatus();
     } catch (err) {
       console.error(err);
@@ -209,13 +207,9 @@ export default function WebAuthnView() {
      const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
 
 
-     // Build callData for execute(target, value, data)
+     // Build callData using ERC-7579 format
      const value = ethers.parseEther(execValue || '0');
-     const callData = account.interface.encodeFunctionData('execute(address,uint256,bytes)', [
-       execTarget,
-       value,
-       execData || '0x',
-     ]);
+     const callData = encodeERC7579Single(execTarget, value, execData || '0x');
 
 
      // Build UserOp
@@ -229,7 +223,7 @@ export default function WebAuthnView() {
          BUNDLER_URL = BUNDLER_URL.replace("11155111", "80002");
        }
      }
-     const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
+     const nonce = await entryPoint.getNonce(smartAccountAddress, getNonceForValidator(validatorAddr));
 
      const unpackedUserOp = {
        sender: smartAccountAddress,
@@ -246,16 +240,28 @@ export default function WebAuthnView() {
        paymasterVerificationGasLimit: "0x",
        paymasterPostOpGasLimit: "0x",
        paymasterData: "0x",
-       signature: "0x"
+       signature: ethers.AbiCoder.defaultAbiCoder().encode(
+        ["uint256", "uint256", "uint256", "uint256", "bytes", "string"],
+        [
+          0n, 0n, 0n, 0n,
+          "0x00000000000000000000000000000000000000000000000000000000000000000000000000",
+          '{"type":"webauthn.get","challenge":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx","origin":"http://localhost:5173","crossOrigin":false}'
+        ]
+       )
      };
 
      try {
        const est = await estimateUserOperationGas(unpackedUserOp);
-       unpackedUserOp.callGasLimit = toHex(est.callGasLimit);
-       unpackedUserOp.verificationGasLimit = toHex(est.verificationGasLimit);
-       unpackedUserOp.preVerificationGas = toHex(est.preVerificationGas);
-     } catch (e) {
-       console.warn("WebAuthn estimation failed, using fallbacks:", e);
+       
+       const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
+       const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
+       const pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
+
+       unpackedUserOp.callGasLimit = toHex(callGasWithMargin);
+       unpackedUserOp.verificationGasLimit = toHex(vgfWithMargin);
+       unpackedUserOp.preVerificationGas = toHex(pvgWithMargin);
+     } catch (err) {
+       console.warn("WebAuthn estimation failed, using fallbacks:", err);
        unpackedUserOp.callGasLimit = toHex(200000);
        unpackedUserOp.verificationGasLimit = toHex(250000);
        unpackedUserOp.preVerificationGas = toHex(50000);

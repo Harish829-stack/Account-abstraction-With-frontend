@@ -139,8 +139,7 @@ export default function BatchSendView() {
       }
     }
 
-    const saIface = new ethers.Interface(SmartAccountABI);
-    return saIface.encodeFunctionData("executeBatch", [dest, value, func]);
+    return encodeERC7579Batch(dest, value, func);
   };
 
   const handleEstimateGas = async () => {
@@ -172,9 +171,13 @@ export default function BatchSendView() {
 
       const est = await estimateUserOperationGas(userOp);
       
-      setCallGasLimit(BigInt(est.callGasLimit).toString());
-      setVerificationGasLimit(BigInt(est.verificationGasLimit).toString());
-      const pvg = BigInt(est.preVerificationGas).toString();
+      const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
+      const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
+      const pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
+
+      setCallGasLimit(callGasWithMargin.toString());
+      setVerificationGasLimit(vgfWithMargin.toString());
+      const pvg = pvgWithMargin.toString();
       setPreVerificationGas(pvg);
 
       // Compute dual-currency gas fees
@@ -230,9 +233,14 @@ export default function BatchSendView() {
       // Try to estimate gas dynamically right before sending WITHOUT the paymaster
       try {
         const est = await estimateUserOperationGas(userOp);
-        userOp.callGasLimit = toHex(est.callGasLimit);
-        userOp.verificationGasLimit = toHex(est.verificationGasLimit);
-        userOp.preVerificationGas = toHex(est.preVerificationGas);
+        
+        const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
+        const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
+        const pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
+
+        userOp.callGasLimit = toHex(callGasWithMargin);
+        userOp.verificationGasLimit = toHex(vgfWithMargin);
+        userOp.preVerificationGas = toHex(pvgWithMargin);
       } catch (err) {
         console.warn("Estimation failed, using UI inputs as fallback", err);
         if (callGasLimit && verificationGasLimit && preVerificationGas) {

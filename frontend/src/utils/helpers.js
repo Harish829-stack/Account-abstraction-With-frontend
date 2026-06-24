@@ -1,4 +1,5 @@
 import { ethers } from 'ethers';
+import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from './bundler';
 
 export function toHex(value) {
   return "0x" + BigInt(value).toString(16);
@@ -79,29 +80,127 @@ export function packUserOp(userOp) {
 }
 
 export function encodeERC7579Single(target, value, callData) {
-    const EXEC_MODE_DEFAULT = "0x0100000000000000000000000000000000000000000000000000000000000000";
-    const abiCoder = new ethers.AbiCoder();
-    const executionCalldata = abiCoder.encode(
-        ["address", "uint256", "bytes"],
-        [target, value, callData]
-    );
+    const EXEC_MODE_DEFAULT = "0x0000000000000000000000000000000000000000000000000000000000000000";
+    const executionCalldata = ethers.concat([
+        target,
+        ethers.zeroPadValue(ethers.toBeHex(value), 32),
+        callData
+    ]);
     const nexusIface = new ethers.Interface(["function execute(bytes32 mode, bytes calldata executionCalldata)"]);
     return nexusIface.encodeFunctionData("execute", [EXEC_MODE_DEFAULT, executionCalldata]);
 }
 
 export function encodeERC7579Batch(targets, values, callDatas) {
-    const EXEC_MODE_BATCH = "0x0100000000000000000000000000000000000000000000000000000000000001";
+    const EXEC_MODE_BATCH = "0x0100000000000000000000000000000000000000000000000000000000000000";
     const abiCoder = new ethers.AbiCoder();
     const executions = targets.map((target, i) => ({
         target,
         value: values[i],
         callData: callDatas[i]
     }));
-    // Execution[] is tuple(address target, uint256 value, bytes callData)[]
     const executionCalldata = abiCoder.encode(
         ["tuple(address target, uint256 value, bytes callData)[]"],
         [executions]
     );
     const nexusIface = new ethers.Interface(["function execute(bytes32 mode, bytes calldata executionCalldata)"]);
     return nexusIface.encodeFunctionData("execute", [EXEC_MODE_BATCH, executionCalldata]);
+}
+
+export function getNonceForValidator(validatorAddress) {
+    // Nexus nonce key layout: [3 bytes empty][1 byte mode][20 bytes validator]
+    // For default execution mode (0x00), the key is exactly the validator address.
+    return BigInt(validatorAddress);
+}
+
+export async function buildAndSendAccountOp(
+  signer, 
+  provider, 
+  smartAccountAddress, 
+  callData, 
+  entryPointAddress, 
+  validatorAddress
+) {
+    const entryPoint = new ethers.Contract(
+      entryPointAddress, 
+      [
+        "function getNonce(address sender, uint192 key) view returns (uint256)", 
+        "function getUserOpHash(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature)) view returns (bytes32)"
+      ], 
+      provider
+    );
+    
+    let nonce;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        nonce = await entryPoint.getNonce(smartAccountAddress, getNonceForValidator(validatorAddress, 0));
+        break;
+      } catch (e) {
+        if (attempt === 2) throw e;
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      }
+    }
+
+    const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+
+    const rpcUserOp = {
+        sender: smartAccountAddress,
+        nonce: toHex(nonce),
+        factory: "0x",
+        factoryData: "0x",
+        callData,
+        callGasLimit: "0x0",
+        verificationGasLimit: "0x0",
+        preVerificationGas: "0x0",
+        maxFeePerGas: toHex(maxFeePerGas),
+        maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
+        paymaster: "0x",
+        paymasterVerificationGasLimit: "0x",
+        paymasterPostOpGasLimit: "0x",
+        paymasterData: "0x",
+        // This MUST be a mathematically valid ECDSA signature, otherwise ECDSA.recover reverts!
+        signature: "0xb4a4a8d05903b41bf3ec2f1fbf2a2753a80db61b8f041498801ceb3252a1baea26e3863a35bce34c1184d0ef620e7f78083c27e8a93e36eab0f2bc0da26427a11c",
+    };
+
+    try {
+        const est = await estimateUserOperationGas(rpcUserOp);
+        
+        // Add a 20% margin to all gas limits to prevent execution reverts due to minor state fluctuations
+        const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
+        const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
+        const pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
+
+        rpcUserOp.callGasLimit = toHex(callGasWithMargin);
+        rpcUserOp.verificationGasLimit = toHex(vgfWithMargin);
+        rpcUserOp.preVerificationGas = toHex(pvgWithMargin);
+    } catch (estErr) {
+        console.error("Gas estimation failed:", estErr.message);
+        throw new Error("Gas estimation failed: " + estErr.message);
+    }
+
+    const packedOp = packUserOp(rpcUserOp);
+    const userOpHash = await entryPoint.getUserOpHash(packedOp);
+
+    const rawSig = await signer.signMessage(ethers.getBytes(userOpHash));
+    rpcUserOp.signature = rawSig;
+
+    const opHash = await sendUserOperation(rpcUserOp);
+    return opHash;
+}
+
+export async function getPrevValidator(accountAddr, targetValidator, provider) {
+    try {
+        const abi = ["function getValidatorsPaginated(address cursor, uint256 size) view returns (address[] memory array, address next)"];
+        const account = new ethers.Contract(accountAddr, abi, provider);
+        const res = await account.getValidatorsPaginated("0x0000000000000000000000000000000000000001", 100);
+        const validators = res[0];
+        let prev = "0x0000000000000000000000000000000000000001";
+        for (let v of validators) {
+            if (v.toLowerCase() === targetValidator.toLowerCase()) return prev;
+            prev = v;
+        }
+        return prev;
+    } catch(e) {
+        console.warn("Failed to get prev validator, defaulting to SENTINEL", e);
+        return "0x0000000000000000000000000000000000000001";
+    }
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { shortenAddress, packUserOp, encodeERC7579Single, toHex } from '../utils/helpers';
+import { shortenAddress, packUserOp, encodeERC7579Single, toHex, buildAndSendAccountOp, getNonceForValidator, getPrevValidator } from '../utils/helpers';
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
@@ -12,18 +12,12 @@ export default function SessionKeyView() {
   const toast = useToast();
 
   const [showSessionKeys, setShowSessionKeys] = useState(false);
-  const defaultValidator = isAmoy
-    ? (import.meta.env.VITE_AMOY_SESSION_KEY || "")
-    : (import.meta.env.VITE_SEPOLIA_SESSION_KEY || "");
+  const defaultValidator = env.SESSION_KEY_VALIDATOR || "";
   const [validatorAddr, setValidatorAddr] = useState(defaultValidator);
 
   useEffect(() => {
-    setValidatorAddr(
-      isAmoy
-        ? (import.meta.env.VITE_AMOY_SESSION_KEY || "")
-        : (import.meta.env.VITE_SEPOLIA_SESSION_KEY || "")
-    );
-  }, [isAmoy]);
+    setValidatorAddr(env.SESSION_KEY_VALIDATOR || "");
+  }, [env.SESSION_KEY_VALIDATOR]);
   const [isSkInstalled, setIsSkInstalled] = useState(false);
   const [checkingSk, setCheckingSk] = useState(true);
   const [sessionKeyDetails, setSessionKeyDetails] = useState(null);
@@ -112,11 +106,14 @@ export default function SessionKeyView() {
           
           let events = [];
           try {
-             // Amoy testnet often has strict block range limits, attempt last 50,000 blocks first
              events = await skValidator.queryFilter(filter, -50000, "latest");
           } catch(e) {
-             console.warn("Query from -50000 failed, trying from 0", e);
-             events = await skValidator.queryFilter(filter, 0, "latest");
+             console.warn("Query from -50000 failed, trying from -10000", e);
+             try {
+                events = await skValidator.queryFilter(filter, -10000, "latest");
+             } catch(e2) {
+                console.warn("Query from -10000 failed, cannot fetch events without archive node", e2);
+             }
           }
           
           const uniqueKeys = new Set();
@@ -148,19 +145,13 @@ export default function SessionKeyView() {
       if (!smartAccountAddress || !signer || !validatorAddr) return;
       setGlobalLoading(true, `Revoking Key ${shortenAddress(keyAddress)}...`);
       try {
-          const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
           const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
           const innerCall = skValidator.interface.encodeFunctionData("revokeSessionKey", [keyAddress]);
-          const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+          const callData = encodeERC7579Single(validatorAddr, 0n, innerCall);
+
+          const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
           
-          const tx = await account.getFunction("execute(address,uint256,bytes)")(
-              validatorAddr, 
-              0, 
-              innerCall, 
-              { maxPriorityFeePerGas, maxFeePerGas }
-          );
-          await tx.wait();
-          toast.success(`Key Revoked Successfully!`);
+          toast.success(`Key Revoked Successfully! OpHash: ${shortenAddress(opHash)}`);
           
           if (burnerKey) {
              const currentBurnerWallet = new ethers.Wallet(burnerKey);
@@ -183,14 +174,16 @@ export default function SessionKeyView() {
       if (!smartAccountAddress || !signer || !validatorAddr) return;
       setGlobalLoading(true, "Revoking Session Key...");
       try {
-          const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
-          const burnerWallet = new ethers.Wallet(burnerKey);
-          const deInitData = ethers.AbiCoder.defaultAbiCoder().encode(["address[]"], [[burnerWallet.address]]);
-          const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+          const prev = await getPrevValidator(smartAccountAddress, validatorAddr, provider);
+          const disableData = "0x";
+          const deInitData = ethers.AbiCoder.defaultAbiCoder().encode(["address", "bytes"], [prev, disableData]);
           
-          const tx = await account.uninstallModule(1, validatorAddr, deInitData, { maxPriorityFeePerGas, maxFeePerGas });
-          await tx.wait();
-          toast.success("Module Uninstalled & Session Key Revoked!");
+          const accountIface = new ethers.Interface(SmartAccountABI);
+          const callData = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, deInitData]);
+
+          const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+          
+          toast.success(`Module Uninstalled & Session Key Revoked! OpHash: ${shortenAddress(opHash)}`);
           
           localStorage.removeItem("session_burner_key");
           setBurnerKey("");
@@ -224,20 +217,21 @@ export default function SessionKeyView() {
           selector || "0x00000000",
           parsedValue,
           0, // validAfter
-          validUntilTimestamp
+          validUntilTimestamp,
+          0  // maxUses (0 = unlimited)
       ];
 
-      const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
-      
       if (!isSkInstalled) {
           // Install module with the key data
           const initData = ethers.AbiCoder.defaultAbiCoder().encode(
-              ["tuple(address,address,bytes4,uint256,uint48,uint48)[]"],
+              ["tuple(address,address,bytes4,uint256,uint48,uint48,uint256)[]"],
               [[keyData]]
           );
-          const tx = await account.installModule(1, validatorAddr, initData);
-          await tx.wait();
-          toast.success("Module Installed & Session Key Added!");
+          const accountIface = new ethers.Interface(SmartAccountABI);
+          const callData = accountIface.encodeFunctionData("installModule", [1, validatorAddr, initData]);
+          
+          const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+          toast.success(`Module Installed & Session Key Added! OpHash: ${shortenAddress(opHash)}...`);
           await checkSkModule();
       } else {
           // Module already installed — send addSessionKey as a UserOperation through the bundler.
@@ -245,66 +239,15 @@ export default function SessionKeyView() {
           const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
           const innerCall = skValidator.interface.encodeFunctionData("addSessionKey", [keyData]);
 
-          // Encode as a plain execute(address,uint256,bytes) call
-          const accountIface = new ethers.Interface(SmartAccountABI);
-          const callData = accountIface.encodeFunctionData("execute(address,uint256,bytes)", [
+          // Encode as an ERC-7579 single execution
+          const callData = encodeERC7579Single(
               validatorAddr,
               0,
-              innerCall,
-          ]);
+              innerCall
+          );
 
-          const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
-          // Retry getNonce up to 3 times with 1s delay to handle Infura 429 rate limits
-          let nonce;
-          for (let attempt = 0; attempt < 3; attempt++) {
-            try {
-              nonce = await entryPoint.getNonce(smartAccountAddress, 0);
-              break;
-            } catch (e) {
-              if (attempt === 2) throw e;
-              await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
-            }
-          }
-          const { maxPriorityFeePerGas: maxPriority, maxFeePerGas: maxFee } = await getDynamicGasFees(provider);
-
-          const rpcUserOp = {
-              sender: smartAccountAddress,
-              nonce: toHex(nonce),
-              factory: "0x",
-              factoryData: "0x",
-              callData,
-              callGasLimit: "0x0",
-              verificationGasLimit: "0x0",
-              preVerificationGas: "0x0",
-              maxFeePerGas: toHex(maxFee),
-              maxPriorityFeePerGas: toHex(maxPriority),
-              paymaster: "0x",
-              paymasterVerificationGasLimit: "0x",
-              paymasterPostOpGasLimit: "0x",
-              paymasterData: "0x",
-              signature: "0x",
-          };
-
-          try {
-              const est = await estimateUserOperationGas(rpcUserOp);
-              rpcUserOp.callGasLimit = toHex(est.callGasLimit);
-              rpcUserOp.verificationGasLimit = toHex(est.verificationGasLimit);
-              rpcUserOp.preVerificationGas = toHex(est.preVerificationGas);
-          } catch (estErr) {
-              console.warn("Gas estimation failed, using fallback:", estErr.message);
-          }
-
-          const packedOp = packUserOp(rpcUserOp);
-          const userOpHash = await entryPoint.getUserOpHash(packedOp);
-
-          // Sign with the EOA owner. The contract's validateUserOp uses native ECDSA when
-          // signature length == 65 (no prefix needed). Prepending an address would make it
-          // 85 bytes and cause it to route to a validator module → AA23.
-          const rawSig = await signer.signMessage(ethers.getBytes(userOpHash));
-          rpcUserOp.signature = rawSig; // exactly 65 bytes
-
-          const opHash = await sendUserOperation(rpcUserOp);
-          toast.success(`Session Key adding! OpHash: ${opHash.slice(0, 12)}...`);
+          const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+          toast.success(`Session Key adding! OpHash: ${shortenAddress(opHash)}...`);
           await checkSkModule();
       }
     } catch (err) {
@@ -330,11 +273,11 @@ export default function SessionKeyView() {
           const value = ethers.parseEther(execValue || "0");
           const data = execData || "0x";
           
-          const callData = account.interface.encodeFunctionData("execute(address,uint256,bytes)", [target, value, data]);
+          const callData = encodeERC7579Single(target, value, data);
 
           const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
 
-          const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
+          const nonce = await entryPoint.getNonce(smartAccountAddress, getNonceForValidator(validatorAddr));
 
           const rpcUserOp = {
               sender: smartAccountAddress,
@@ -356,9 +299,14 @@ export default function SessionKeyView() {
 
           try {
             const est = await estimateUserOperationGas(rpcUserOp);
-            rpcUserOp.callGasLimit = toHex(est.callGasLimit);
-            rpcUserOp.verificationGasLimit = toHex(est.verificationGasLimit);
-            rpcUserOp.preVerificationGas = toHex(est.preVerificationGas);
+            
+            const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
+            const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
+            const pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
+
+            rpcUserOp.callGasLimit = toHex(callGasWithMargin);
+            rpcUserOp.verificationGasLimit = toHex(vgfWithMargin);
+            rpcUserOp.preVerificationGas = toHex(pvgWithMargin);
           } catch (err) {
             console.warn("SessionKey estimation failed, using fallback:", err);
           }
@@ -369,9 +317,8 @@ export default function SessionKeyView() {
           // Sign the hash with the burner wallet
           const rawSignature = await burnerWallet.signMessage(ethers.getBytes(userOpHash));
           
-          // Pack the signature: Validator (20) + SessionKey (20) + ECDSA (65)
+          // Pack the signature: SessionKey (20) + ECDSA (65) = 85 bytes
           const packedSignature = ethers.concat([
-              validatorAddr,
               burnerWallet.address,
               rawSignature
           ]);
@@ -471,7 +418,7 @@ export default function SessionKeyView() {
                                             <div className="grid gap-4">
                                                 <div>
                                                     <label className="text-xs text-slate-400 mb-1 block">Validator Address</label>
-                                                    <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" placeholder="0x..." value={validatorAddr} onChange={(e) => setValidatorAddr(e.target.value)} />
+                                                    <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-500 text-sm cursor-not-allowed" value={validatorAddr} disabled />
                                                 </div>
                                                 <div>
                                                     <label className="text-xs text-slate-400 mb-1 block">Burner Private Key (Stored locally)</label>

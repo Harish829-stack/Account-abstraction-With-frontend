@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { shortenAddress, encodeERC7579Single, packUserOp, toHex } from '../utils/helpers';
+import { shortenAddress, encodeERC7579Single, encodeERC7579Batch, packUserOp, toHex, buildAndSendAccountOp, getPrevValidator, getNonceForValidator } from '../utils/helpers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { Shield, CheckCircle, UserPlus, PlayCircle, Settings, ChevronRight, XCircle, Trash2 } from 'lucide-react';
-import { SmartAccountABI, IEntryPointABI, SocialRecoveryValidatorABI } from '../utils/abis';
+import { SmartAccountABI, IEntryPointABI, SocialRecoveryValidatorABI, K1ValidatorABI } from '../utils/abis';
 import { estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
 import SessionKeyView from './SessionKeyView';
 
@@ -14,16 +14,12 @@ export default function ProfileView() {
 
   // --- SOCIAL RECOVERY STATE ---
   const [showRecovery, setShowRecovery] = useState(false);
-  const defaultValidator = isAmoy ? (import.meta.env.VITE_AMOY_SOCIAL_RECOVERY || "") : (import.meta.env.VITE_SEPOLIA_SOCIAL_RECOVERY || "");
+  const defaultValidator = env.SOCIAL_RECOVERY_VALIDATOR || "";
   const [validatorAddr, setValidatorAddr] = useState(defaultValidator);
 
   useEffect(() => {
-    setValidatorAddr(
-      isAmoy
-        ? (import.meta.env.VITE_AMOY_SOCIAL_RECOVERY || "")
-        : (import.meta.env.VITE_SEPOLIA_SOCIAL_RECOVERY || "")
-    );
-  }, [isAmoy]);
+    setValidatorAddr(env.SOCIAL_RECOVERY_VALIDATOR || "");
+  }, [env.SOCIAL_RECOVERY_VALIDATOR]);
   const [isRecoveryInstalled, setIsRecoveryInstalled] = useState(false);
   const [checkingRecovery, setCheckingRecovery] = useState(true);
   const [recoveryDetails, setRecoveryDetails] = useState(null);
@@ -79,6 +75,14 @@ export default function ProfileView() {
         toast.error("Please fill in validator and all 3 guardian addresses.");
         return;
     }
+    if (!ethers.isAddress(validatorAddr)) {
+        toast.error("Invalid Validator Address");
+        return;
+    }
+    if (!ethers.isAddress(guardianOne) || !ethers.isAddress(guardianTwo) || !ethers.isAddress(guardianThree)) {
+        toast.error("One or more guardian addresses are invalid. Please make sure they are valid Ethereum addresses (0x...).");
+        return;
+    }
     setIsInstalling(true);
     setGlobalLoading(true, "Installing Recovery Module...");
     try {
@@ -86,13 +90,13 @@ export default function ProfileView() {
         ["address[]", "uint16", "uint48"],
         [[guardianOne, guardianTwo, guardianThree], Number(threshold), 0]
       );
-      const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
-      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
-      const overrides = { maxPriorityFeePerGas, maxFeePerGas };
-      const tx = await account.installModule(1, validatorAddr, initData, overrides);
-      await tx.wait();
       
-      toast.success("Social Recovery Module Installed Successfully!");
+      const accountIface = new ethers.Interface(SmartAccountABI);
+      const callData = accountIface.encodeFunctionData("installModule", [1, validatorAddr, initData]);
+      
+      const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+      
+      toast.success(`Social Recovery Module Installed Successfully! OpHash: ${shortenAddress(opHash)}`);
       await checkRecoveryModule();
     } catch (err) {
       console.error(err);
@@ -115,19 +119,11 @@ export default function ProfileView() {
               return;
           }
 
-          const filter = recoveryValidator.filters.SocialRecoveryInstalled(smartAccountAddress);
-          let events = [];
-          try {
-             events = await recoveryValidator.queryFilter(filter, -50000, "latest");
-          } catch(e) {
-             console.warn("Query from -50000 failed, trying from 0", e);
-             events = await recoveryValidator.queryFilter(filter, 0, "latest");
-          }
-          
           let guardians = [];
-          if (events.length > 0) {
-              const latestEvent = events[events.length - 1];
-              guardians = [...latestEvent.args.guardians];
+          try {
+              guardians = await recoveryValidator.getGuardians(smartAccountAddress);
+          } catch (e) {
+              console.warn("Failed to get guardians directly from contract", e);
           }
 
           setRecoveryDetails({
@@ -138,7 +134,7 @@ export default function ProfileView() {
           });
       } catch (err) {
           console.error("Error querying recovery details:", err);
-          toast.error("Failed to query recovery details");
+          // don't toast error here if it's just a query failure
       } finally {
           setQueryingRecovery(false);
       }
@@ -148,20 +144,20 @@ export default function ProfileView() {
     if (!smartAccountAddress || !signer || !validatorAddr) return;
     setGlobalLoading(true, "Uninstalling Module...");
     try {
-        const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
-        
-        // Pass the actual guardians to properly delete them from the mapping on-chain
         let guardiansToClear = [];
         if (recoveryDetails && recoveryDetails.guardians) {
             guardiansToClear = recoveryDetails.guardians;
         }
+        const prev = await getPrevValidator(smartAccountAddress, validatorAddr, provider);
+        const disableData = ethers.AbiCoder.defaultAbiCoder().encode(["address[]"], [guardiansToClear]);
+        const deInitData = ethers.AbiCoder.defaultAbiCoder().encode(["address", "bytes"], [prev, disableData]);
+        
+        const accountIface = new ethers.Interface(SmartAccountABI);
+        const callData = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, deInitData]);
 
-        const deInitData = ethers.AbiCoder.defaultAbiCoder().encode(["address[]"], [guardiansToClear]);
-        const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
-        const overrides = { maxPriorityFeePerGas, maxFeePerGas };
-        const tx = await account.uninstallModule(1, validatorAddr, deInitData, overrides);
-        await tx.wait();
-        toast.success("Module Uninstalled.");
+        const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+        
+        toast.success(`Module Uninstalled. OpHash: ${shortenAddress(opHash)}`);
         await checkRecoveryModule();
         setShowRecovery(false); // Close the view on success
     } catch (err) {
@@ -242,20 +238,18 @@ export default function ProfileView() {
           
           const recoveryValidatorContract = new ethers.Contract(validatorAddr, SocialRecoveryValidatorABI, provider);
           const clearRecoveryData = recoveryValidatorContract.interface.encodeFunctionData("clearRecovery", [newOwner]);
-          const changeOwnerData = account.interface.encodeFunctionData("changeOwner", [newOwner]);
+          const k1Validator = new ethers.Contract(env.K1_VALIDATOR, K1ValidatorABI, provider);
+          const changeOwnerData = k1Validator.interface.encodeFunctionData("transferOwnership", [newOwner]);
 
-          const callData = account.interface.encodeFunctionData("executeBatch", [
-              [validatorAddr, targetSmartAccount],
+          const callData = encodeERC7579Batch(
+              [validatorAddr, env.K1_VALIDATOR],
               [0, 0],
               [clearRecoveryData, changeOwnerData]
-          ]);
-          const signature = ethers.concat([
-              validatorAddr,
-              ethers.AbiCoder.defaultAbiCoder().encode(["address"], [newOwner])
-          ]);
+          );
+          const signature = ethers.AbiCoder.defaultAbiCoder().encode(["address"], [newOwner]);
 
           const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, signer);
-          const nonce = await entryPoint.getNonce(targetSmartAccount, 0);
+          const nonce = await entryPoint.getNonce(targetSmartAccount, getNonceForValidator(validatorAddr));
 
           const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
 
@@ -274,7 +268,7 @@ export default function ProfileView() {
               paymasterVerificationGasLimit: "0x",
               paymasterPostOpGasLimit: "0x",
               paymasterData: "0x",
-              signature: signature
+              signature: "0x" // Placeholder for estimation
           };
 
           try {
@@ -289,7 +283,19 @@ export default function ProfileView() {
              userOp.preVerificationGas = toHex(50000);
           }
 
-          const packedOp = packUserOp(userOp);
+          let packedOp = packUserOp(userOp);
+          const userOpHash = await entryPoint.getUserOpHash(packedOp);
+          
+          // Sign the userOpHash with the connected wallet (must be newOwner)
+          const rawSig = await signer.signMessage(ethers.getBytes(userOpHash));
+          
+          // Pack the signature: abi.encode(newOwner) + ECDSA signature (97 bytes)
+          userOp.signature = ethers.concat([
+              ethers.AbiCoder.defaultAbiCoder().encode(["address"], [newOwner]),
+              rawSig
+          ]);
+          
+          packedOp = packUserOp(userOp);
 
           try {
               await entryPoint.getFunction("handleOps").staticCall([packedOp], await signer.getAddress());
@@ -419,7 +425,7 @@ export default function ProfileView() {
                                             <div className="flex flex-col gap-4">
                                                 <div>
                                                     <label className="text-xs text-slate-400 mb-1 block">Validator Address</label>
-                                                    <input type="text" className="input-field bg-slate-900/50 border-emerald-500/20 text-slate-200 text-sm focus:border-emerald-500" value={validatorAddr} onChange={(e) => setValidatorAddr(e.target.value)} />
+                                                    <input type="text" className="input-field bg-slate-900/50 border-emerald-500/20 text-slate-500 text-sm cursor-not-allowed" value={validatorAddr} disabled />
                                                 </div>
 
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

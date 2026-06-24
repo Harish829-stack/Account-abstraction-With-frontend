@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.27;
 
-import "@account-abstraction/contracts/interfaces/PackedUserOperation.sol";
+import { PackedUserOperation } from "account-abstraction/interfaces/PackedUserOperation.sol";
 import "@openzeppelin/contracts/utils/cryptography/WebAuthn.sol";
 import "@openzeppelin/contracts/utils/cryptography/P256.sol";
-import "./Interfaces.sol";
+import { IValidator } from "./interfaces/modules/IValidator.sol";
+import { MODULE_TYPE_VALIDATOR } from "./types/Constants.sol";
 
 /**
  * @title WebAuthnValidator
@@ -43,7 +44,7 @@ contract WebAuthnValidator is IValidator {
 
     // ─── Constants ───────────────────────────────────────────────────────────────
 
-    uint256 internal constant MODULE_TYPE_VALIDATOR = 1;
+    // MODULE_TYPE_VALIDATOR imported from types/Constants.sol
     bytes4  internal constant ERC1271_MAGIC_VALUE   = 0x1626ba7e;
     bytes4  internal constant ERC1271_INVALID       = 0xffffffff;
 
@@ -97,16 +98,18 @@ contract WebAuthnValidator is IValidator {
      *      bytes (validator address prefix). The remaining bytes are the WebAuthn
      *      assertion encoded as (r, s, challengeIndex, typeIndex, authData, clientDataJSON).
      *
-     * @param userOp  The packed user operation (userOp.signature[20:] is our payload)
+     * @param userOp  The packed user operation — userOp.signature IS the WebAuthn payload
      * @param userOpHash  The EIP-4337 user operation hash — used as the WebAuthn challenge
+     * @dev In Nexus the validator address comes from the nonce key, NOT from the signature.
+     *      So the full signature bytes are the raw WebAuthn assertion with no prefix.
      */
     function validateUserOp(
         PackedUserOperation calldata userOp,
         bytes32 userOpHash
     ) external override returns (uint256 validationData) {
-        // signature[0:20] = validator address (already consumed by Implementation.sol)
-        // signature[20:]  = WebAuthn assertion payload
-        bytes calldata webAuthnSig = userOp.signature[20:];
+        // In Nexus: no validator address prefix in signature
+        // The entire signature IS the WebAuthn assertion payload
+        bytes calldata webAuthnSig = userOp.signature;
 
         bool valid = _verifyWebAuthn(userOp.sender, userOpHash, webAuthnSig);
         return valid ? 0 : 1;
