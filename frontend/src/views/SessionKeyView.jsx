@@ -78,12 +78,64 @@ export default function SessionKeyView() {
     loadKeyDetails();
   }, [smartAccountAddress, provider, validatorAddr, isSkInstalled, refreshTrigger]);
 
-  const generateKey = () => {
-      const wallet = ethers.Wallet.createRandom();
-      setBurnerKey(wallet.privateKey);
-      localStorage.setItem("session_burner_key", wallet.privateKey);
-      toast.success("New Burner Key generated and saved to Local Storage!");
-  };
+    const generateKey = () => {
+        const wallet = ethers.Wallet.createRandom();
+        setBurnerKey(wallet.privateKey);
+        localStorage.setItem("session_burner_key", wallet.privateKey);
+        
+        try {
+            const mapStr = localStorage.getItem("session_burner_keys_map");
+            const map = mapStr ? JSON.parse(mapStr) : {};
+            map[wallet.address.toLowerCase()] = wallet.privateKey;
+            localStorage.setItem("session_burner_keys_map", JSON.stringify(map));
+        } catch (e) {
+            console.warn("Failed to update keys map");
+        }
+        
+        toast.success("New Burner Key generated and saved to Local Storage!");
+    };
+
+    const handleUseSpecificKey = (keyAddress) => {
+        try {
+            const mapStr = localStorage.getItem("session_burner_keys_map");
+            const map = mapStr ? JSON.parse(mapStr) : {};
+            
+            // Convert to lowercase map for case-insensitive lookup
+            const lowerMap = {};
+            Object.keys(map).forEach(k => lowerMap[k.toLowerCase()] = map[k]);
+            
+            let privKey = lowerMap[keyAddress.toLowerCase()];
+            
+            // Legacy fallback: check if it's the currently active single burner key
+            if (!privKey) {
+                const legacyKey = localStorage.getItem("session_burner_key");
+                if (legacyKey) {
+                    try {
+                        const legacyWallet = new ethers.Wallet(legacyKey);
+                        if (legacyWallet.address.toLowerCase() === keyAddress.toLowerCase()) {
+                            privKey = legacyKey;
+                            // Add it to the map for future use
+                            map[keyAddress.toLowerCase()] = privKey;
+                            localStorage.setItem("session_burner_keys_map", JSON.stringify(map));
+                        }
+                    } catch (e) {}
+                }
+            }
+            
+            if (privKey) {
+                setBurnerKey(privKey);
+                localStorage.setItem("session_burner_key", privKey); // Update active key
+                setActiveTab('execute');
+                toast.success("Burner key loaded! Ready to execute.");
+            } else {
+                toast.error("Private key not found on this device! Please manually enter it in the Setup tab.");
+                setActiveTab('setup');
+            }
+        } catch (err) {
+            console.error(err);
+            toast.error("Error reading local storage.");
+        }
+    };
 
   const queryAllSessionKeys = async () => {
       if (!smartAccountAddress || !provider || !validatorAddr) return;
@@ -167,6 +219,14 @@ export default function SessionKeyView() {
       const burnerWallet = new ethers.Wallet(burnerKey);
       const sessionKeyAddr = burnerWallet.address;
       
+      // Save to local map when installing manually entered keys
+      try {
+          const mapStr = localStorage.getItem("session_burner_keys_map");
+          const map = mapStr ? JSON.parse(mapStr) : {};
+          map[sessionKeyAddr.toLowerCase()] = burnerKey;
+          localStorage.setItem("session_burner_keys_map", JSON.stringify(map));
+      } catch (e) {}
+
       const parsedValue = ethers.parseEther(maxValue || "0");
       const validUntilTimestamp = Math.floor(Date.now() / 1000) + (Number(validForMinutes) * 60);
       
@@ -402,7 +462,7 @@ export default function SessionKeyView() {
                                             </div>
                                             <div>
                                                 <label className="text-xs text-slate-400 mb-1 block">Valid For (Minutes)</label>
-                                                <input type="number" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={validForMinutes} onChange={(e) => setValidForMinutes(e.target.value)} />
+                                                <input type="number" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-validForMinutes" value={validForMinutes} onChange={(e) => setValidForMinutes(e.target.value)} />
                                             </div>
                                         </div>
                                     </div>
@@ -457,12 +517,20 @@ export default function SessionKeyView() {
                                                         <div className="text-sm font-mono text-purple-200">{sk.address}</div>
                                                         <div className="text-xs text-purple-400/70 mt-0.5">Expires: {new Date(sk.validUntil * 1000).toLocaleString()}</div>
                                                     </div>
-                                                    <button 
-                                                        onClick={() => handleRevokeSpecificKey(sk.address)}
-                                                        className="px-3 py-1 bg-red-500/20 hover:bg-red-500/40 text-red-400 border border-red-500/30 rounded-md text-xs font-bold transition-all"
-                                                    >
-                                                        Revoke Key
-                                                    </button>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => handleUseSpecificKey(sk.address)}
+                                                            className="px-3 py-1 bg-blue-500/20 hover:bg-blue-500/40 text-blue-400 border border-blue-500/30 rounded-md text-xs font-bold transition-all"
+                                                        >
+                                                            Use Key
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleRevokeSpecificKey(sk.address)}
+                                                            className="px-3 py-1 bg-red-500/20 hover:bg-red-500/40 text-red-400 border border-red-500/30 rounded-md text-xs font-bold transition-all"
+                                                        >
+                                                            Revoke Key
+                                                        </button>
+                                                    </div>
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-2 text-xs bg-black/40 p-2 rounded-lg border border-white/5">
                                                     <div>

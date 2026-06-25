@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAppContext } from '../context/AppContext';
 import { shortenAddress } from '../utils/helpers';
-import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, LayoutDashboard, Shield, Fingerprint } from 'lucide-react';
+import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, LayoutDashboard, Shield, Fingerprint, Globe, ChevronDown } from 'lucide-react';
 
 export default function Navbar() {
   const { eoaAddress, smartAccountAddress, disconnect, currentView, setCurrentView, chainId, switchNetwork } = useAppContext();
@@ -41,19 +41,27 @@ export default function Navbar() {
         </div>
 
         <div className="wallet-topbar__actions flex items-center gap-3">
-          <select 
-            className="text-xs font-semibold bg-slate-800 text-white border border-slate-600 rounded px-3 py-1.5 outline-none cursor-pointer focus:border-primary/50"
-            value={chainId ? chainId.toString() : "11155111"}
-            onChange={(e) => {
-              const val = e.target.value;
-              if (val === "11155111") switchNetwork(11155111);
-              if (val === "80002") switchNetwork(80002);
-            }}
-          >
-            <option value="11155111">Sepolia</option>
-            <option value="80002">Amoy</option>
-            <option value="coming_soon" disabled>Coming Soon...</option>
-          </select>
+          <div className="network-select-wrapper">
+            <div className="icon-left">
+              <Globe size={14} />
+            </div>
+            <select 
+              className="network-select"
+              value={chainId ? chainId.toString() : "11155111"}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "11155111") switchNetwork(11155111);
+                if (val === "80002") switchNetwork(80002);
+              }}
+            >
+              <option value="11155111">Sepolia</option>
+              <option value="80002">Amoy</option>
+              <option value="coming_soon" disabled>More Networks Soon...</option>
+            </select>
+            <div className="icon-right">
+              <ChevronDown size={14} />
+            </div>
+          </div>
 
           <div className="wallet-eoa">
             EOA: {shortenAddress(eoaAddress)}
