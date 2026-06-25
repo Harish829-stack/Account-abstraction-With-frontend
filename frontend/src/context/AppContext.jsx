@@ -266,7 +266,7 @@ export const AppProvider = ({ children }) => {
       setSaEntryPointDeposit(deposit.toString());
 
       try {
-        const k1Address = (currentChainId === 80002) ? import.meta.env.VITE_AMOY_K1_VALIDATOR : import.meta.env.VITE_K1_VALIDATOR;
+        const k1Address = import.meta.env.VITE_K1_VALIDATOR;
         const k1Validator = new ethers.Contract(k1Address, K1ValidatorABI, _provider);
         const owner = await k1Validator.getOwner(saAddress);
         setSaOwner(owner);
@@ -644,19 +644,19 @@ export const AppProvider = ({ children }) => {
     recentOps, loadingOps, fetchRecentOps,
     env: {
       ENTRY_POINT: import.meta.env.VITE_ENTRY_POINT,
-      FACTORY: isAmoy ? import.meta.env.VITE_AMOY_FACTORY : import.meta.env.VITE_FACTORY,
+      FACTORY: import.meta.env.VITE_FACTORY,
       USDC_TOKEN: getUsdcAddress(),
-      PRICE_FEED: isAmoy ? "0x2A60D7e36FC5FDa6e97aE2C7d054656382f730D7" : import.meta.env.VITE_PRICE_FEED,
+      PRICE_FEED: isAmoy ? import.meta.env.VITE_MOCK_AGGREGATOR : import.meta.env.VITE_PRICE_FEED,
       BUNDLER_URL: isAmoy 
         ? (import.meta.env.VITE_PIMLICO_BUNDLER_URL ? import.meta.env.VITE_PIMLICO_BUNDLER_URL.replace("137", "80002") : import.meta.env.VITE_SKANDHA_RPC_URL.replace("11155111", "80002"))
         : import.meta.env.VITE_SKANDHA_RPC_URL,
       VERIFYING_SIGNER: import.meta.env.VITE_VERIFYING_SIGNER,
-      K1_VALIDATOR: isAmoy ? import.meta.env.VITE_AMOY_K1_VALIDATOR : import.meta.env.VITE_K1_VALIDATOR,
-      SOCIAL_RECOVERY_VALIDATOR: isAmoy ? import.meta.env.VITE_AMOY_SOCIAL_RECOVERY : import.meta.env.VITE_SOCIAL_RECOVERY_VALIDATOR,
-      SESSION_KEY_VALIDATOR: isAmoy ? import.meta.env.VITE_AMOY_SESSION_KEY : import.meta.env.VITE_SESSION_KEY_VALIDATOR,
-      WEBAUTHN_VALIDATOR: isAmoy ? import.meta.env.VITE_AMOY_WEBAUTHN_VALIDATOR : import.meta.env.VITE_WEBAUTHN_VALIDATOR,
-      NEXUS_IMPLEMENTATION: isAmoy ? import.meta.env.VITE_AMOY_NEXUS_IMPLEMENTATION : import.meta.env.VITE_NEXUS_IMPLEMENTATION,
-      NEXUS_BOOTSTRAP: isAmoy ? import.meta.env.VITE_AMOY_NEXUS_BOOTSTRAP : import.meta.env.VITE_NEXUS_BOOTSTRAP,
+      K1_VALIDATOR: import.meta.env.VITE_K1_VALIDATOR,
+      SOCIAL_RECOVERY_VALIDATOR: import.meta.env.VITE_SOCIAL_RECOVERY_VALIDATOR,
+      SESSION_KEY_VALIDATOR: import.meta.env.VITE_SESSION_KEY_VALIDATOR,
+      WEBAUTHN_VALIDATOR: import.meta.env.VITE_WEBAUTHN_VALIDATOR,
+      NEXUS_IMPLEMENTATION: import.meta.env.VITE_NEXUS_IMPLEMENTATION,
+      NEXUS_BOOTSTRAP: import.meta.env.VITE_NEXUS_BOOTSTRAP,
     }
   };
 

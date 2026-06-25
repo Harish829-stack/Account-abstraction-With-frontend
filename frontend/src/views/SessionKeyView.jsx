@@ -104,14 +104,22 @@ export default function SessionKeyView() {
           const filter = skValidator.filters.SessionKeyAdded(smartAccountAddress);
           
           let events = [];
+          const currentBlock = await provider.getBlockNumber();
           try {
-             events = await skValidator.queryFilter(filter, -50000, "latest");
+             const fromBlock = Math.max(0, currentBlock - 45000);
+             events = await skValidator.queryFilter(filter, fromBlock, currentBlock);
           } catch(e) {
-             console.warn("Query from -50000 failed, trying from -10000", e);
+             console.warn("Query from 45000 blocks back failed, trying from 5000", e);
              try {
-                events = await skValidator.queryFilter(filter, -10000, "latest");
+                const fromBlock = Math.max(0, currentBlock - 5000);
+                events = await skValidator.queryFilter(filter, fromBlock, currentBlock);
              } catch(e2) {
-                console.warn("Query from -10000 failed, cannot fetch events without archive node", e2);
+                console.warn("Query failed, trying from 0", e2);
+                try {
+                    events = await skValidator.queryFilter(filter, 0, currentBlock);
+                } catch(e3) {
+                    console.error("All block queries failed:", e3);
+                }
              }
           }
           
