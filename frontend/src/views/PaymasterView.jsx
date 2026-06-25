@@ -217,7 +217,7 @@ export default function PaymasterView() {
             data: data,
             value: ethers.parseEther(adminDepositAmount)
         });
-    }, "Deposit ETH to EntryPoint");
+    }, `Deposit ${nativeToken} to EntryPoint`);
   };
 
   const handleAdminStake = async () => {
@@ -253,7 +253,7 @@ export default function PaymasterView() {
   };
 
   const handleDeposit = () => executePmAction(
-    pm => pm.deposit({ value: ethers.parseEther(depositAmount) }), "Deposit ETH"
+    pm => pm.deposit({ value: ethers.parseEther(depositAmount) }), "Deposit " + nativeToken
   );
 
   const handleStake = () => executePmAction(
@@ -261,7 +261,7 @@ export default function PaymasterView() {
   );
 
   const handleWithdrawEth = () => executePmAction(
-    pm => pm.withdrawTo(wEthAddress, ethers.parseEther(wEthAmount)), "Withdraw ETH"
+    pm => pm.withdrawTo(wEthAddress, ethers.parseEther(wEthAmount)), "Withdraw " + nativeToken
   );
   
   const handleWithdrawUsdc = () => executePmAction(

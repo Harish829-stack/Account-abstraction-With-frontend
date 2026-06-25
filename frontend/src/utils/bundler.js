@@ -56,8 +56,13 @@ export async function estimateUserOperationGas(userOp) {
     );
 
     const data = res.data;
-    if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-    
+    if (data.error) {
+      let msg = data.error.message || JSON.stringify(data.error);
+      if (msg.includes("AA21")) {
+        msg = "Insufficient balance: Smart Account doesn't have enough native tokens to pay for gas (AA21). Please fund it or use a Paymaster.";
+      }
+      throw new Error(msg);
+    }
     // Automatically pad the gas estimates to prevent AA26 errors across all views
     const est = data.result;
     if (est) {
@@ -136,7 +141,11 @@ export async function sendUserOperation(userOp) {
 
     const data = res.data;
     if (data.error) {
-      throw new Error(data.error.message || JSON.stringify(data.error));
+      let msg = data.error.message || JSON.stringify(data.error);
+      if (msg.includes("AA21")) {
+        msg = "Insufficient balance: Smart Account doesn't have enough native tokens to pay for gas (AA21). Please fund it or use a Paymaster.";
+      }
+      throw new Error(msg);
     }
     return data.result; // This is the userOpHash
   } catch (error) {

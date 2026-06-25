@@ -171,7 +171,7 @@ export default function AccountSetupView() {
   const handleDepositSA = async () => {
     if (!depositSAmount || !smartAccountAddress || !signer) return;
     setPendingSDeposit(true);
-    setGlobalLoading(true, "Depositing ETH to Smart Account...");
+    setGlobalLoading(true, `Depositing ${nativeToken} to Smart Account...`);
     try {
       const tx = await signer.sendTransaction({
         to: smartAccountAddress,
@@ -193,7 +193,7 @@ export default function AccountSetupView() {
   const handleDepositEP = async () => {
     if (!depositEPAmount || !smartAccountAddress || !signer) return;
     setPendingEPDeposit(true);
-    setGlobalLoading(true, "Depositing ETH to EntryPoint...");
+    setGlobalLoading(true, `Depositing ${nativeToken} to EntryPoint...`);
     try {
       const saContract = new ethers.Contract(smartAccountAddress, SmartAccountABI, signer);
       const tx = await saContract.addDeposit({ value: ethers.parseEther(depositEPAmount) });

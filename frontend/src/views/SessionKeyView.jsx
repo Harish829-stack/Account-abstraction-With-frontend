@@ -8,7 +8,7 @@ import { Key, PlusCircle, Zap, Settings, ChevronRight, XCircle } from 'lucide-re
 import { SmartAccountABI, IEntryPointABI, SessionKeyValidatorABI } from '../utils/abis';
 
 export default function SessionKeyView() {
-  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, isAmoy } = useAppContext();
+  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, isAmoy, refreshTrigger, nativeToken } = useAppContext();
   const toast = useToast();
 
   const [showSessionKeys, setShowSessionKeys] = useState(false);
@@ -52,7 +52,6 @@ export default function SessionKeyView() {
           setCheckingSk(false);
           return;
       }
-      setCheckingSk(true);
       try {
           const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
           const installed = await account.isModuleInstalled(1, validatorAddr, "0x");
@@ -88,7 +87,7 @@ export default function SessionKeyView() {
 
   useEffect(() => {
     checkSkModule();
-  }, [smartAccountAddress, signer, validatorAddr]);
+  }, [smartAccountAddress, signer, validatorAddr, refreshTrigger]);
 
   const generateKey = () => {
       const wallet = ethers.Wallet.createRandom();
@@ -406,73 +405,58 @@ export default function SessionKeyView() {
                                             <h3 className="text-lg font-bold text-amber-400 drop-shadow-sm">Create Session Key</h3>
                                             <p className="text-xs text-amber-100/50 mt-1">Configure restrictions for your burner key.</p>
                                         </div>
-                                        {!sessionKeyDetails && (
-                                            <button onClick={generateKey} className="px-3 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-md text-xs font-bold hover:bg-amber-500/30 transition-all flex items-center gap-1">
-                                                <PlusCircle size={14}/> Generate Key
-                                            </button>
-                                        )}
+                                        <button onClick={generateKey} className="px-3 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-md text-xs font-bold hover:bg-amber-500/30 transition-all flex items-center gap-1">
+                                            <PlusCircle size={14}/> Generate Key
+                                        </button>
                                     </div>
                                     
-                                    {!sessionKeyDetails ? (
-                                        <>
-                                            <div className="grid gap-4">
-                                                <div>
-                                                    <label className="text-xs text-slate-400 mb-1 block">Validator Address</label>
-                                                    <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-500 text-sm cursor-not-allowed" value={validatorAddr} disabled />
-                                                </div>
-                                                <div>
-                                                    <label className="text-xs text-slate-400 mb-1 block">Burner Private Key (Stored locally)</label>
-                                                    <input type="password" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" placeholder="0x..." value={burnerKey} onChange={(e) => setBurnerKey(e.target.value)} />
-                                                </div>
+                                    <div className="grid gap-4">
+                                        <div>
+                                            <label className="text-xs text-slate-400 mb-1 block">Validator Address</label>
+                                            <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-500 text-sm cursor-not-allowed" value={validatorAddr} disabled />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-slate-400 mb-1 block">Burner Private Key (Stored locally)</label>
+                                            <input type="password" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" placeholder="0x..." value={burnerKey} onChange={(e) => setBurnerKey(e.target.value)} />
+                                        </div>
 
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="text-xs text-slate-400 mb-1 block">Target Contract (0x0 for any)</label>
-                                                        <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={targetAddr} onChange={(e) => setTargetAddr(e.target.value)} />
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-xs text-slate-400 mb-1 block">Function Selector (0x0 for any)</label>
-                                                        <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={selector} onChange={(e) => setSelector(e.target.value)} />
-                                                    </div>
-                                                </div>
-
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="text-xs text-slate-400 mb-1 block">Max Value (ETH)</label>
-                                                        <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={maxValue} onChange={(e) => setMaxValue(e.target.value)} />
-                                                    </div>
-                                                    <div>
-                                                        <label className="text-xs text-slate-400 mb-1 block">Valid For (Minutes)</label>
-                                                        <input type="number" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={validForMinutes} onChange={(e) => setValidForMinutes(e.target.value)} />
-                                                    </div>
-                                                </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="text-xs text-slate-400 mb-1 block">Target Contract (0x0 for any)</label>
+                                                <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={targetAddr} onChange={(e) => setTargetAddr(e.target.value)} />
                                             </div>
-
-                                            <button 
-                                                className="w-full mt-2 py-3 rounded-lg font-bold text-black bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all border-none"
-                                                onClick={handleInstallAndAddKey}
-                                            >
-                                                {isSkInstalled ? "Add Session Key" : "Install Module & Add Key"}
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <div className="p-4 bg-amber-950/40 border border-amber-500/30 rounded-xl">
-                                            <h4 className="text-sm font-bold text-amber-400 mb-3">Active Session Key Details</h4>
-                                            <div className="grid grid-cols-2 gap-3 text-sm">
-                                                <div className="text-slate-400">Burner Key:</div>
-                                                <div className="text-slate-200 font-mono truncate">{sessionKeyDetails.address}</div>
-                                                <div className="text-slate-400">Target Contract:</div>
-                                                <div className="text-slate-200 font-mono truncate">{sessionKeyDetails.target === ethers.ZeroAddress ? 'Any Contract' : sessionKeyDetails.target}</div>
-                                                <div className="text-slate-400">Max Value:</div>
-                                                <div className="text-slate-200">{sessionKeyDetails.maxValue} ETH</div>
-                                                <div className="text-slate-400">Expires:</div>
-                                                <div className="text-slate-200">{new Date(sessionKeyDetails.validUntil * 1000).toLocaleString()}</div>
+                                            <div>
+                                                <label className="text-xs text-slate-400 mb-1 block">Function Selector (0x0 for any)</label>
+                                                <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={selector} onChange={(e) => setSelector(e.target.value)} />
                                             </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="text-xs text-slate-400 mb-1 block">Max Value ({nativeToken})</label>
+                                                <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={maxValue} onChange={(e) => setMaxValue(e.target.value)} />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs text-slate-400 mb-1 block">Valid For (Minutes)</label>
+                                                <input type="number" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" value={validForMinutes} onChange={(e) => setValidForMinutes(e.target.value)} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <button 
+                                        className="w-full mt-2 py-3 rounded-lg font-bold text-black bg-gradient-to-r from-amber-500 to-yellow-400 hover:from-amber-400 hover:to-yellow-300 shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all border-none"
+                                        onClick={handleInstallAndAddKey}
+                                    >
+                                        {isSkInstalled ? "Add Session Key" : "Install Module & Add Key"}
+                                    </button>
+
+                                    {isSkInstalled && (
+                                        <div className="mt-4 pt-4 border-t border-amber-500/20">
                                             <button 
-                                                className="w-full mt-5 py-3 rounded-lg font-bold text-white bg-red-500/20 hover:bg-red-500/40 border border-red-500/50 transition-all text-sm flex items-center justify-center gap-2"
+                                                className="w-full py-3 rounded-lg font-bold text-white bg-red-500/20 hover:bg-red-500/40 border border-red-500/50 transition-all text-sm flex items-center justify-center gap-2"
                                                 onClick={handleRevokeOrUninstall}
                                             >
-                                                <XCircle size={16} /> Revoke Key & Uninstall Module
+                                                <XCircle size={16} /> Uninstall Session Key Module
                                             </button>
                                         </div>
                                     )}
@@ -522,7 +506,7 @@ export default function SessionKeyView() {
                                                         <span className="text-slate-300 truncate block">{sk.target === ethers.ZeroAddress ? 'Any' : shortenAddress(sk.target)}</span>
                                                     </div>
                                                     <div>
-                                                        <span className="text-slate-500 block">Max ETH</span>
+                                                        <span className="text-slate-500 block">Max {nativeToken}</span>
                                                         <span className="text-slate-300 block">{sk.maxValue}</span>
                                                     </div>
                                                 </div>
@@ -546,7 +530,7 @@ export default function SessionKeyView() {
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <label className="text-xs text-blue-300 mb-1 block">Value (ETH)</label>
+                                                <label className="text-xs text-blue-300 mb-1 block">Value ({nativeToken})</label>
                                                 <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-blue-500" placeholder="0.0" value={execValue} onChange={(e) => setExecValue(e.target.value)} />
                                             </div>
                                             <div>

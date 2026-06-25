@@ -17,7 +17,7 @@ const UNISWAP_ROUTER = '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E';
 const WETH_SEPOLIA = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
 
 const features = [
-  { icon: <Zap size={28} />, title: "Gas Abstraction", description: "Pay fees in USDC, no ETH required." },
+  { icon: <Zap size={28} />, title: "Gas Abstraction", description: "Pay fees in USDC, no native token required." },
   { icon: <ShieldCheck size={28} />, title: "Smart Ownership", description: "Upgrade, transfer, or recover ownership anytime." },
   { icon: <Layers size={28} />, title: "Batch Transactions", description: "Execute multiple actions in one UserOperation." },
   { icon: <Gift size={28} />, title: "Sponsored Transactions", description: "Let a Paymaster cover gas costs entirely." },
@@ -223,12 +223,12 @@ function ConnectedDashboard() {
     }
 
     if (parseFloat(saETHBalance || "0") < parseFloat(swapAmount || "0.001")) {
-      toast.error("Not enough ETH in Smart Account to swap!");
+      toast.error(`Not enough ${nativeToken} in Smart Account to swap!`);
       return;
     }
 
     setSwapping(true);
-    setGlobalLoading(true, "Swapping ETH to USDC...");
+    setGlobalLoading(true, `Swapping ${nativeToken} to USDC...`);
     try {
       const amtIn = ethers.parseEther(swapAmount || "0.001");
 
@@ -297,12 +297,12 @@ function ConnectedDashboard() {
       const hash = await entryPoint.getUserOpHash(packUserOp(userOp));
       userOp.signature = await signer.signMessage(ethers.getBytes(hash));
 
-      toast.info("Sending UserOp to swap ETH for USDC...");
+      toast.info(`Sending UserOp to swap ${nativeToken} for USDC...`);
       const opHash = await sendUserOperation(userOp);
       toast.success("Bundler accepted the transaction!");
 
       // Fire and forget — global tracker handles confirmation in background
-      trackOp(opHash, 'ETH → USDC Swap');
+      trackOp(opHash, `${nativeToken} → USDC Swap`);
       toast.withAction(
         'Swap submitted to bundler!',
         'View in History →',

@@ -13,12 +13,12 @@ import {
   verifyPublicKeyMatch,
 } from '../utils/webauthn';
 import { getDynamicGasFees, estimateUserOperationGas } from '../utils/bundler';
-import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579Single, getNonceForValidator } from '../utils/helpers';
+import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579Single, getNonceForValidator, getPrevValidator } from '../utils/helpers';
 
 
-export default function WebAuthnView() {
- const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, trackOp, chainId, isAmoy } = useAppContext();
- const toast = useToast();
+ export default function WebAuthnView() {
+  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, trackOp, chainId, isAmoy, refreshTrigger, nativeToken } = useAppContext();
+  const toast = useToast();
 
 
  // ── Panel toggle ──
@@ -64,7 +64,6 @@ export default function WebAuthnView() {
      setCheckingStatus(false);
      return;
    }
-   setCheckingStatus(true);
    try {
      const installed = await isWebAuthnInstalled(smartAccountAddress, validatorAddr, provider);
      setIsInstalled(installed);
@@ -78,7 +77,7 @@ export default function WebAuthnView() {
 
  useEffect(() => {
    refreshStatus();
- }, [smartAccountAddress, provider, validatorAddr]);
+ }, [smartAccountAddress, provider, validatorAddr, refreshTrigger]);
 
 
  // ─────────────────────────────────────────────────────────────────
@@ -139,13 +138,17 @@ export default function WebAuthnView() {
    }
  };
 
- const handleUninstall = async () => {
+  const handleUninstall = async () => {
     if (!smartAccountAddress || !signer || !validatorAddr) return;
     setInstalling(true);
     setGlobalLoading(true, 'Uninstalling WebAuthn Validator Module...');
     try {
+      const prev = await getPrevValidator(smartAccountAddress, validatorAddr, provider);
+      const disableData = "0x";
+      const deInitData = ethers.AbiCoder.defaultAbiCoder().encode(["address", "bytes"], [prev, disableData]);
+
       const accountIface = new ethers.Interface(SmartAccountABI);
-      const innerCallData = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, "0x"]);
+      const innerCallData = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, deInitData]);
       const callData = encodeERC7579Single(smartAccountAddress, 0n, innerCallData);
 
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
@@ -313,7 +316,13 @@ export default function WebAuthnView() {
 
 
      const result = await response.json();
-     if (result.error) throw new Error('Bundler rejected: ' + (result.error.message || JSON.stringify(result.error)));
+     if (result.error) {
+       let msg = result.error.message || JSON.stringify(result.error);
+       if (msg.includes("AA21")) {
+         msg = "Insufficient balance: Smart Account doesn't have enough native tokens to pay for gas (AA21). Please fund it or use a Paymaster.";
+       }
+       throw new Error('Bundler rejected: ' + msg);
+     }
 
 
      const opHash = result.result;
@@ -613,7 +622,7 @@ export default function WebAuthnView() {
                  </div>
                  <div className="grid grid-cols-2 gap-4">
                    <div>
-                     <label className="text-xs text-indigo-300 mb-1 block">Value (ETH)</label>
+                     <label className="text-xs text-indigo-300 mb-1 block">Value ({nativeToken})</label>
                      <input
                        type="text"
                        className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-indigo-500"

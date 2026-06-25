@@ -46,7 +46,6 @@ export default function ProfileView() {
           setCheckingRecovery(false);
           return;
       }
-      setCheckingRecovery(true);
       try {
           const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
           const installed = await account.isModuleInstalled(1, validatorAddr, "0x");
