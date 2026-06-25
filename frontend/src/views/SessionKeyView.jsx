@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { shortenAddress, packUserOp, encodeERC7579Single, toHex, buildAndSendAccountOp, getNonceForValidator, getPrevValidator } from '../utils/helpers';
+import { shortenAddress, packUserOp, encodeERC7579Single, toHex, buildAndSendAccountOp, getNonceForValidator, getPrevValidator, getActiveSessionKeysOnChain } from '../utils/helpers';
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
@@ -8,7 +8,7 @@ import { Key, PlusCircle, Zap, Settings, ChevronRight, XCircle } from 'lucide-re
 import { SmartAccountABI, IEntryPointABI, SessionKeyValidatorABI } from '../utils/abis';
 
 export default function SessionKeyView() {
-  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, isAmoy, refreshTrigger, nativeToken } = useAppContext();
+  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, isAmoy, refreshTrigger, nativeToken, installedModules, refreshInstalledModules } = useAppContext();
   const toast = useToast();
 
   const [showSessionKeys, setShowSessionKeys] = useState(false);
@@ -18,10 +18,12 @@ export default function SessionKeyView() {
   useEffect(() => {
     setValidatorAddr(env.SESSION_KEY_VALIDATOR || "");
   }, [env.SESSION_KEY_VALIDATOR]);
-  const [isSkInstalled, setIsSkInstalled] = useState(false);
-  const [checkingSk, setCheckingSk] = useState(true);
+
+  // Read module install status from context (fetched via getValidatorsPaginated on connect)
+  const isSkInstalled = installedModules.hasSessionKey;
+  const checkingSk = false; // No per-view polling needed
+
   const [sessionKeyDetails, setSessionKeyDetails] = useState(null);
-  
   const [allSessionKeys, setAllSessionKeys] = useState([]);
   const [querying, setQuerying] = useState(false);
 
@@ -47,47 +49,34 @@ export default function SessionKeyView() {
     }
   }, []);
 
-  const checkSkModule = async () => {
-      if (!smartAccountAddress || !provider || !validatorAddr) {
-          setCheckingSk(false);
-          return;
-      }
-      try {
-          const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
-          const installed = await account.isModuleInstalled(1, validatorAddr, "0x");
-          setIsSkInstalled(installed);
-
-          const storedKey = localStorage.getItem("session_burner_key");
-          if (installed && storedKey) {
-              const burnerWallet = new ethers.Wallet(storedKey);
-              const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
-              const skData = await skValidator.sessionKeys(burnerWallet.address, smartAccountAddress);
-              
-              if (skData.enabled) {
-                  setSessionKeyDetails({
-                      address: burnerWallet.address,
-                      target: skData.target,
-                      selector: skData.selector,
-                      maxValue: ethers.formatEther(skData.maxValue),
-                      validUntil: Number(skData.validUntil)
-                  });
-              } else {
-                  setSessionKeyDetails(null);
-              }
-          } else {
-              setSessionKeyDetails(null);
-          }
-      } catch (err) {
-          setIsSkInstalled(false);
-          setSessionKeyDetails(null);
-      } finally {
-          setCheckingSk(false);
-      }
-  };
-
+  // Load session key details when module is installed and burner key exists
   useEffect(() => {
-    checkSkModule();
-  }, [smartAccountAddress, signer, validatorAddr, refreshTrigger]);
+    const loadKeyDetails = async () => {
+      if (!smartAccountAddress || !provider || !validatorAddr || !isSkInstalled) {
+        setSessionKeyDetails(null);
+        return;
+      }
+      const storedKey = localStorage.getItem("session_burner_key");
+      if (!storedKey) { setSessionKeyDetails(null); return; }
+      try {
+        const burnerWallet = new ethers.Wallet(storedKey);
+        const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
+        const skData = await skValidator.sessionKeys(burnerWallet.address, smartAccountAddress);
+        if (skData.enabled) {
+          setSessionKeyDetails({
+            address: burnerWallet.address,
+            target: skData.target,
+            selector: skData.selector,
+            maxValue: ethers.formatEther(skData.maxValue),
+            validUntil: Number(skData.validUntil)
+          });
+        } else {
+          setSessionKeyDetails(null);
+        }
+      } catch { setSessionKeyDetails(null); }
+    };
+    loadKeyDetails();
+  }, [smartAccountAddress, provider, validatorAddr, isSkInstalled, refreshTrigger]);
 
   const generateKey = () => {
       const wallet = ethers.Wallet.createRandom();
@@ -100,45 +89,7 @@ export default function SessionKeyView() {
       if (!smartAccountAddress || !provider || !validatorAddr) return;
       setQuerying(true);
       try {
-          const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
-          const filter = skValidator.filters.SessionKeyAdded(smartAccountAddress);
-          
-          let events = [];
-          const currentBlock = await provider.getBlockNumber();
-          try {
-             const fromBlock = Math.max(0, currentBlock - 45000);
-             events = await skValidator.queryFilter(filter, fromBlock, currentBlock);
-          } catch(e) {
-             console.warn("Query from 45000 blocks back failed, trying from 5000", e);
-             try {
-                const fromBlock = Math.max(0, currentBlock - 5000);
-                events = await skValidator.queryFilter(filter, fromBlock, currentBlock);
-             } catch(e2) {
-                console.warn("Query failed, trying from 0", e2);
-                try {
-                    events = await skValidator.queryFilter(filter, 0, currentBlock);
-                } catch(e3) {
-                    console.error("All block queries failed:", e3);
-                }
-             }
-          }
-          
-          const uniqueKeys = new Set();
-          events.forEach(e => uniqueKeys.add(e.args.sessionKey));
-
-          const activeKeys = [];
-          for (let key of uniqueKeys) {
-              const skData = await skValidator.sessionKeys(key, smartAccountAddress);
-              if (skData.enabled) {
-                  activeKeys.push({
-                      address: key,
-                      target: skData.target,
-                      selector: skData.selector,
-                      maxValue: ethers.formatEther(skData.maxValue),
-                      validUntil: Number(skData.validUntil)
-                  });
-              }
-          }
+          const activeKeys = await getActiveSessionKeysOnChain(validatorAddr, smartAccountAddress, provider);
           setAllSessionKeys(activeKeys);
       } catch (err) {
           console.error("Error querying session keys:", err);
@@ -195,7 +146,8 @@ export default function SessionKeyView() {
           localStorage.removeItem("session_burner_key");
           setBurnerKey("");
           setSessionKeyDetails(null);
-          await checkSkModule();
+          // Refresh the global module status in context
+          await refreshInstalledModules();
       } catch (err) {
           console.error(err);
           toast.error(err.reason || err.message || "Failed to uninstall module");
@@ -228,7 +180,12 @@ export default function SessionKeyView() {
           0  // maxUses (0 = unlimited)
       ];
 
-      if (!isSkInstalled) {
+      // Always do a fresh on-chain check right before sending the op.
+      // The context-based isSkInstalled may be stale if the page just loaded.
+      const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
+      const moduleActuallyInstalled = await account.isModuleInstalled(1, validatorAddr, "0x");
+
+      if (!moduleActuallyInstalled) {
           // Install module with the key data
           const initData = ethers.AbiCoder.defaultAbiCoder().encode(
               ["tuple(address,address,bytes4,uint256,uint48,uint48,uint256)[]"],
@@ -239,10 +196,9 @@ export default function SessionKeyView() {
           
           const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
           toast.success(`Module Installed & Session Key Added! OpHash: ${shortenAddress(opHash)}...`);
-          await checkSkModule();
+          await refreshInstalledModules();
       } else {
-          // Module already installed — send addSessionKey as a UserOperation through the bundler.
-          // Smart accounts reject direct EOA calls to execute(); it must come from the EntryPoint.
+          // Module already installed on-chain — send addSessionKey directly via UserOp
           const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
           const innerCall = skValidator.interface.encodeFunctionData("addSessionKey", [keyData]);
 
@@ -255,7 +211,7 @@ export default function SessionKeyView() {
 
           const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
           toast.success(`Session Key adding! OpHash: ${shortenAddress(opHash)}...`);
-          await checkSkModule();
+          await queryAllSessionKeys();
       }
     } catch (err) {
       console.error(err);

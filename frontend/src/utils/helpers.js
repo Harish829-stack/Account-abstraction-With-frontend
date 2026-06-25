@@ -204,3 +204,85 @@ export async function getPrevValidator(accountAddr, targetValidator, provider) {
         return "0x0000000000000000000000000000000000000001";
     }
 }
+
+/**
+ * Fetches all installed validator modules from the smart account using
+ * getValidatorsPaginated (one call per page), then compares the results
+ * against known module addresses from the env config.
+ *
+ * Returns an object: { hasSessionKey, hasSocialRecovery, hasWebAuthn, rawValidators }
+ * Store this in AppContext so all views read from it without individual isModuleInstalled() calls.
+ */
+export async function getInstalledModules(smartAccountAddress, provider, env) {
+    const SENTINEL = "0x0000000000000000000000000000000000000001";
+    const abi = ["function getValidatorsPaginated(address cursor, uint256 size) view returns (address[] memory array, address next)"];
+    const account = new ethers.Contract(smartAccountAddress, abi, provider);
+
+    let allValidators = [];
+    let cursor = SENTINEL;
+    const PAGE_SIZE = 10;
+
+    try {
+        while (true) {
+            const [page, next] = await account.getValidatorsPaginated(cursor, PAGE_SIZE);
+            allValidators.push(...page);
+            // When next == SENTINEL we have fetched every page
+            if (next.toLowerCase() === SENTINEL.toLowerCase()) break;
+            cursor = next;
+        }
+    } catch (e) {
+        console.warn("getValidatorsPaginated failed:", e);
+        return { hasSessionKey: false, hasSocialRecovery: false, hasWebAuthn: false, rawValidators: [] };
+    }
+
+    const lower = (addr) => (addr || "").toLowerCase();
+
+    return {
+        hasSessionKey:     allValidators.some(v => lower(v) === lower(env.SESSION_KEY_VALIDATOR)),
+        hasSocialRecovery: allValidators.some(v => lower(v) === lower(env.SOCIAL_RECOVERY_VALIDATOR)),
+        hasWebAuthn:       allValidators.some(v => lower(v) === lower(env.WEBAUTHN_VALIDATOR)),
+        rawValidators:     allValidators,
+    };
+}
+
+/**
+ * Fetches the list of active session key addresses directly from the contract.
+ * Then fetches the full details for each key from the sessionKeys mapping.
+ * No event log scanning needed.
+ */
+export async function getActiveSessionKeysOnChain(validatorAddr, smartAccountAddress, provider) {
+    const abi = [
+        "function getActiveSessionKeys(address smartAccount) external view returns (address[] memory)",
+        "function sessionKeys(address sessionKey, address smartAccount) view returns (address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil, bool enabled, uint256 maxUses, uint256 uses)"
+    ];
+    try {
+        const skValidator = new ethers.Contract(validatorAddr, abi, provider);
+        const keyAddresses = await skValidator.getActiveSessionKeys(smartAccountAddress);
+
+        const activeKeys = [];
+        for (const keyAddr of keyAddresses) {
+            try {
+                const skData = await skValidator.sessionKeys(keyAddr, smartAccountAddress);
+                if (skData.enabled) {
+                    activeKeys.push({
+                        address: keyAddr,
+                        target: skData.target,
+                        selector: skData.selector,
+                        maxValue: ethers.formatEther(skData.maxValue),
+                        validUntil: Number(skData.validUntil),
+                        validAfter: Number(skData.validAfter),
+                        maxUses: Number(skData.maxUses),
+                        uses: Number(skData.uses),
+                    });
+                }
+            } catch (e) {
+                console.warn("Failed to fetch details for session key:", keyAddr, e);
+            }
+        }
+        return activeKeys;
+    } catch (e) {
+        console.error("getActiveSessionKeysOnChain failed:", e);
+        return [];
+    }
+}
+

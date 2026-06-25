@@ -3,6 +3,7 @@ import { ethers } from "ethers";
 import { IEntryPointABI, SmartAccountABI, ERC20_ABI, K1ValidatorABI } from "../utils/abis";
 import { useToast } from "./ToastContext";
 import { getUserOpReceipt } from "../utils/bundler";
+import { getInstalledModules } from "../utils/helpers";
 
 const AppContext = createContext();
 
@@ -61,6 +62,16 @@ export const AppProvider = ({ children }) => {
   const [saEURCBalance, setSaEURCBalance] = useState("0");
   const [saEntryPointDeposit, setSaEntryPointDeposit] = useState("0");
   const [saOwner, setSaOwner] = useState("");
+
+  // Module installation status — fetched once via getValidatorsPaginated on connect
+  // { hasSessionKey, hasSocialRecovery, hasWebAuthn, rawValidators }
+  const [installedModules, setInstalledModules] = useState({
+    hasSessionKey: false,
+    hasSocialRecovery: false,
+    hasWebAuthn: false,
+    rawValidators: [],
+  });
+  const [loadingModules, setLoadingModules] = useState(false);
 
   const [paymasterAddress, setPaymasterAddress] = useState(import.meta.env.VITE_PAYMASTER || "");
   const [pmETHBalance, setPmEthBalance] = useState("0");
@@ -277,6 +288,28 @@ export const AppProvider = ({ children }) => {
       console.error("Error loading SA details:", err);
     }
   };
+
+  /**
+   * Fetches installed modules via getValidatorsPaginated and updates installedModules state.
+   * Call this once on smart account connect and after any installModule / uninstallModule op.
+   */
+  const refreshInstalledModules = useCallback(async (saAddress = smartAccountAddress, _provider = provider, _env = null) => {
+    if (!saAddress || !_provider) return;
+    setLoadingModules(true);
+    try {
+      const envConfig = _env || {
+        SESSION_KEY_VALIDATOR:     import.meta.env.VITE_SESSION_KEY_VALIDATOR,
+        SOCIAL_RECOVERY_VALIDATOR: import.meta.env.VITE_SOCIAL_RECOVERY_VALIDATOR,
+        WEBAUTHN_VALIDATOR:        import.meta.env.VITE_WEBAUTHN_VALIDATOR,
+      };
+      const modules = await getInstalledModules(saAddress, _provider, envConfig);
+      setInstalledModules(modules);
+    } catch (e) {
+      console.warn("refreshInstalledModules failed:", e);
+    } finally {
+      setLoadingModules(false);
+    }
+  }, [smartAccountAddress, provider]);
 
   // Re-fetch Paymaster details
   const loadPaymasterDetails = async (pmAddress, _provider = provider) => {
@@ -624,6 +657,8 @@ export const AppProvider = ({ children }) => {
     if (smartAccountAddress) {
       loadSmartAccountDetails(smartAccountAddress);
       fetchRecentOps(smartAccountAddress);
+      // Fetch installed modules from blockchain once on connect
+      refreshInstalledModules(smartAccountAddress, provider);
     }
   }, [smartAccountAddress]);
 
@@ -639,6 +674,8 @@ export const AppProvider = ({ children }) => {
     pmETHBalance, pmUSDCBalance, pmDeposit, pmStake, pmUnstakeDelay, pmTokenSymbol, pmTokenDecimals,
     connectWallet, disconnect, isConnecting, switchNetwork,
     loadEOABalances, loadSmartAccountDetails, loadPaymasterDetails, refreshAllData, refreshTrigger,
+    // Module installation status (blockchain-sourced, device-agnostic)
+    installedModules, loadingModules, refreshInstalledModules,
     pendingUserOps, addPendingUserOp,
     trackedOps, trackOp,
     recentOps, loadingOps, fetchRecentOps,

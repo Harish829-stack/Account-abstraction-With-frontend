@@ -27,6 +27,8 @@ export const SmartAccountABI = [
   "function uninstallModule(uint256 moduleTypeId, address module, bytes calldata deInitData) external payable",
   "function isModuleInstalled(uint256 moduleTypeId, address module, bytes calldata additionalContext) external view returns (bool)",
   "function supportsModule(uint256 moduleTypeId) external view returns (bool)",
+  // Nexus-specific validator enumeration
+  "function getValidatorsPaginated(address cursor, uint256 size) external view returns (address[] memory array, address next)",
   // Nexus-specific
   "function accountId() external pure returns (string memory)",
   "function isInitialized() external view returns (bool)",
@@ -89,6 +91,14 @@ export const SessionKeyValidatorABI = [
   "function addSessionKey(tuple(address sessionKey, address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil, uint256 maxUses) keyData) external",
   "function revokeSessionKey(address sessionKey) external",
   "function sessionKeys(address account, address sessionKey) view returns (address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil, bool enabled, uint256 maxUses, uint256 uses)",
+  "function getActiveSessionKeys(address smartAccount) external view returns (address[] memory)",
   "event SessionKeyAdded(address indexed smartAccount, address indexed sessionKey, address indexed target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil)",
   "event SessionKeyRevoked(address indexed smartAccount, address indexed sessionKey)"
+];
+
+export const WebAuthnValidatorABI = [
+  "function pubKeyX(address smartAccount) external view returns (bytes32)",
+  "function pubKeyY(address smartAccount) external view returns (bytes32)",
+  "function isInitialized(address smartAccount) external view returns (bool)",
+  "event WebAuthnKeyRegistered(address indexed smartAccount, bytes32 qx, bytes32 qy)"
 ];

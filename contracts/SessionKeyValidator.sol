@@ -52,6 +52,13 @@ contract SessionKeyValidator is IValidator {
     // Track number of active session keys per account for isInitialized
     mapping(address => uint256) private _sessionKeyCount;
 
+    // On-chain enumerable list of active session key addresses per account
+    // Enables getActiveSessionKeys() without event log scanning
+    mapping(address => address[]) private _accountSessionKeys;
+
+    // Index of each session key in _accountSessionKeys for O(1) removal
+    mapping(address => mapping(address => uint256)) private _sessionKeyIndex;
+
     event SessionKeyAdded(
         address indexed smartAccount,
         address indexed sessionKey,
@@ -77,17 +84,17 @@ contract SessionKeyValidator is IValidator {
         }
     }
 
-    function onUninstall(bytes calldata data) external override {
-        // Guard: empty data means just uninstall cleanly with no key cleanup
-        if (data.length < 32) return;
-        address[] memory keys = abi.decode(data, (address[]));
+    function onUninstall(bytes calldata /*data*/) external override {
+        address smartAccount = msg.sender;
+        address[] storage keys = _accountSessionKeys[smartAccount];
         for (uint256 i = 0; i < keys.length; i++) {
-            if (sessionKeys[keys[i]][msg.sender].enabled) {
-                delete sessionKeys[keys[i]][msg.sender];
-                if (_sessionKeyCount[msg.sender] > 0) _sessionKeyCount[msg.sender]--;
-                emit SessionKeyRevoked(msg.sender, keys[i]);
-            }
+            address key = keys[i];
+            delete sessionKeys[key][smartAccount];
+            delete _sessionKeyIndex[smartAccount][key];
+            emit SessionKeyRevoked(smartAccount, key);
         }
+        delete _accountSessionKeys[smartAccount];
+        delete _sessionKeyCount[smartAccount];
     }
 
     function isModuleType(uint256 moduleTypeId) external pure override returns (bool) {
@@ -169,8 +176,15 @@ contract SessionKeyValidator is IValidator {
     function revokeSessionKey(address sessionKey) external {
         if (!sessionKeys[sessionKey][msg.sender].enabled) revert SessionKeyNotEnabled();
         delete sessionKeys[sessionKey][msg.sender];
+        _removeFromList(msg.sender, sessionKey);
         if (_sessionKeyCount[msg.sender] > 0) _sessionKeyCount[msg.sender]--;
         emit SessionKeyRevoked(msg.sender, sessionKey);
+    }
+
+    /// @notice Returns all currently active session key addresses for a given smart account.
+    /// @dev Reads directly from on-chain storage — no event scanning needed.
+    function getActiveSessionKeys(address smartAccount) external view returns (address[] memory) {
+        return _accountSessionKeys[smartAccount];
     }
 
     // ─── Internal ────────────────────────────────────────────────────────────────
@@ -194,6 +208,15 @@ contract SessionKeyValidator is IValidator {
             uses: 0
         });
 
+        // Add to the enumerable list (only if not already present)
+        if (_sessionKeyIndex[smartAccount][keyData.sessionKey] == 0 &&
+            (_accountSessionKeys[smartAccount].length == 0 ||
+             _accountSessionKeys[smartAccount][0] != keyData.sessionKey)) {
+            _accountSessionKeys[smartAccount].push(keyData.sessionKey);
+            // Store 1-based index to distinguish "not in list" (0) from "index 0"
+            _sessionKeyIndex[smartAccount][keyData.sessionKey] = _accountSessionKeys[smartAccount].length;
+        }
+
         _sessionKeyCount[smartAccount]++;
 
         emit SessionKeyAdded(
@@ -205,6 +228,25 @@ contract SessionKeyValidator is IValidator {
             keyData.validAfter,
             keyData.validUntil
         );
+    }
+
+    /// @dev Removes a session key from _accountSessionKeys using swap-and-pop (O(1)).
+    function _removeFromList(address smartAccount, address sessionKey) internal {
+        uint256 idx1Based = _sessionKeyIndex[smartAccount][sessionKey];
+        if (idx1Based == 0) return; // Not in list
+
+        uint256 idx = idx1Based - 1;
+        address[] storage list = _accountSessionKeys[smartAccount];
+        uint256 lastIdx = list.length - 1;
+
+        if (idx != lastIdx) {
+            address lastKey = list[lastIdx];
+            list[idx] = lastKey;
+            _sessionKeyIndex[smartAccount][lastKey] = idx1Based; // update moved key index
+        }
+
+        list.pop();
+        delete _sessionKeyIndex[smartAccount][sessionKey];
     }
 
     function _isPolicyActive(SessionKey memory policy) internal pure returns (bool) {

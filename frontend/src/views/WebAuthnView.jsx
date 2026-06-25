@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { Fingerprint, ShieldCheck, Zap, Settings, ChevronRight, XCircle, CheckCircle, AlertTriangle, Loader } from 'lucide-react';
-import { SmartAccountABI, IEntryPointABI } from '../utils/abis';
+import { Fingerprint, ShieldCheck, Zap, Settings, ChevronRight, XCircle, CheckCircle, AlertTriangle, Loader, RefreshCw } from 'lucide-react';
+import { SmartAccountABI, IEntryPointABI, WebAuthnValidatorABI } from '../utils/abis';
 import {
   registerPasskey,
   loadPasskeyCredential,
@@ -13,11 +13,11 @@ import {
   verifyPublicKeyMatch,
 } from '../utils/webauthn';
 import { getDynamicGasFees, estimateUserOperationGas } from '../utils/bundler';
-import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579Single, getNonceForValidator, getPrevValidator } from '../utils/helpers';
+import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579Batch, encodeERC7579Single, getNonceForValidator, getPrevValidator } from '../utils/helpers';
 
 
  export default function WebAuthnView() {
-  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, trackOp, chainId, isAmoy, refreshTrigger, nativeToken } = useAppContext();
+  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, trackOp, chainId, isAmoy, refreshTrigger, nativeToken, installedModules, refreshInstalledModules } = useAppContext();
   const toast = useToast();
 
 
@@ -26,9 +26,13 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
  const [activeTab, setActiveTab] = useState('setup'); // 'setup' | 'sign'
 
 
- // ── Module status ──
- const [isInstalled, setIsInstalled] = useState(false);
- const [checkingStatus, setCheckingStatus] = useState(true);
+ // ── Module status (from blockchain-sourced context) ──
+ const isInstalled = installedModules.hasWebAuthn;
+ const checkingStatus = false; // No per-view polling needed
+
+ // ── Key mismatch: module installed on-chain but local passkey differs ──
+ const [keyMismatch, setKeyMismatch] = useState(false);
+ const [checkingMismatch, setCheckingMismatch] = useState(false);
 
 
  // ── Passkey credential (from localStorage) ──
@@ -54,30 +58,29 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
 
 
  // ─────────────────────────────────────────────────────────────────
- // Load credential + check module status
+ // Check for key mismatch whenever module status or credential changes
  // ─────────────────────────────────────────────────────────────────
- const refreshStatus = async () => {
-   setSavedCredential(loadPasskeyCredential());
-
-
-   if (!smartAccountAddress || !provider || !validatorAddr || validatorAddr === ethers.ZeroAddress) {
-     setCheckingStatus(false);
+ const checkMismatch = async () => {
+   if (!isInstalled || !validatorAddr || !smartAccountAddress || !provider) {
+     setKeyMismatch(false);
      return;
    }
+   setCheckingMismatch(true);
    try {
-     const installed = await isWebAuthnInstalled(smartAccountAddress, validatorAddr, provider);
-     setIsInstalled(installed);
+     const result = await verifyPublicKeyMatch(smartAccountAddress, validatorAddr, provider);
+     // Mismatch: module is installed but local credential doesn't match on-chain key
+     setKeyMismatch(!result.match);
    } catch {
-     setIsInstalled(false);
+     setKeyMismatch(false);
    } finally {
-     setCheckingStatus(false);
+     setCheckingMismatch(false);
    }
  };
 
-
  useEffect(() => {
-   refreshStatus();
- }, [smartAccountAddress, provider, validatorAddr, refreshTrigger]);
+   setSavedCredential(loadPasskeyCredential());
+   checkMismatch();
+ }, [isInstalled, validatorAddr, smartAccountAddress, provider, refreshTrigger]);
 
 
  // ─────────────────────────────────────────────────────────────────
@@ -128,7 +131,9 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
    try {
      await installWebAuthnValidator(smartAccountAddress, validatorAddr, qx, qy, signer, env.K1_VALIDATOR);
      toast.success('WebAuthn Validator installed! Your smart account can now be controlled by your passkey.');
-     await refreshStatus();
+     await refreshInstalledModules();
+     setKeyMismatch(false);
+     setSavedCredential(loadPasskeyCredential());
    } catch (err) {
      console.error(err);
      toast.error(err.reason || err.message || 'Installation failed.');
@@ -154,10 +159,61 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
       
       toast.success(`WebAuthn Validator uninstalled! OpHash: ${shortenAddress(opHash)}`);
-      await refreshStatus();
+      await refreshInstalledModules();
+      setKeyMismatch(false);
     } catch (err) {
       console.error(err);
       toast.error(err.reason || err.message || 'Uninstallation failed.');
+    } finally {
+      setInstalling(false);
+      setGlobalLoading(false);
+    }
+  };
+
+  /**
+   * Replace Key flow for device change:
+   * Atomically uninstalls old WebAuthn key and installs the new device's key
+   * in a single batch UserOp signed by EOA.
+   */
+  const handleReplaceKey = async () => {
+    if (!smartAccountAddress || !signer || !validatorAddr) return;
+    if (!savedCredential) {
+      toast.error('Register a new passkey first (Step 1) before replacing.');
+      return;
+    }
+    setInstalling(true);
+    setGlobalLoading(true, 'Replacing WebAuthn Key (Uninstall + Reinstall)...');
+    try {
+      const { qx, qy } = savedCredential.publicKey;
+      const prev = await getPrevValidator(smartAccountAddress, validatorAddr, provider);
+      const deInitData = ethers.AbiCoder.defaultAbiCoder().encode(
+        ["address", "bytes"], [prev, "0x"]
+      );
+      const initData = ethers.AbiCoder.defaultAbiCoder().encode(
+        ["bytes32", "bytes32"], [`0x${qx}`, `0x${qy}`]
+      );
+
+      const accountIface = new ethers.Interface(SmartAccountABI);
+      // Build both calls
+      const uninstallCalldata = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, deInitData]);
+      const installCalldata   = accountIface.encodeFunctionData("installModule",   [1, validatorAddr, initData]);
+
+      // Batch both into a single ERC-7579 batch execution
+      const callData = encodeERC7579Batch(
+        [smartAccountAddress, smartAccountAddress],
+        [0n, 0n],
+        [uninstallCalldata, installCalldata]
+      );
+
+      const opHash = await buildAndSendAccountOp(
+        signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR
+      );
+      toast.success(`Key Replaced! New device passkey is now active. OpHash: ${shortenAddress(opHash)}`);
+      await refreshInstalledModules();
+      setKeyMismatch(false);
+    } catch (err) {
+      console.error(err);
+      toast.error(err.reason || err.message || 'Key replacement failed.');
     } finally {
       setInstalling(false);
       setGlobalLoading(false);
@@ -347,6 +403,8 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
    if (checkingStatus) return <span className="text-xs text-slate-400">Checking status...</span>;
    if (!validatorAddr || validatorAddr === ethers.ZeroAddress)
      return <span className="text-xs text-amber-400">⚠ Enter validator address</span>;
+   if (isInstalled && keyMismatch)
+     return <span className="text-xs text-orange-400 font-medium flex items-center gap-1"><AlertTriangle size={12} /> Key Mismatch — New Device Detected</span>;
    return isInstalled
      ? <span className="text-xs text-purple-400 font-medium flex items-center gap-1"><CheckCircle size={12} /> Module Active</span>
      : <span className="text-xs text-slate-400">Module Not Installed</span>;
@@ -493,6 +551,33 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
                  </p>
                </div>
 
+
+               {/* Key Mismatch Banner: shown when module is on-chain but local passkey differs */}
+               {isInstalled && keyMismatch && (
+                 <div className="flex flex-col gap-3 p-4 bg-orange-950/40 border border-orange-500/40 rounded-xl animate-fade-in">
+                   <div className="flex items-start gap-3">
+                     <AlertTriangle size={20} className="text-orange-400 shrink-0 mt-0.5" />
+                     <div>
+                       <p className="text-sm font-bold text-orange-300 m-0">New Device Detected</p>
+                       <p className="text-xs text-orange-300/70 mt-1 m-0">
+                         A WebAuthn key is installed on-chain, but it doesn't match any passkey saved in this browser.
+                         This usually means you changed devices. Register your new device's passkey (Step 1 below), then click "Replace Key" to atomically swap the old key for the new one.
+                       </p>
+                     </div>
+                   </div>
+                   <button
+                     className="w-full py-2.5 rounded-lg font-bold text-black bg-gradient-to-r from-orange-500 to-amber-400 hover:from-orange-400 hover:to-amber-300 shadow-[0_0_15px_rgba(249,115,22,0.3)] transition-all flex items-center justify-center gap-2 border-none disabled:opacity-50"
+                     onClick={handleReplaceKey}
+                     disabled={installing || !savedCredential}
+                   >
+                     {installing ? <Loader size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                     {installing ? 'Replacing...' : 'Replace Key (New Device)'}
+                   </button>
+                   {!savedCredential && (
+                     <p className="text-xs text-center text-orange-400/60">Register your new passkey in Step 1 first, then click Replace Key.</p>
+                   )}
+                 </div>
+               )}
 
                {/* Step 1 — Register Passkey */}
                <div className="flex flex-col gap-3 p-4 rounded-xl border border-purple-500/20 bg-purple-950/20">
