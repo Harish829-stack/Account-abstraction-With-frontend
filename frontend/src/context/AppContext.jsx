@@ -212,25 +212,37 @@ export const AppProvider = ({ children }) => {
 
   const expectedChainId = parseInt(import.meta.env.VITE_CHAIN_ID || 11155111);
 
-  // Re-fetch EOA balances
   const loadEOABalances = async (address, _provider = provider) => {
     if (!address || !_provider) return;
     try {
+      const network = await _provider.getNetwork();
+      const amoy = Number(network.chainId) === 80002;
+
       const ethBal = await _provider.getBalance(address);
       setEoaETHBalance(ethBal.toString());
 
-      const usdcAddress = getUsdcAddress();
+      const usdcAddress = amoy ? "0xA0C3907b1fc323AdB95dA27e08e289deaE87BD8C" : import.meta.env.VITE_USDC_TOKEN;
       if (usdcAddress) {
-        const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
-        const usdcBal = await usdc.balanceOf(address);
-        setEoaUSDCBalance(usdcBal.toString());
+        try {
+          const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
+          const usdcBal = await usdc.balanceOf(address);
+          setEoaUSDCBalance(usdcBal.toString());
+        } catch (e) {
+          console.warn("Failed to fetch EOA USDC balance:", e);
+          setEoaUSDCBalance("0");
+        }
       }
 
-      if (!isAmoy) {
-        const eurcAddress = "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4";
-        const eurc = new ethers.Contract(eurcAddress, ERC20_ABI, _provider);
-        const eurcBal = await eurc.balanceOf(address);
-        setEoaEURCBalance(eurcBal.toString());
+      if (!amoy) {
+        try {
+          const eurcAddress = "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4";
+          const eurc = new ethers.Contract(eurcAddress, ERC20_ABI, _provider);
+          const eurcBal = await eurc.balanceOf(address);
+          setEoaEURCBalance(eurcBal.toString());
+        } catch (e) {
+          console.warn("Failed to fetch EOA EURC balance:", e);
+          setEoaEURCBalance("0");
+        }
       } else {
         setEoaEURCBalance("0");
       }
@@ -243,33 +255,44 @@ export const AppProvider = ({ children }) => {
   const loadSmartAccountDetails = async (saAddress, _provider = provider) => {
     if (!saAddress || !_provider) return;
     try {
-      // Check if it exists
-      const code = await _provider.getCode(saAddress);
-      if (code === "0x") {
-        setSaETHBalance("0");
-        setSaUSDCBalance("0");
-        setSaEntryPointDeposit("0");
-        setSaOwner("");
-        return;
-      }
+      const network = await _provider.getNetwork();
+      const amoy = Number(network.chainId) === 80002;
 
       const balance = await _provider.getBalance(saAddress);
       setSaETHBalance(balance.toString());
 
-      const usdcAddress = getUsdcAddress();
+      const usdcAddress = amoy ? "0xA0C3907b1fc323AdB95dA27e08e289deaE87BD8C" : import.meta.env.VITE_USDC_TOKEN;
       if (usdcAddress) {
-        const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
-        const usdcBal = await usdc.balanceOf(saAddress);
-        setSaUSDCBalance(usdcBal.toString());
+        try {
+          const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
+          const usdcBal = await usdc.balanceOf(saAddress);
+          setSaUSDCBalance(usdcBal.toString());
+        } catch (e) {
+          console.warn("Failed to fetch SA USDC balance:", e);
+          setSaUSDCBalance("0");
+        }
       }
 
-      if (!isAmoy) {
-        const eurcAddress = "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4";
-        const eurc = new ethers.Contract(eurcAddress, ERC20_ABI, _provider);
-        const eurcBal = await eurc.balanceOf(saAddress);
-        setSaEURCBalance(eurcBal.toString());
+      if (!amoy) {
+        try {
+          const eurcAddress = "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4";
+          const eurc = new ethers.Contract(eurcAddress, ERC20_ABI, _provider);
+          const eurcBal = await eurc.balanceOf(saAddress);
+          setSaEURCBalance(eurcBal.toString());
+        } catch (e) {
+          console.warn("Failed to fetch SA EURC balance:", e);
+          setSaEURCBalance("0");
+        }
       } else {
         setSaEURCBalance("0");
+      }
+
+      // Check if it exists for contract-specific details
+      const code = await _provider.getCode(saAddress);
+      if (code === "0x") {
+        setSaEntryPointDeposit("0");
+        setSaOwner("");
+        return;
       }
 
       const entryPoint = new ethers.Contract(import.meta.env.VITE_ENTRY_POINT, IEntryPointABI, _provider);

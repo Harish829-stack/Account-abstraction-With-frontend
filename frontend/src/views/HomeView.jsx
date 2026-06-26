@@ -27,6 +27,15 @@ const features = [
 
 
 
+// ─── Number Formatter for Large Balances ────────────────────────────────────────
+const formatCurrencyCompact = (val) => {
+  return new Intl.NumberFormat('en-US', {
+    notation: val >= 1000000 ? 'compact' : 'standard',
+    maximumFractionDigits: 2,
+    minimumFractionDigits: val < 1000000 ? 2 : 0
+  }).format(val);
+};
+
 // ─── Premium SVG Donut Chart ──────────────────────────────────────────────────
 function DonutChart({ eoaUSDC, saUSDC }) {
   const total = eoaUSDC + saUSDC;
@@ -77,7 +86,7 @@ function DonutChart({ eoaUSDC, saUSDC }) {
           )}
         </svg>
         <div className="donut-center-text" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontSize:'1.4rem', fontWeight:800, color:'#141827' }}>{total.toFixed(2)}</span>
+          <span style={{ fontSize:'1.4rem', fontWeight:800, color:'#141827' }}>{formatCurrencyCompact(total)}</span>
           <span style={{ fontSize:'0.75rem', color:'var(--text-muted)', fontWeight:500, marginTop: 2 }}>USDC total</span>
         </div>
       </div>
@@ -504,7 +513,7 @@ function ConnectedDashboard() {
           {/* Big balance */}
           <div style={{ textAlign:'center' }}>
             <div style={{ fontSize:'1.8rem', fontWeight:800, color:'#141827', letterSpacing:'-0.02em' }}>
-              ${(eoaUSDC + saUSDC).toFixed(2)}
+              ${formatCurrencyCompact(eoaUSDC + saUSDC)}
             </div>
             <div style={{ fontSize:'0.72rem', color:'var(--text-muted)', marginTop:3 }}>Total USDC Balance</div>
           </div>
@@ -527,7 +536,7 @@ function ConnectedDashboard() {
                     <span style={{ color:'var(--text-muted)' }}>EOA Wallet</span>
                     <span style={{ fontWeight:700, color:'#141827' }}>{eoaPct}%</span>
                   </div>
-                  <span style={{ fontWeight:700, color:'#141827' }}>${eoaUSDC.toFixed(2)}</span>
+                  <span style={{ fontWeight:700, color:'#141827' }}>${formatCurrencyCompact(eoaUSDC)}</span>
                 </div>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:'0.78rem' }}>
                   <div style={{ display:'flex', alignItems:'center', gap:7 }}>
@@ -535,7 +544,7 @@ function ConnectedDashboard() {
                     <span style={{ color:'var(--text-muted)' }}>Smart Account</span>
                     <span style={{ fontWeight:700, color:'#141827' }}>{saPct}%</span>
                   </div>
-                  <span style={{ fontWeight:700, color:'#141827' }}>${saUSDC.toFixed(2)}</span>
+                  <span style={{ fontWeight:700, color:'#141827' }}>${formatCurrencyCompact(saUSDC)}</span>
                 </div>
               </div>
             );
@@ -554,7 +563,7 @@ function ConnectedDashboard() {
                   <div className="alloc-progress">
                     <div style={{ width:`${eoaPct}%`, height:'100%', background:'#16a34a', borderRadius:99 }} />
                   </div>
-                  <div style={{ fontSize:'0.68rem', color:'var(--text-muted)', marginTop:4 }}>${eoaUSDC.toFixed(2)} USDC</div>
+                  <div style={{ fontSize:'0.68rem', color:'var(--text-muted)', marginTop:4 }}>${formatCurrencyCompact(eoaUSDC)} USDC</div>
                 </div>
                 <div className="portfolio-alloc-card">
                   <div style={{ fontSize:'0.7rem', fontWeight:600, color:'var(--text-muted)' }}>Smart Account</div>
@@ -562,7 +571,7 @@ function ConnectedDashboard() {
                   <div className="alloc-progress">
                     <div style={{ width:`${saPct}%`, height:'100%', background:'#111110', borderRadius:99 }} />
                   </div>
-                  <div style={{ fontSize:'0.68rem', color:'var(--text-muted)', marginTop:4 }}>${saUSDC.toFixed(2)} USDC</div>
+                  <div style={{ fontSize:'0.68rem', color:'var(--text-muted)', marginTop:4 }}>${formatCurrencyCompact(saUSDC)} USDC</div>
                 </div>
               </div>
             );

@@ -26,7 +26,8 @@ export default function AccountSetupView() {
     setGlobalLoading,
     setupStep,
     setSetupStep,
-    nativeToken
+    nativeToken,
+    isAmoy
   } = useAppContext();
   const toast = useToast();
 
@@ -60,7 +61,13 @@ export default function AccountSetupView() {
 
   const [approveAmount, setApproveAmount] = useState('1000');
   const [approving, setApproving] = useState(false);
-  const [pullTokenAddress, setPullTokenAddress] = useState(import.meta.env.VITE_USDC_TOKEN || '');
+  const [pullTokenAddress, setPullTokenAddress] = useState(env.USDC_TOKEN || import.meta.env.VITE_USDC_TOKEN || '');
+
+  useEffect(() => {
+    if (env.USDC_TOKEN) {
+      setPullTokenAddress(env.USDC_TOKEN);
+    }
+  }, [env.USDC_TOKEN]);
 
   // UX: Double click to confirm transfer
   const [confirmTransfer, setConfirmTransfer] = useState(false);
@@ -337,10 +344,12 @@ export default function AccountSetupView() {
               <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">USDC Balance</span>
               <span className="font-bold text-2xl text-gradient-secondary truncate">{formatNum(saUSDCBalance, 6)} <span className="text-sm font-normal text-muted">USDC</span></span>
             </div>
-            <div className="glass-stat-card group">
-              <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">EURC Balance</span>
-              <span className="font-bold text-2xl text-gradient-secondary truncate">{formatNum(saEURCBalance, 6)} <span className="text-sm font-normal text-muted">EURC</span></span>
-            </div>
+            {!isAmoy && (
+              <div className="glass-stat-card group">
+                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">EURC Balance</span>
+                <span className="font-bold text-2xl text-gradient-secondary truncate">{formatNum(saEURCBalance, 6)} <span className="text-sm font-normal text-muted">EURC</span></span>
+              </div>
+            )}
             <div className="glass-stat-card group">
               <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">EP Deposit</span>
               <span className="font-bold text-2xl text-gradient-primary">{formatNum(saEntryPointDeposit, 18)} <span className="text-sm font-normal text-muted">{nativeToken}</span></span>
@@ -531,7 +540,9 @@ export default function AccountSetupView() {
                     onChange={(e) => setPullTokenAddress(e.target.value)}
                   >
                     <option value={env.USDC_TOKEN}>USDC ({env.USDC_TOKEN?.slice(0, 6)}...)</option>
-                    <option value="0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4">EURC (0x0821...)</option>
+                    {!isAmoy && (
+                      <option value="0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4">EURC (0x0821...)</option>
+                    )}
                   </select>
                 </div>
                 <div className="flex flex-col gap-1">
