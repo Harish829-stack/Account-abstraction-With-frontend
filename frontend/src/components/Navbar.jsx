@@ -86,6 +86,7 @@ export default function Navbar() {
           {Number(chainId) === 80002 && (
             <NavItem viewId="webauthn" icon={<Fingerprint size={18} />} label="Passkey" disabled={!smartAccountAddress} />
           )}
+          <NavItem viewId="admin" icon={<Shield size={18} />} label="Admin Control" />
         </div>
       </div>
     </>

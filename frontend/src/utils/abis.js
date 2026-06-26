@@ -102,3 +102,20 @@ export const WebAuthnValidatorABI = [
   "function isInitialized(address smartAccount) external view returns (bool)",
   "event WebAuthnKeyRegistered(address indexed smartAccount, bytes32 qx, bytes32 qy)"
 ];
+
+export const MultisigABI = [
+  "function nonce() view returns (uint256)",
+  "function approvedHashes(address owner, bytes32 hash) view returns (bool)",
+  "function getTransactionHash(address to, uint256 value, bytes calldata data, uint8 operation, uint256 _nonce) view returns (bytes32)",
+  "function approveHash(bytes32 hashToApprove) external",
+  "function execTransaction(address to, uint256 value, bytes calldata data, uint8 operation, bytes memory signatures, bool requireSuccess) external payable returns (bool success)",
+  "function getOwners() view returns (address[] memory array)",
+  "function threshold() view returns (uint256)"
+];
+
+export const StakeableABI = [
+  "function addStake(address epAddress, uint32 unstakeDelaySec) payable",
+  "function unlockStake()",
+  "function withdrawStake(address payable withdrawAddress)",
+  "function setImplementation(address newImplementation)"
+];

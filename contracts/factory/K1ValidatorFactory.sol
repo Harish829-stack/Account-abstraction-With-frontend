@@ -28,7 +28,7 @@ import { ProxyLib } from "../lib/ProxyLib.sol";
 contract K1ValidatorFactory is Stakeable {
     /// @notice Stores the implementation contract address used to create new Nexus instances.
     /// @dev This address is set once upon deployment and cannot be changed afterwards.
-    address public immutable ACCOUNT_IMPLEMENTATION;
+    address public ACCOUNT_IMPLEMENTATION;
 
     /// @notice Stores the K1 Validator module address.
     /// @dev This address is set once upon deployment and cannot be changed afterwards.
@@ -60,6 +60,13 @@ contract K1ValidatorFactory is Stakeable {
         K1_VALIDATOR = k1Validator;
         BOOTSTRAPPER = bootstrapper;
         REGISTRY = registry;
+    }
+
+    /// @notice Allows the owner (Multisig) to update the Nexus implementation address for future accounts.
+    /// @param newImplementation The address of the new Nexus implementation.
+    function setImplementation(address newImplementation) external onlyOwner {
+        require(newImplementation != address(0), ZeroAddressNotAllowed());
+        ACCOUNT_IMPLEMENTATION = newImplementation;
     }
 
     /// @notice Creates a new Nexus with a specific validator and initialization data.
