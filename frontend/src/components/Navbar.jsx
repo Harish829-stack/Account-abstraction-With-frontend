@@ -1,10 +1,10 @@
 import React from 'react';
 import { useAppContext } from '../context/AppContext';
 import { shortenAddress } from '../utils/helpers';
-import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, LayoutDashboard, Shield, Fingerprint, Globe, ChevronDown } from 'lucide-react';
+import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, LayoutDashboard, Shield, Fingerprint, Globe, ChevronDown, Blocks } from 'lucide-react';
 
 export default function Navbar() {
-  const { eoaAddress, smartAccountAddress, disconnect, currentView, setCurrentView, chainId, switchNetwork } = useAppContext();
+    const { eoaAddress, smartAccountAddress, disconnect, currentView, setCurrentView, chainId, switchNetwork, isMultisigOwner } = useAppContext();
 
   if (!eoaAddress) return null;
 
@@ -79,14 +79,13 @@ export default function Navbar() {
           <NavItem viewId="home" icon={<LayoutDashboard size={18} />} label="Dashboard" />
           <NavItem viewId="setup" icon={<Settings size={18} />} label="Account Setup" />
           <NavItem viewId="paymaster" icon={<DollarSign size={18} />} label="Paymaster" />
-          <NavItem viewId="profile" icon={<User size={18} />} label="Profile" />
+          <NavItem viewId="modules" icon={<Blocks size={18} />} label="Modules" />
           <NavItem viewId="send" icon={<Send size={18} />} label="Send Ops" disabled={!smartAccountAddress} />
           <NavItem viewId="batch-send" icon={<Send size={18} />} label="Batch Ops" disabled={!smartAccountAddress} />
           <NavItem viewId="history" icon={<Clock size={18} />} label="UserOp History" disabled={!smartAccountAddress} />
-          {Number(chainId) === 80002 && (
-            <NavItem viewId="webauthn" icon={<Fingerprint size={18} />} label="Passkey" disabled={!smartAccountAddress} />
+          {isMultisigOwner && (
+            <NavItem viewId="admin" icon={<Shield size={18} />} label="Admin Control" />
           )}
-          <NavItem viewId="admin" icon={<Shield size={18} />} label="Admin Control" />
         </div>
       </div>
     </>

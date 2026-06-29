@@ -1,7 +1,7 @@
 import { useAppContext } from './context/AppContext';
 import Navbar from './components/Navbar';
 import HomeView from './views/HomeView';
-import ProfileView from './views/ProfileView';
+import ModulesView from './views/ModulesView';
 import AccountSetupView from './views/AccountSetupView';
 import SendOpView from './views/SendOpView';
 import PaymasterView from './views/PaymasterView';
@@ -40,7 +40,7 @@ function App() {
   };
 
   return (
-    <div className="container min-h-screen py-6 animate-fade-in relative">
+    <div className={isConnected ? "container min-h-screen py-6 animate-fade-in relative" : "min-h-screen animate-fade-in relative"}>
       {isNetworkMismatch && (
         <div className="network-alert">
           <div className="network-alert__content">
@@ -70,8 +70,8 @@ function App() {
         </div>
         {isConnected && (
           <>
-            <div style={{ display: currentView === "profile" ? "block" : "none" }}>
-              <ProfileView />
+            <div style={{ display: currentView === "modules" ? "block" : "none" }}>
+              <ModulesView />
             </div>
             <div style={{ display: currentView === "setup" ? "block" : "none" }}>
               <AccountSetupView />
@@ -88,11 +88,7 @@ function App() {
             <div style={{ display: currentView === "history" ? "block" : "none" }}>
               <HistoryView />
             </div>
-            {Number(chainId) === 80002 && (
-              <div style={{ display: currentView === "webauthn" ? "block" : "none" }}>
-                <WebAuthnView />
-              </div>
-            )}
+
             <div style={{ display: currentView === "admin" ? "block" : "none" }}>
               <AdminView />
             </div>

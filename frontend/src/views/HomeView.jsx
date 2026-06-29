@@ -10,9 +10,18 @@ import {
   Zap, ShieldCheck, Layers, Gift, Clock, Network,
   CheckCircle2, XCircle, ArrowRight, ArrowUpRight,
   RefreshCw, TrendingUp, Activity, Wallet, Box, BarChart3,
-  ChevronDown, ArrowDown
+  ChevronDown, ArrowDown, Puzzle, Fuel, MapPin, Key, Users,
+  Fingerprint, Check, ChevronRight
 } from 'lucide-react';
 
+import ChainMarquee from '../components/ChainMarquee';
+import CoreStackTabs from '../components/CoreStackTabs';
+import AAStackDeepDive from '../components/AAStackDeepDive';
+import ModulesShowcase from '../components/ModulesShowcase';
+import FAQAccordion from '../components/FAQAccordion';
+import FinalCTA from '../components/FinalCTA';
+import Newsletter from '../components/Newsletter';
+import LandingFooter from '../components/LandingFooter';
 const UNISWAP_ROUTER = '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E';
 const WETH_SEPOLIA = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
 
@@ -338,7 +347,7 @@ function ConnectedDashboard() {
           <h1 style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>
             Welcome back, <span className="text-gradient">{shortenAddress(eoaAddress)}</span>
           </h1>
-          <p className="text-sm text-muted">Your Smart Account Dashboard — Sepolia Testnet</p>
+          <p className="text-sm text-muted">Your Smart Account Dashboard — {isAmoy ? "Amoy" : "Sepolia"} Testnet</p>
         </div>
         <button
           className="btn btn-secondary flex items-center gap-2"
@@ -918,52 +927,87 @@ function ConnectedDashboard() {
 function LandingPage() {
   const { connectWallet, isConnecting } = useAppContext();
   return (
-    <div className="animate-fade-in" style={{ paddingBottom: '4rem' }}>
-      <div className="flex flex-col items-center justify-center text-center mt-8 mb-12" style={{ minHeight: '45vh' }}>
-        <div
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
-            padding: '6px 16px', borderRadius: 99, marginBottom: '1.5rem',
-            background: 'rgba(22, 163, 74,0.14)', border: '1px solid rgba(22, 163, 74,0.34)',
-            fontSize: '0.8rem', color: 'var(--primary)',
-          }}
-        >
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--secondary)', animation: 'pulse 2s infinite' }} />
-          Live on Sepolia Testnet
-        </div>
-        <h1 style={{ fontSize: '3.5rem', marginBottom: '1rem', lineHeight: 1.15 }}>
-          Smart <span className="text-gradient">Account</span> Hub
-        </h1>
-        <p className="text-muted" style={{ fontSize: '1.15rem', maxWidth: '540px', marginBottom: '2.5rem', lineHeight: 1.7 }}>
-          Gasless, flexible, and programmable transactions powered by ERC-4337 Account Abstraction.
-        </p>
-        <button
-          className="btn btn-primary"
-          onClick={connectWallet}
-          disabled={isConnecting}
-          style={{ fontSize: '1.1rem', padding: '0.9rem 2.5rem' }}
-        >
+    <div className="aa-landing animate-fade-in">
+      <nav className="aa-landing-nav">
+        <button className="aa-landing-logo" type="button" aria-label="Smart Wallet home">
+          <span className="aa-logo-mark"><Zap size={18} /></span>
+          <span>Smart Wallet</span>
+        </button>
+        <div className="aa-landing-nav-center" aria-hidden="true" />
+        <button className="aa-connect-btn" onClick={connectWallet} disabled={isConnecting}>
           {isConnecting ? (
-            <><div className="loader" style={{ width: '1rem', height: '1rem', borderWidth: '2px' }} /> Connecting...</>
+            <><div className="loader" /> Connecting</>
           ) : (
-            <><Zap size={20} /> Connect Wallet</>
+            <><Wallet size={17} /> Connect Wallet</>
           )}
         </button>
-      </div>
-      <h2 className="text-center mb-6 text-gradient" style={{ fontSize: '1.75rem' }}>Why ERC-4337?</h2>
-      <div className="grid-features">
-        {features.map((f, i) => (
-          <div key={i} className="glass-card feature-card" style={{ animationDelay: `${i * 0.05}s` }}>
-            <div className="feature-card__header">
-              <div className="feature-card__icon">
-                {f.icon}
-              </div>
-              <h3>{f.title}</h3>
-            </div>
-            <p className="text-muted text-sm">{f.description}</p>
+      </nav>
+
+      <section className="aa-hero">
+        <div className="aa-hero-grid" aria-hidden="true" />
+        <div className="aa-hero-glow aa-hero-glow-one" />
+        <div className="aa-hero-glow aa-hero-glow-two" />
+
+        <div className="aa-announcement">
+          <span />
+          ERC-7579 Modular Accounts now live
+        </div>
+
+        <div className="aa-hero-content">
+          <div className="aa-hero-badge">ERC-4337 · ERC-7579 · Modular · Gasless</div>
+          <h1>
+            Account Abstraction,
+            <span>Done Right.</span>
+          </h1>
+          <p>
+            Modular smart accounts powered by ERC-4337 and ERC-7579. Session keys,
+            social recovery, WebAuthn, and gasless UX for production-ready wallets.
+          </p>
+          <div className="aa-hero-actions">
+            <button className="aa-primary-cta" onClick={connectWallet} disabled={isConnecting}>
+              {isConnecting ? 'Connecting...' : 'Start Building'}
+              <ArrowRight size={18} />
+            </button>
+            <button className="aa-secondary-cta" type="button">
+              Read the Docs
+              <ArrowUpRight size={17} />
+            </button>
           </div>
-        ))}
-      </div>
+        </div>
+
+        <div className="aa-feature-strip">
+          {features.slice(0, 3).map((f, i) => (
+            <div key={i} className="aa-mini-card">
+              <div>{f.icon}</div>
+              <span>{f.title}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="aa-feature-section">
+        <div className="aa-section-heading">
+          <span>Infrastructure stack</span>
+          <h2>One wallet layer for modern Account Abstraction.</h2>
+        </div>
+        <div className="aa-feature-grid">
+          {features.map((f, i) => (
+            <div key={i} className="aa-feature-card" style={{ animationDelay: `${i * 0.05}s` }}>
+              <div className="aa-feature-icon">{f.icon}</div>
+              <h3>{f.title}</h3>
+              <p>{f.description}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+      <ChainMarquee />
+      <CoreStackTabs />
+      <AAStackDeepDive />
+      <ModulesShowcase />
+      <FAQAccordion />
+      <FinalCTA connectWallet={connectWallet} isConnecting={isConnecting} />
+      <Newsletter />
+      <LandingFooter />
     </div>
   );
 }

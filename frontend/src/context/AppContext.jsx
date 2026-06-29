@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
 import { ethers } from "ethers";
-import { IEntryPointABI, SmartAccountABI, ERC20_ABI, K1ValidatorABI } from "../utils/abis";
+import { IEntryPointABI, SmartAccountABI, ERC20_ABI, K1ValidatorABI, MultisigABI } from "../utils/abis";
 import { useToast } from "./ToastContext";
 import { getUserOpReceipt } from "../utils/bundler";
 import { getInstalledModules } from "../utils/helpers";
@@ -62,6 +62,7 @@ export const AppProvider = ({ children }) => {
   const [saEURCBalance, setSaEURCBalance] = useState("0");
   const [saEntryPointDeposit, setSaEntryPointDeposit] = useState("0");
   const [saOwner, setSaOwner] = useState("");
+  const [isMultisigOwner, setIsMultisigOwner] = useState(false);
 
   // Module installation status — fetched once via getValidatorsPaginated on connect
   // { hasSessionKey, hasSocialRecovery, hasWebAuthn, rawValidators }
@@ -245,6 +246,22 @@ export const AppProvider = ({ children }) => {
         }
       } else {
         setEoaEURCBalance("0");
+      }
+
+      // Check Multisig Ownership
+      const multisigProxy = import.meta.env.VITE_MULTISIG_PROXY;
+      if (multisigProxy) {
+        try {
+          const multisig = new ethers.Contract(multisigProxy, MultisigABI, _provider);
+          const owners = await multisig.getOwners();
+          const isOwner = owners.some(o => o.toLowerCase() === address.toLowerCase());
+          setIsMultisigOwner(isOwner);
+        } catch (e) {
+          console.warn("Failed to fetch Multisig owners:", e);
+          setIsMultisigOwner(false);
+        }
+      } else {
+        setIsMultisigOwner(false);
       }
     } catch (err) {
       console.error("Error loading EOA balances:", err);
@@ -699,6 +716,7 @@ export const AppProvider = ({ children }) => {
     loadEOABalances, loadSmartAccountDetails, loadPaymasterDetails, refreshAllData, refreshTrigger,
     // Module installation status (blockchain-sourced, device-agnostic)
     installedModules, loadingModules, refreshInstalledModules,
+    isMultisigOwner,
     pendingUserOps, addPendingUserOp,
     trackedOps, trackOp,
     recentOps, loadingOps, fetchRecentOps,

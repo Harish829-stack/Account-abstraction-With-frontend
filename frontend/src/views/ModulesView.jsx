@@ -7,6 +7,7 @@ import { Shield, CheckCircle, UserPlus, PlayCircle, Settings, ChevronRight, XCir
 import { SmartAccountABI, IEntryPointABI, SocialRecoveryValidatorABI, K1ValidatorABI } from '../utils/abis';
 import { estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
 import SessionKeyView from './SessionKeyView';
+import WebAuthnView from './WebAuthnView';
 
 export default function ProfileView() {
   const { eoaAddress, smartAccountAddress, signer, provider, env, refreshAllData, refreshTrigger, setGlobalLoading, isAmoy } = useAppContext();
@@ -631,6 +632,7 @@ export default function ProfileView() {
         )}
 
         <SessionKeyView />
+        <WebAuthnView />
     </div>
   );
 }
