@@ -254,8 +254,8 @@ export default function SendOpView() {
       if (usePaymaster) {
          if (!paymasterAddress) throw new Error("Paymaster address not set!");
          userOp.paymaster = paymasterAddress;
-         userOp.paymasterVerificationGasLimit = toHex(300000);
-         userOp.paymasterPostOpGasLimit = toHex(300000);
+         userOp.paymasterVerificationGasLimit = toHex(2000000); // match estimation phase to avoid inconsistency
+         userOp.paymasterPostOpGasLimit = toHex(2000000);       // match estimation phase to avoid inconsistency
          userOp.paymasterData = selectedGasToken;
       }
 
