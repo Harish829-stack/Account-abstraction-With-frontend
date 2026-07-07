@@ -163,8 +163,8 @@ export default function BatchSendView() {
         maxFeePerGas: toHex(maxFeePerGas),
         maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
         paymaster: usePaymaster ? (paymasterAddress || "0x") : "0x",
-        paymasterVerificationGasLimit: usePaymaster ? toHex(2000000) : "0x",
-        paymasterPostOpGasLimit: usePaymaster ? toHex(2000000) : "0x",
+        paymasterVerificationGasLimit: usePaymaster ? toHex(150000) : "0x",
+        paymasterPostOpGasLimit: usePaymaster ? toHex(150000) : "0x",
         paymasterData: usePaymaster ? selectedGasToken : "0x",
         signature: "0x"
       };
@@ -256,8 +256,8 @@ export default function BatchSendView() {
       if (usePaymaster) {
          if (!paymasterAddress) throw new Error("Paymaster address not set!");
          userOp.paymaster = paymasterAddress;
-         userOp.paymasterVerificationGasLimit = toHex(2000000); // match estimation phase to avoid inconsistency
-         userOp.paymasterPostOpGasLimit = toHex(2000000);       // match estimation phase to avoid inconsistency
+         userOp.paymasterVerificationGasLimit = toHex(150000); // enough for safeTransferFrom in validatePaymasterUserOp
+         userOp.paymasterPostOpGasLimit = toHex(150000);       // enough for 2x Chainlink reads + safeTransfer in postOp
          userOp.paymasterData = selectedGasToken;
       }
 

@@ -40,7 +40,7 @@ export default function PaymasterView() {
   // Admin Add Token States
   const [adminNewToken, setAdminNewToken] = useState(env.USDC_TOKEN || '');
   const [adminNewTokenFeed, setAdminNewTokenFeed] = useState(env.PRICE_FEED || '');
-  const [adminNewTokenMinPrice, setAdminNewTokenMinPrice] = useState('950000'); // $0.95 with 6 decimals
+  const [adminNewTokenMinPrice, setAdminNewTokenMinPrice] = useState('95000000'); // $0.95 with 8 decimals (Chainlink standard)
 
 
   // Deploy States
@@ -147,9 +147,9 @@ export default function PaymasterView() {
       const pmFactory = new ethers.ContractFactory(pmArtifact.abi, pmArtifact.bytecode, signer);
       
       const pmContract = await pmFactory.deploy(
-         dEntryPoint,
-         dToken,
-         dPriceFeed
+         eoaAddress,   // _initialOwner: the connected EOA wallet
+         dEntryPoint,  // _entryPoint
+         dPriceFeed    // _nativeUsdFeed (ETH/USD Chainlink feed)
       );
       
       await pmContract.waitForDeployment();
@@ -591,8 +591,8 @@ export default function PaymasterView() {
                       </div>
                    </div>
                    <div>
-                      <label className="text-xs text-muted mb-1 block">Min Token Price (in feed decimals, e.g. 950000 for $0.95 w/ 6 decimals)</label>
-                      <input type="number" className="input-field py-2 text-sm" placeholder="950000" value={adminNewTokenMinPrice} onChange={e=>setAdminNewTokenMinPrice(e.target.value)} />
+                      <label className="text-xs text-muted mb-1 block">Min Token Price (in feed decimals, e.g. 95000000 for $0.95 w/ 8 decimals — Chainlink standard)</label>
+                      <input type="number" className="input-field py-2 text-sm" placeholder="95000000" value={adminNewTokenMinPrice} onChange={e=>setAdminNewTokenMinPrice(e.target.value)} />
                    </div>
                    <button className="btn btn-secondary w-full text-sm py-2 mt-2" onClick={handleAdminAddToken} disabled={!adminNewToken || !adminNewTokenFeed || !adminNewTokenMinPrice}>Add Token Configuration</button>
                    <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-md mt-2 flex gap-3 text-orange-200/80 text-xs items-start">

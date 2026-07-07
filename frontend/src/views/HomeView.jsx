@@ -307,8 +307,8 @@ function ConnectedDashboard() {
       if (usePmForSwap) {
          if (!paymasterAddress) throw new Error("Paymaster address not set!");
          userOp.paymaster = paymasterAddress;
-         userOp.paymasterVerificationGasLimit = toHex(300000);
-         userOp.paymasterPostOpGasLimit = toHex(300000);
+         userOp.paymasterVerificationGasLimit = toHex(150000); // enough for safeTransferFrom in validatePaymasterUserOp
+         userOp.paymasterPostOpGasLimit = toHex(150000);       // enough for 2x Chainlink reads + safeTransfer in postOp
          userOp.paymasterData = selectedGasToken;
       }
 
