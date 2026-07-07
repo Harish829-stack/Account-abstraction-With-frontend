@@ -1,0 +1,244 @@
+using webauthn validator
+17:47
+Here is the complete WebAuthn flow — exact code, function by function:
+
+WebAuthn Validator Flow — Complete Explanation
+What is it?
+Instead of signing with a private key (MetaMask/burner wallet), the user signs with their device's biometric (Touch ID / Face ID / Windows Hello / hardware key). The cryptographic scheme used is P-256 (secp256r1), NOT secp256k1. So it can't use ECDSA.recover() like K1Validator does.
+
+PHASE 1 — Setup (Done Once)
+Step 1a — Register the Passkey in the Browser
+File: 
+
+webauthn.js
+
+Function: registerPasskey(username)
+Triggered by: "Register Passkey" button in 
+
+WebAuthnView.jsx
+ → handleRegister()
+
+js
+// webauthn.js line 19
+const credential = await WebAuthnP256.createCredential({ name: username });
+// ↑ This triggers the OS biometric prompt (Touch ID / Face ID / PIN)
+// The browser talks to the OS Secure Enclave / TPM
+// A P-256 keypair is generated INSIDE the hardware — private key NEVER leaves the device
+What comes back:
+
+js
+credential.publicKey.x  // BigInt — the P-256 X coordinate (32 bytes)
+credential.publicKey.y  // BigInt — the P-256 Y coordinate (32 bytes)
+These are saved to localStorage:
+
+js
+// webauthn.js line 28-31
+localStorage.setItem("webauthn_credential", JSON.stringify({
+  id: credential.id,          // credential ID for future signing requests
+  publicKey: { qx, qy },     // hex strings of the public key
+}));
+WHY localStorage? The private key never leaves the hardware. But the credential.id (a handle) and publicKey (the corresponding P-256 public coords) need to be saved so the browser can ask the authenticator to sign with that specific key later.
+
+Step 1b — Install the Validator Module (last MetaMask interaction ever)
+File: 
+
+webauthn.js
+
+Function: installWebAuthnValidator()
+Triggered by: "Install Module" button → 
+
+WebAuthnView.jsx handleInstall()
+
+js
+// webauthn.js line 65-77
+const initData = ethers.AbiCoder.defaultAbiCoder().encode(
+  ["bytes32", "bytes32"],
+  [`0x${qx}`, `0x${qy}`]   // the P-256 public key coordinates
+);
+// Build UserOp: Nexus.execute → Nexus.installModule(1, webAuthnValidatorAddr, initData)
+const innerCallData = accountIface.encodeFunctionData("installModule", [1, webAuthnValidatorAddr, initData]);
+const callData = encodeERC7579Single(smartAccountAddress, 0n, innerCallData);
+// Signed by MetaMask (K1Validator), submitted via bundler
+const opHash = await buildAndSendAccountOp(signer, provider, ..., env.K1_VALIDATOR);
+On-chain, Nexus.installModule() → ModuleManager._installModule() → WebAuthnValidator.onInstall(data):
+
+solidity
+// WebAuthnValidator.sol line 73-83
+function onInstall(bytes calldata data) external override {
+    if (pubKeyX[msg.sender] != bytes32(0)) revert AlreadyInitialized();
+    (bytes32 qx, bytes32 qy) = abi.decode(data, (bytes32, bytes32));
+    if (qx == bytes32(0) || qy == bytes32(0)) revert InvalidPublicKey();
+    pubKeyX[msg.sender] = qx;   // msg.sender = 0xSmartAccount
+    pubKeyY[msg.sender] = qy;
+    emit WebAuthnKeyRegistered(msg.sender, qx, qy);
+}
+After this, the on-chain storage holds:
+
+pubKeyX[0xSmartAccount] = P256_X_coordinate
+pubKeyY[0xSmartAccount] = P256_Y_coordinate
+MetaMask is never needed again after this point.
+
+PHASE 2 — Execution (Biometric Only — No MetaMask)
+File: 
+
+WebAuthnView.jsx
+
+Function: handleSendWithPasskey()
+
+Step 2a — Verify Key Match First
+js
+// WebAuthnView.jsx line 247-257
+const keyCheck = await verifyPublicKeyMatch(smartAccountAddress, validatorAddr, provider);
+// Reads pubKeyX/pubKeyY from WebAuthnValidator on-chain
+// Compares with localStorage credential's qx/qy
+if (!keyCheck.match) { /* reject — wrong device */ }
+WHY? If user switched devices, the localStorage has a different passkey than what's registered on-chain. This check catches that before a failed UserOp.
+
+Step 2b — Get Nonce with WebAuthn Validator Key
+js
+// WebAuthnView.jsx line 285
+const nonce = await entryPoint.getNonce(
+    smartAccountAddress,
+    getNonceForValidator(validatorAddr)  // WebAuthn validator address in upper nonce bits
+);
+Same as session key — the nonce key encodes WebAuthnValidator address → Nexus routes validation there.
+
+Step 2c — Build UserOp with a Dummy Placeholder Signature for Gas Estimation
+js
+// WebAuthnView.jsx line 302-310
+signature: ethers.AbiCoder.defaultAbiCoder().encode(
+    ["uint256", "uint256", "uint256", "uint256", "bytes", "string"],
+    [
+        0n, 0n, 0n, 0n,                          // r=0, s=0, challengeIndex=0, typeIndex=0
+        "0x000...000",                            // fake authenticatorData
+        '{"type":"webauthn.get","challenge":"xxx...","origin":"http://localhost:5173",...}'
+    ]
+)
+WHY a dummy signature that looks like WebAuthn? Unlike ECDSA where you can use any 65-byte dummy, WebAuthn's _verifyWebAuthn() calls WebAuthn.verify() from OpenZeppelin which requires a structurally valid decode. The dummy must be ABI-decodable as (bytes32, bytes32, uint256, uint256, bytes, string).
+
+Step 2d — Get Hash and Trigger Biometric
+js
+// WebAuthnView.jsx line 329-339
+const packedOp = packUserOp(unpackedUserOp);
+const userOpHash = await entryPoint.getUserOpHash(packedOp);
+// ← THIS triggers the OS biometric prompt!
+const rawSignature = await signUserOpWithPasskey(
+    userOpHash,
+    savedCredential.id,    // credential handle
+    validatorAddr
+);
+Inside 
+
+signUserOpWithPasskey()
+:
+
+js
+// webauthn.js line 137-141
+const { signature, metadata } = await WebAuthnP256.sign({
+    challenge: userOpHash,    // the 32-byte userOpHash IS the WebAuthn challenge
+    credentialId,             // tells the authenticator which key to use
+    userVerification: "required",  // forces biometric, not just presence
+});
+// ↑ OS shows Face ID / Touch ID / PIN prompt
+// Hardware signs: Secure Enclave does P-256 ECDSA over (authenticatorData + SHA256(clientDataJSON))
+// clientDataJSON includes base64url(userOpHash) as the "challenge" field
+Normalize s to prevent signature malleability:
+
+js
+// webauthn.js line 146-152
+const HALF_N = N / 2n;  // N = P-256 curve order
+if (s > HALF_N) { s = N - s; }
+// OZ P256.sol rejects s > N/2 (enforces low-s form)
+Pack the full WebAuthn assertion:
+
+js
+// webauthn.js line 156-166
+const webAuthnSig = ethers.AbiCoder.defaultAbiCoder().encode(
+    ["bytes32", "bytes32", "uint256", "uint256", "bytes", "string"],
+    [
+        r,                          // P-256 signature r (32 bytes)
+        s,                          // P-256 signature s (32 bytes, normalized)
+        metadata.challengeIndex,    // offset of "challenge" in clientDataJSON
+        metadata.typeIndex,         // offset of "type" in clientDataJSON
+        metadata.authenticatorData, // CBOR-encoded authenticator data
+        metadata.clientDataJSON,    // JSON string with challenge, origin, type
+    ]
+);
+// In Nexus, NO 20-byte validator prefix! The nonce key already routes to WebAuthnValidator.
+return webAuthnSig;
+KEY DIFFERENCE from Session Key: Session key had [burnerAddr (20 bytes)] + [ECDSA sig (65 bytes)]. WebAuthn has NO prefix — just the raw ABI-encoded assertion. The nonce key alone routes to the correct validator.
+
+Step 2e — Submit to Bundler
+js
+// WebAuthnView.jsx line 350-371
+unpackedUserOp.signature = rawSignature;   // the ABI-encoded WebAuthn assertion
+const rpcUserOp = {
+    sender, nonce, callData, callGasLimit,
+    verificationGasLimit, preVerificationGas,
+    maxFeePerGas, maxPriorityFeePerGas,
+    signature: unpackedUserOp.signature,  // ← WebAuthn assertion bytes
+};
+await fetch(BUNDLER_URL, {
+    method: "eth_sendUserOperation",
+    params: [rpcUserOp, env.ENTRY_POINT]
+});
+On-Chain Validation: WebAuthnValidator.validateUserOp()
+solidity
+// WebAuthnValidator.sol line 106-116
+function validateUserOp(PackedUserOperation calldata userOp, bytes32 userOpHash)
+    external override returns (uint256 validationData)
+{
+    // No 20-byte prefix stripping — the full signature IS the WebAuthn payload
+    bytes calldata webAuthnSig = userOp.signature;
+    bool valid = _verifyWebAuthn(userOp.sender, userOpHash, webAuthnSig);
+    return valid ? 0 : 1;
+}
+Inside _verifyWebAuthn():
+
+solidity
+// WebAuthnValidator.sol line 151-189
+function _verifyWebAuthn(address smartAccount, bytes32 challenge, bytes calldata sigData)
+    internal view returns (bool)
+{
+    // 1. Load registered public key from storage
+    bytes32 qx = pubKeyX[smartAccount];
+    bytes32 qy = pubKeyY[smartAccount];
+    if (qx == bytes32(0)) return false; // not installed
+    // 2. Decode the ABI-encoded WebAuthn assertion
+    (bytes32 r, bytes32 s, uint256 challengeIndex, uint256 typeIndex,
+     bytes memory authenticatorData, string memory clientDataJSON)
+        = abi.decode(sigData, (bytes32, bytes32, uint256, uint256, bytes, string));
+    // 3. Call OpenZeppelin's WebAuthn.verify()
+    return WebAuthn.verify(
+        abi.encodePacked(challenge),   // raw userOpHash as the expected challenge
+        WebAuthn.WebAuthnAuth({
+            r: r,
+            s: s,
+            challengeIndex: challengeIndex,    // where "challenge" is in clientDataJSON
+            typeIndex: typeIndex,              // where "type" is in clientDataJSON
+            authenticatorData: authenticatorData,
+            clientDataJSON: clientDataJSON,
+        }),
+        qx,   // registered P-256 X
+        qy    // registered P-256 Y
+    );
+}
+What WebAuthn.verify() does internally (OZ library):
+
+Checks clientDataJSON contains "type":"webauthn.get" at typeIndex
+Extracts the challenge field from clientDataJSON at challengeIndex
+Verifies the challenge = base64url(userOpHash) — this ties the biometric to this exact UserOp
+Hashes: msg = SHA256(authenticatorData || SHA256(clientDataJSON))
+Verifies P-256 ECDSA: (r, s) is a valid signature of msg under (qx, qy)
+If all 5 checks pass → returns true → validationData = 0 → EntryPoint proceeds to execution.
+
+Comparison — All 3 Validators Side by Side
+K1 Validator	Session Key Validator	WebAuthn Validator
+Curve	secp256k1	secp256k1	P-256 (secp256r1)
+Signer	EOA private key	Burner wallet (localStorage)	Device biometric (Secure Enclave)
+Nonce key	0 (default)	BigInt(SessionKeyValidatorAddr)	BigInt(WebAuthnValidatorAddr)
+Signature format	65 bytes ECDSA	[burnerAddr 20B][sig 65B] = 85B	ABI-encoded (r,s,challengeIndex,typeIndex,authData,clientDataJSON)
+On-chain verification	ECDSA.recover() == owner	ECDSA.recover() == sessionKey + policy checks	WebAuthn.verify() with P-256
+Stored on-chain	EOA address in K1Validator	Policy map per sessionKey → smartAccount	pubKeyX + pubKeyY per smartAccount
+Private key on device?	Yes (MetaMask)	Yes (localStorage)	No — hardware-protected
+Biometric prompt?	No	No	Yes — Touch ID / Face ID

@@ -321,9 +321,9 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
        unpackedUserOp.preVerificationGas = toHex(pvgWithMargin);
      } catch (err) {
        console.warn("WebAuthn estimation failed, using fallbacks:", err);
-       unpackedUserOp.callGasLimit = toHex(200000);
-       unpackedUserOp.verificationGasLimit = toHex(250000);
-       unpackedUserOp.preVerificationGas = toHex(50000);
+       unpackedUserOp.callGasLimit = toHex(300000);         // increased from 200k for safety
+       unpackedUserOp.verificationGasLimit = toHex(500000); // increased from 250k — software P256 can cost 300k-500k gas when no precompile
+       unpackedUserOp.preVerificationGas = toHex(100000);   // increased from 50k for cross-chain safety
      }
 
      const packedOp = packUserOp(unpackedUserOp);
