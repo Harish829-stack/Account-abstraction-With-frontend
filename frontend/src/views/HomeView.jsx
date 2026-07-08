@@ -108,7 +108,7 @@ function DonutChart({ eoaUSDC, saUSDC }) {
 function ConnectedDashboard() {
   const {
     eoaAddress, eoaETHBalance, eoaUSDCBalance, eoaEURCBalance,
-    smartAccountAddress, saETHBalance, saUSDCBalance, saEURCBalance, saEntryPointDeposit,
+    smartAccountAddress, saETHBalance, saUSDCBalance, saEURCBalance, saEntryPointDeposit, saOwner,
     paymasterAddress, pmDeposit,
     pendingUserOps,
     setCurrentView, refreshAllData, signer, provider, env, nativeToken, isAmoy,
@@ -369,7 +369,7 @@ function ConnectedDashboard() {
                 <Wallet size={18} />
               </div>
               <div>
-                <div className="text-xs text-muted">Signer Wallet</div>
+                <div className="text-xs text-muted">Signer Wallet (Connected)</div>
                 <div className="font-mono text-sm font-semibold">{shortenAddress(eoaAddress)}</div>
               </div>
             </div>
@@ -406,6 +406,9 @@ function ConnectedDashboard() {
                 <div className="font-mono text-sm font-semibold">
                   {smartAccountAddress ? shortenAddress(smartAccountAddress) : <span className="text-muted">Not deployed</span>}
                 </div>
+                {smartAccountAddress && saOwner && (
+                  <div className="text-[10px] text-muted mt-0.5">Owner: {shortenAddress(saOwner)}</div>
+                )}
               </div>
             </div>
             {smartAccountAddress
