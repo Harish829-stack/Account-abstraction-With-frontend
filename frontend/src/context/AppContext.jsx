@@ -400,6 +400,7 @@ export const AppProvider = ({ children }) => {
     if (smartAccountAddress) {
       refreshes.push(loadSmartAccountDetails(smartAccountAddress, provider));
       refreshes.push(fetchRecentOps(smartAccountAddress, provider));
+      refreshes.push(refreshInstalledModules(smartAccountAddress, provider));
     }
     if (paymasterAddress) refreshes.push(loadPaymasterDetails(paymasterAddress, provider));
 
