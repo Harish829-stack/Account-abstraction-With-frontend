@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAppContext } from '../context/AppContext';
 import { shortenAddress } from '../utils/helpers';
-import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, LayoutDashboard, Shield, Fingerprint, Globe, ChevronDown, Blocks } from 'lucide-react';
+import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, LayoutDashboard, Shield, Fingerprint, Globe, ChevronDown, Blocks, Bot } from 'lucide-react';
 
 export default function Navbar() {
     const { eoaAddress, smartAccountAddress, disconnect, currentView, setCurrentView, chainId, switchNetwork, isMultisigOwner } = useAppContext();
@@ -82,6 +82,7 @@ export default function Navbar() {
           <NavItem viewId="modules" icon={<Blocks size={18} />} label="Modules" />
           <NavItem viewId="send" icon={<Send size={18} />} label="Send Ops" disabled={!smartAccountAddress} />
           <NavItem viewId="batch-send" icon={<Send size={18} />} label="Batch Ops" disabled={!smartAccountAddress} />
+          <NavItem viewId="chatbot" icon={<Bot size={18} />} label="AI Agent" disabled={!smartAccountAddress} />
           <NavItem viewId="history" icon={<Clock size={18} />} label="UserOp History" disabled={!smartAccountAddress} />
           {isMultisigOwner && (
             <NavItem viewId="admin" icon={<Shield size={18} />} label="Admin Control" />

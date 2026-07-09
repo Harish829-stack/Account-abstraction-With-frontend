@@ -9,6 +9,7 @@ import HistoryView from './views/HistoryView';
 import BatchSendView from './views/BatchSendView';
 import WebAuthnView from './views/WebAuthnView';
 import AdminView from './views/AdminView';
+import ChatbotView from './views/ChatbotView';
 import { AlertTriangle } from 'lucide-react';
 
 function App() {
@@ -91,6 +92,9 @@ function App() {
 
             <div style={{ display: currentView === "admin" ? "block" : "none" }}>
               <AdminView />
+            </div>
+            <div style={{ display: currentView === "chatbot" ? "block" : "none" }}>
+              <ChatbotView />
             </div>
           </>
         )}

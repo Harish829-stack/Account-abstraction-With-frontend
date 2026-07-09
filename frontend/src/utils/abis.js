@@ -88,7 +88,7 @@ export const SocialRecoveryValidatorABI = [
 ];
 
 export const SessionKeyValidatorABI = [
-  "function addSessionKey(tuple(address sessionKey, address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil, uint256 maxUses) keyData) external",
+  "function addSessionKey(tuple(address sessionKey, address target, bytes4 selector, uint256 maxValue, bool checkAmount, uint256 amountOffset, uint256 maxAmount, uint48 validAfter, uint48 validUntil, uint256 maxUses) keyData) external",
   "function revokeSessionKey(address sessionKey) external",
   "function sessionKeys(address account, address sessionKey) view returns (address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil, bool enabled, uint256 maxUses, uint256 uses)",
   "function getActiveSessionKeys(address smartAccount) external view returns (address[] memory)",
