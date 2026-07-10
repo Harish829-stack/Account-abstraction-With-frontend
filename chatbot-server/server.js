@@ -10,9 +10,7 @@ const {
     getNonceForValidator,
     encodeUniswapSwap,
     encodeERC20Transfer,
-    getDynamicGasFees,
-    estimateUserOperationGas,
-    sendUserOperation
+    buildAndSendAgentOp
 } = require('./userOpBuilder');
 
 const app = express();
@@ -90,7 +88,7 @@ app.post('/api/chat', async (req, res) => {
                             tokenIn: { type: 'string', description: 'Address of input token (e.g., WETH address)' },
                             tokenOut: { type: 'string', description: 'Address of output token (e.g., USDC address)' },
                             amountIn: { type: 'string', description: 'Amount of input token (in Wei)' },
-                            repeat: { type: 'integer', description: 'Number of times to repeat this operation independently' }
+                            repeat: { type: 'string', description: 'Number of times to repeat this operation independently (e.g., "1")' }
                         },
                         required: ['tokenIn', 'tokenOut', 'amountIn']
                     }
@@ -108,7 +106,7 @@ app.post('/api/chat', async (req, res) => {
                             tokenAddress: { type: 'string', description: 'Contract address of the ERC20 token' },
                             recipient: { type: 'string', description: 'Address of the recipient' },
                             amount: { type: 'string', description: 'Amount to transfer (in Wei)' },
-                            repeat: { type: 'integer', description: 'Number of times to repeat this operation independently' }
+                            repeat: { type: 'string', description: 'Number of times to repeat this operation independently (e.g., "1")' }
                         },
                         required: ['tokenAddress', 'recipient', 'amount']
                     }
@@ -126,7 +124,7 @@ app.post('/api/chat', async (req, res) => {
                             target: { type: 'string', description: 'Contract address to call' },
                             calldata: { type: 'string', description: 'Hex-encoded calldata' },
                             value: { type: 'string', description: 'Native ETH value to send (in Wei)' },
-                            repeat: { type: 'integer', description: 'Number of times to repeat this operation independently' }
+                            repeat: { type: 'string', description: 'Number of times to repeat this operation independently (e.g., "1")' }
                         },
                         required: ['target', 'calldata', 'value']
                     }
@@ -140,7 +138,7 @@ app.post('/api/chat', async (req, res) => {
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: message }
             ],
-            model: 'llama3-70b-8192',
+            model: 'llama-3.3-70b-versatile',
             tools: tools,
             tool_choice: 'auto'
         });
@@ -164,8 +162,8 @@ app.post('/api/chat', async (req, res) => {
             target = process.env.UNISWAP_ROUTER;
             // Simplified ExactInputSingle for demo (using 0.3% fee pool, amountOutMinimum = 0)
             innerCallData = encodeUniswapSwap(
-                args.tokenIn, 
-                args.tokenOut, 
+                args.tokenIn.toLowerCase(), 
+                args.tokenOut.toLowerCase(), 
                 3000, 
                 smartAccountAddress, 
                 args.amountIn, 
@@ -217,62 +215,23 @@ app.post('/api/chat', async (req, res) => {
             return res.status(500).json({ error: "Failed to fetch nonce", details: e.message });
         }
 
-        const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
         const agentWallet = new ethers.Wallet(config.privateKey);
-        
         let opsResults = [];
         
         // Fire sequentially but without waiting for block confirmation (using predicted nonces)
         for (let i = 0; i < repeatCount; i++) {
             const currentNonce = baseNonce + BigInt(i);
             
-            const rpcUserOp = {
-                sender: smartAccountAddress,
-                nonce: toHex(currentNonce),
-                factory: "0x",
-                factoryData: "0x",
-                callData,
-                callGasLimit: "0x0",
-                verificationGasLimit: "0x0",
-                preVerificationGas: "0x0",
-                maxFeePerGas: toHex(maxFeePerGas),
-                maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
-                paymaster: "0x",
-                paymasterVerificationGasLimit: "0x",
-                paymasterPostOpGasLimit: "0x",
-                paymasterData: "0x",
-                signature: "0x" 
-            };
-
             try {
-                // Estimate gas for the first iteration (assume same for all in this batch demo)
-                const est = await estimateUserOperationGas(rpcUserOp);
-                rpcUserOp.callGasLimit = toHex((BigInt(est.callGasLimit) * 12n) / 10n);
-                rpcUserOp.verificationGasLimit = toHex((BigInt(est.verificationGasLimit) * 12n) / 10n);
-                rpcUserOp.preVerificationGas = toHex((BigInt(est.preVerificationGas) * 12n) / 10n);
-                
-                // Pack and Sign
-                const packedOp = packUserOp(rpcUserOp);
-                
-                // Getting UserOpHash using a local view-like call or direct encoding is best, 
-                // but since we need it correctly encoded, we'll use a standard library pattern if available.
-                // However, we don't have entryPoint ABI for getUserOpHash easily available locally without RPC. 
-                // Let's rely on RPC for getUserOpHash if needed, but it's cleaner to use `entryPoint.getUserOpHash`.
-                const epHashContract = new ethers.Contract(
+                const opHash = await buildAndSendAgentOp(
+                    agentWallet,
+                    provider,
+                    smartAccountAddress,
+                    callData,
                     process.env.ENTRY_POINT,
-                    ["function getUserOpHash(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature) userOp) view returns (bytes32)"],
-                    provider
+                    process.env.SESSION_KEY_VALIDATOR,
+                    currentNonce
                 );
-                
-                const userOpHash = await epHashContract.getUserOpHash(packedOp);
-                
-                const rawSignature = await agentWallet.signMessage(ethers.getBytes(userOpHash));
-                // 85-byte signature for session key: [sessionKey(20)] + [sig(65)]
-                const packedSignature = ethers.concat([ agentWallet.address, rawSignature ]);
-                rpcUserOp.signature = ethers.hexlify(packedSignature);
-
-                // Send to bundler
-                const opHash = await sendUserOperation(rpcUserOp);
                 
                 opsResults.push({
                     iteration: i + 1,
@@ -280,12 +239,11 @@ app.post('/api/chat', async (req, res) => {
                     txUrl: `https://jiffyscan.xyz/userOpHash/${opHash}?network=sepolia`
                 });
                 
+                // Small delay to prevent rate limits
+                await new Promise(r => setTimeout(r, 1000));
             } catch (err) {
                 console.error(`Error on iteration ${i}:`, err);
-                opsResults.push({
-                    iteration: i + 1,
-                    error: err.message
-                });
+                return res.status(500).json({ error: err.message, opsResults });
             }
         }
 

@@ -52,7 +52,7 @@ const ChatbotView = () => {
             let maxValue = 0n;
 
             if (selectedScope === 'uniswap') {
-                target = "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48"; // Sepolia SwapRouter02
+                target = "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E"; // Sepolia SwapRouter02
                 selector = "0x414bf389"; // exactInputSingle
                 checkAmount = true;
                 amountOffset = 132;
@@ -66,8 +66,8 @@ const ChatbotView = () => {
                 maxAmountWei = ethers.parseUnits(maxAmount, 6); // Assuming 6 decimals for USDC demo
                 maxValue = 0n;
             } else if (selectedScope === 'custom') {
-                target = customTarget;
-                selector = customSelector;
+                target = customTarget || "0x0000000000000000000000000000000000000000";
+                selector = customSelector === "0x00" ? "0x00000000" : (customSelector || "0x00000000");
                 maxValue = ethers.parseEther(maxAmount);
             }
 
@@ -76,12 +76,9 @@ const ChatbotView = () => {
                 target,
                 selector,
                 maxValue,
-                checkAmount,
-                amountOffset,
-                maxAmountWei,
-                0,
+                0, // validAfter
                 validUntil,
-                0 // unlimited uses
+                0 // maxUses
             ];
 
             const validatorIface = new ethers.Interface(SessionKeyValidatorABI);
@@ -155,18 +152,14 @@ const ChatbotView = () => {
             const userOpHash = await epHashContract.getUserOpHash(packedForHash);
             
             const sig = await signer.signMessage(ethers.getBytes(userOpHash));
-            const wrappedSig = ethers.concat([
-                "0x0000000000000000000000000000000000000000", // EOA owns the account
-                sig
-            ]);
-            userOp.signature = ethers.hexlify(wrappedSig);
+            userOp.signature = sig;
             
             const returnedHash = await sendUserOperation(userOp);
             console.log("Tx Hash:", returnedHash);
             
-            // Wait for receipt
+            // Wait for receipt (Testnets can be slow, wait up to 90 seconds)
             let receipt = null;
-            let retries = 20;
+            let retries = 45;
             while (!receipt && retries > 0) {
                 await new Promise(r => setTimeout(r, 2000));
                 receipt = await getUserOpReceipt(returnedHash);

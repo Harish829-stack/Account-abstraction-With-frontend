@@ -232,5 +232,73 @@ module.exports = {
   encodeERC20Transfer,
   getDynamicGasFees,
   estimateUserOperationGas,
-  sendUserOperation
+  sendUserOperation,
+  buildAndSendAgentOp
 };
+
+async function buildAndSendAgentOp(
+  agentWallet,
+  provider,
+  smartAccountAddress,
+  callData,
+  entryPointAddress,
+  validatorAddress,
+  nonce
+) {
+    const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+
+    const rpcUserOp = {
+        sender: smartAccountAddress,
+        nonce: toHex(nonce),
+        factory: "0x",
+        factoryData: "0x",
+        callData,
+        callGasLimit: "0x0",
+        verificationGasLimit: "0x0",
+        preVerificationGas: "0x0",
+        maxFeePerGas: toHex(maxFeePerGas),
+        maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
+        paymaster: "0x",
+        paymasterVerificationGasLimit: "0x",
+        paymasterPostOpGasLimit: "0x",
+        paymasterData: "0x",
+        // This MUST be an 85-byte signature for the SessionKeyValidator
+        signature: ethers.concat([
+            agentWallet.address,
+            "0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c"
+        ])
+    };
+
+    try {
+        const est = await estimateUserOperationGas(rpcUserOp);
+        
+        // Add a 20% margin to all gas limits to prevent execution reverts due to minor state fluctuations
+        const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
+        const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
+        const pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
+
+        rpcUserOp.callGasLimit = toHex(callGasWithMargin);
+        rpcUserOp.verificationGasLimit = toHex(vgfWithMargin);
+        rpcUserOp.preVerificationGas = toHex(pvgWithMargin);
+    } catch (estErr) {
+        console.error("Gas estimation failed:", estErr.message);
+        throw new Error("Gas estimation failed: " + estErr.message);
+    }
+
+    const packedOp = packUserOp(rpcUserOp);
+    const entryPoint = new ethers.Contract(
+        entryPointAddress,
+        ['function getUserOpHash(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature) userOp) view returns (bytes32)'],
+        provider
+    );
+    const userOpHash = await entryPoint.getUserOpHash(packedOp);
+
+    const rawSig = await agentWallet.signMessage(ethers.getBytes(userOpHash));
+    
+    // Pack the final 85-byte signature: [sessionKey(20)] + [sig(65)]
+    const packedSignature = ethers.concat([ agentWallet.address, rawSig ]);
+    rpcUserOp.signature = ethers.hexlify(packedSignature);
+
+    const opHash = await sendUserOperation(rpcUserOp);
+    return opHash;
+}
