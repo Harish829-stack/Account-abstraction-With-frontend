@@ -309,22 +309,24 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
        )
      };
 
-     try {
-       const est = await estimateUserOperationGas(unpackedUserOp);
-       
-       const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
-       const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
-       const pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
+      try {
+        const est = await estimateUserOperationGas(unpackedUserOp);
+        
+        let callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
+        let vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
+        let pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
 
-       unpackedUserOp.callGasLimit = toHex(callGasWithMargin);
-       unpackedUserOp.verificationGasLimit = toHex(vgfWithMargin);
-       unpackedUserOp.preVerificationGas = toHex(pvgWithMargin);
-     } catch (err) {
-       console.warn("WebAuthn estimation failed, using fallbacks:", err);
-       unpackedUserOp.callGasLimit = toHex(300000);         // increased from 200k for safety
-       unpackedUserOp.verificationGasLimit = toHex(500000); // increased from 250k — software P256 can cost 300k-500k gas when no precompile
-       unpackedUserOp.preVerificationGas = toHex(100000);   // increased from 50k for cross-chain safety
-     }
+        if (vgfWithMargin < 1500000n) vgfWithMargin = 1500000n;
+
+        unpackedUserOp.callGasLimit = toHex(callGasWithMargin);
+        unpackedUserOp.verificationGasLimit = toHex(vgfWithMargin);
+        unpackedUserOp.preVerificationGas = toHex(pvgWithMargin);
+      } catch (err) {
+        console.warn("WebAuthn estimation failed, using fallbacks:", err);
+        unpackedUserOp.callGasLimit = toHex(300000);         
+        unpackedUserOp.verificationGasLimit = toHex(1500000); 
+        unpackedUserOp.preVerificationGas = toHex(100000);   
+      }
 
      const packedOp = packUserOp(unpackedUserOp);
 

@@ -67,19 +67,19 @@ export async function estimateUserOperationGas(userOp) {
     const est = data.result;
     if (est) {
       if (est.callGasLimit) {
-        est.callGasLimit = ((BigInt(est.callGasLimit) * 120n) / 100n).toString();
+        est.callGasLimit = ((BigInt(est.callGasLimit) * 150n) / 100n).toString();
       }
       if (est.verificationGasLimit) {
-        est.verificationGasLimit = ((BigInt(est.verificationGasLimit) * 150n) / 100n).toString();
+        est.verificationGasLimit = ((BigInt(est.verificationGasLimit) * 200n) / 100n).toString();
       }
       if (est.preVerificationGas) {
-        est.preVerificationGas = (BigInt(est.preVerificationGas) + 5000n).toString();
+        est.preVerificationGas = ((BigInt(est.preVerificationGas) * 150n) / 100n + 10000n).toString();
       }
       if (est.paymasterVerificationGasLimit) {
-        est.paymasterVerificationGasLimit = ((BigInt(est.paymasterVerificationGasLimit) * 150n) / 100n).toString();
+        est.paymasterVerificationGasLimit = ((BigInt(est.paymasterVerificationGasLimit) * 200n) / 100n).toString();
       }
       if (est.paymasterPostOpGasLimit) {
-        est.paymasterPostOpGasLimit = ((BigInt(est.paymasterPostOpGasLimit) * 150n) / 100n).toString();
+        est.paymasterPostOpGasLimit = ((BigInt(est.paymasterPostOpGasLimit) * 200n) / 100n).toString();
       }
     }
     
@@ -202,54 +202,27 @@ export async function getDynamicGasFees(provider) {
     const chainPriority = feeData.maxPriorityFeePerGas || 1500000000n;
     const chainMaxFee = feeData.maxFeePerGas || (feeData.gasPrice ? feeData.gasPrice * 2n : 5000000000n);
     
-    // 2. Try fetching from Pimlico/Skandha bundler
-    let pimlicoPriority = 0n;
-    let pimlicoMaxFee = 0n;
+    // Mitigate gas price errors by strictly taking on-chain prices
+    maxPriorityFeePerGas = chainPriority;
+    maxFeePerGas = chainMaxFee;
     
-    let rpcUrl = import.meta.env.VITE_SKANDHA_RPC_URL;
     let isAmoy = false;
     if (window.ethereum) {
       try {
         const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-        if (parseInt(chainId, 16) === 80002) {
-          isAmoy = true;
-          if (import.meta.env.VITE_PIMLICO_BUNDLER_URL) {
-            rpcUrl = import.meta.env.VITE_PIMLICO_BUNDLER_URL.replace("137", "80002");
-          } else {
-            rpcUrl = rpcUrl.replace("11155111", "80002");
-          }
-        }
+        if (parseInt(chainId, 16) === 80002) isAmoy = true;
       } catch (e) { console.warn("Failed to get chainId in fee fetch", e); }
     }
 
-    try {
-      const gasRes = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'pimlico_getUserOperationGasPrice', params: [] })
-      }).then(r => r.json());
-      
-      if (gasRes.result && gasRes.result.fast) {
-        pimlicoPriority = BigInt(gasRes.result.fast.maxPriorityFeePerGas);
-        pimlicoMaxFee = BigInt(gasRes.result.fast.maxFeePerGas);
-      }
-    } catch (e) {
-      console.warn("Bundler gas fee fetch failed, relying on node fees:", e.message);
-    }
-    
-    // 3. Take the MAXIMUM of the chain's minimum and the bundler's estimate
-    maxPriorityFeePerGas = pimlicoPriority > chainPriority ? pimlicoPriority : chainPriority;
-    maxFeePerGas = pimlicoMaxFee > chainMaxFee ? pimlicoMaxFee : chainMaxFee;
-    
-    // 4. Apply Amoy minimums if necessary
+    // Apply Amoy minimums if necessary
     if (isAmoy || import.meta.env.VITE_ACTIVE_NETWORK === "amoy") {
         if (maxPriorityFeePerGas < 30000000000n) maxPriorityFeePerGas = 30000000000n;
         if (maxFeePerGas < 35000000000n) maxFeePerGas = 35000000000n;
     }
 
-    // 5. Add a 10% buffer to prevent sudden block fluctuations from reverting the tx
-    maxPriorityFeePerGas = (maxPriorityFeePerGas * 11n) / 10n;
-    maxFeePerGas = (maxFeePerGas * 11n) / 10n;
+    // Add a 100% buffer (2x) on testnet to guarantee it never gets stuck pending and times out
+    maxPriorityFeePerGas = maxPriorityFeePerGas * 2n;
+    maxFeePerGas = maxFeePerGas * 2n;
     
   } catch (e) {
     console.warn("Dynamic gas fetch failed completely, using fallbacks:", e);
