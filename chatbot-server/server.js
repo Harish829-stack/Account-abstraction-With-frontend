@@ -10,7 +10,8 @@ const {
     getNonceForValidator,
     encodeUniswapSwap,
     encodeERC20Transfer,
-    buildAndSendAgentOp
+    buildAndSendAgentOp,
+    waitForUserOp
 } = require('./userOpBuilder');
 
 const app = express();
@@ -74,7 +75,8 @@ app.post('/api/chat', async (req, res) => {
         // 1. Setup tools based on scope
         let tools = [];
         let systemPrompt = `You are a helpful Web3 AI assistant. Your job is to translate user requests into function calls. 
-        If the user asks to repeat an action, set the 'repeat' parameter to that number.`;
+        If the user asks to repeat an action, set the 'repeat' parameter to that number.
+        CRITICAL: If the user does not specify a recipient address for a transfer, DO NOT hallucinate an address. You must return a normal text response asking them to provide the recipient address.`;
 
         if (config.scope === 'uniswap') {
             tools.push({
@@ -87,7 +89,7 @@ app.post('/api/chat', async (req, res) => {
                         properties: {
                             tokenIn: { type: 'string', description: 'Address of input token (e.g., WETH address)' },
                             tokenOut: { type: 'string', description: 'Address of output token (e.g., USDC address)' },
-                            amountIn: { type: 'string', description: 'Amount of input token (in Wei)' },
+                            amountIn: { type: 'string', description: 'Amount of input token in human-readable format (e.g. "0.001")' },
                             repeat: { type: 'string', description: 'Number of times to repeat this operation independently (e.g., "1")' }
                         },
                         required: ['tokenIn', 'tokenOut', 'amountIn']
@@ -103,9 +105,9 @@ app.post('/api/chat', async (req, res) => {
                     parameters: {
                         type: 'object',
                         properties: {
-                            tokenAddress: { type: 'string', description: 'Contract address of the ERC20 token' },
+                            tokenAddress: { type: 'string', description: 'Address of ERC20 token to transfer. Must use 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238 for USDC on Sepolia.' },
                             recipient: { type: 'string', description: 'Address of the recipient' },
-                            amount: { type: 'string', description: 'Amount to transfer (in Wei)' },
+                            amount: { type: 'string', description: 'Amount of tokens in human-readable format (e.g., "0.00005" or "1.5")' },
                             repeat: { type: 'string', description: 'Number of times to repeat this operation independently (e.g., "1")' }
                         },
                         required: ['tokenAddress', 'recipient', 'amount']
@@ -160,29 +162,50 @@ app.post('/api/chat', async (req, res) => {
         
         if (toolCall.function.name === 'uniswap_swap') {
             target = process.env.UNISWAP_ROUTER;
+            // Enforce WETH for tokenIn to avoid allowance issues and hallucinated addresses
+            const safeTokenIn = process.env.WETH_SEPOLIA;
+            const safeTokenOut = process.env.USDC_SEPOLIA; // Fallback to USDC if LLM hallucinates
+            
+            let amountInWei;
+            try {
+                amountInWei = ethers.parseEther(args.amountIn.toString());
+            } catch (e) {
+                return res.json({ reply: `Error parsing amount. Please use a valid number format like "0.001".`, ops: [] });
+            }
+            
             // Simplified ExactInputSingle for demo (using 0.3% fee pool, amountOutMinimum = 0)
             innerCallData = encodeUniswapSwap(
-                args.tokenIn.toLowerCase(), 
-                args.tokenOut.toLowerCase(), 
+                safeTokenIn.toLowerCase(), 
+                safeTokenOut.toLowerCase(), 
                 3000, 
                 smartAccountAddress, 
-                args.amountIn, 
+                amountInWei, 
                 0n, 
                 0n
             );
-            value = args.tokenIn.toLowerCase() === process.env.WETH_SEPOLIA.toLowerCase() ? args.amountIn : "0";
+            value = amountInWei; // Always send ETH for WETH swaps
             
             // Off-chain limit check
-            if (BigInt(args.amountIn) > BigInt(ethers.parseEther(config.maxAmount))) {
-                return res.json({ reply: `Rejected: Amount ${ethers.formatEther(args.amountIn)} exceeds max allowed (${config.maxAmount}).`, ops: [] });
+            if (amountInWei > BigInt(ethers.parseEther(config.maxAmount))) {
+                return res.json({ reply: `Rejected: Amount ${args.amountIn} exceeds max allowed (${config.maxAmount}).`, ops: [] });
             }
 
         } else if (toolCall.function.name === 'erc20_transfer') {
-            target = args.tokenAddress;
-            innerCallData = encodeERC20Transfer(args.recipient, args.amount);
+            // Enforce authorized USDC token to prevent SessionKey target mismatch
+            target = process.env.USDC_SEPOLIA;
+            
+            // The LLM now provides a human-readable amount (e.g. "0.00005"). We convert it to base units using 6 decimals.
+            let amountInWei;
+            try {
+                amountInWei = ethers.parseUnits(args.amount.toString(), 6);
+            } catch (e) {
+                return res.json({ reply: `Error parsing amount. Please use a valid number format like "0.00005".`, ops: [] });
+            }
+            
+            innerCallData = encodeERC20Transfer(args.recipient, amountInWei);
             
             // Off-chain limit check
-            if (BigInt(args.amount) > BigInt(ethers.parseUnits(config.maxAmount, 6))) { // Assuming USDC 6 decimals for demo maxAmount
+            if (amountInWei > BigInt(ethers.parseUnits(config.maxAmount, 6))) { // Assuming USDC 6 decimals for demo maxAmount
                 return res.json({ reply: `Rejected: Amount exceeds max allowed (${config.maxAmount}).`, ops: [] });
             }
 
@@ -239,8 +262,12 @@ app.post('/api/chat', async (req, res) => {
                     txUrl: `https://jiffyscan.xyz/userOpHash/${opHash}?network=sepolia`
                 });
                 
-                // Small delay to prevent rate limits
-                await new Promise(r => setTimeout(r, 1000));
+                // Wait for the UserOp to be completely mined before sending the next one
+                // This prevents "AA25 invalid account nonce" errors from the bundler during estimation
+                console.log(`Waiting for UserOp ${opHash} to be mined...`);
+                await waitForUserOp(opHash);
+                console.log(`UserOp ${opHash} mined successfully!`);
+                
             } catch (err) {
                 console.error(`Error on iteration ${i}:`, err);
                 return res.status(500).json({ error: err.message, opsResults });

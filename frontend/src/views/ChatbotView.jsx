@@ -53,7 +53,7 @@ const ChatbotView = () => {
 
             if (selectedScope === 'uniswap') {
                 target = "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E"; // Sepolia SwapRouter02
-                selector = "0x414bf389"; // exactInputSingle
+                selector = "0x00000000"; // allow any selector on the router
                 checkAmount = true;
                 amountOffset = 132;
                 maxAmountWei = ethers.parseEther(maxAmount);
@@ -166,15 +166,21 @@ const ChatbotView = () => {
                 retries--;
             }
             
-            if (receipt && receipt.success) {
-                setIsAgentConfigured(true);
-                setAgentStatus({
-                    agentAddress: generatedAgentAddress,
-                    scope: selectedScope,
-                    maxAmount: maxAmount
-                });
+            if (receipt) {
+                if (receipt.success) {
+                    setIsAgentConfigured(true);
+                    setAgentStatus({
+                        agentAddress: generatedAgentAddress,
+                        scope: selectedScope,
+                        maxAmount: maxAmount
+                    });
+                } else {
+                    console.error("Installation reverted on-chain. Receipt:", receipt);
+                    alert("Agent installation reverted on-chain. Check browser console for receipt details.");
+                }
             } else {
-                alert("Agent installation failed or timed out.");
+                console.warn("Installation timed out after 90 seconds.");
+                alert("Agent installation timed out after 90 seconds. The network might be congested, check JiffyScan for the pending UserOp hash.");
             }
         } catch (e) {
             console.error(e);

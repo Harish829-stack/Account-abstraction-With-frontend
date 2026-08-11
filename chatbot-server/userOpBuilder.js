@@ -99,29 +99,9 @@ async function getDynamicGasFees(provider) {
     const chainPriority = feeData.maxPriorityFeePerGas || 1500000000n;
     const chainMaxFee = feeData.maxFeePerGas || (feeData.gasPrice ? feeData.gasPrice * 2n : 5000000000n);
     
-    let pimlicoPriority = 0n;
-    let pimlicoMaxFee = 0n;
-    
-    let rpcUrl = process.env.BUNDLER_URL;
-
-    try {
-      const gasRes = await axios.post(rpcUrl, {
-        jsonrpc: '2.0', id: 1, method: 'pimlico_getUserOperationGasPrice', params: []
-      });
-      
-      if (gasRes.data.result && gasRes.data.result.fast) {
-        pimlicoPriority = BigInt(gasRes.data.result.fast.maxPriorityFeePerGas);
-        pimlicoMaxFee = BigInt(gasRes.data.result.fast.maxFeePerGas);
-      }
-    } catch (e) {
-      console.warn("Bundler gas fee fetch failed, relying on node fees");
-    }
-    
-    maxPriorityFeePerGas = pimlicoPriority > chainPriority ? pimlicoPriority : chainPriority;
-    maxFeePerGas = pimlicoMaxFee > chainMaxFee ? pimlicoMaxFee : chainMaxFee;
-    
-    maxPriorityFeePerGas = (maxPriorityFeePerGas * 11n) / 10n;
-    maxFeePerGas = (maxFeePerGas * 11n) / 10n;
+    // Mitigate gas price errors by strictly taking on-chain prices + 100 percent margin (2x)
+    maxPriorityFeePerGas = chainPriority * 2n;
+    maxFeePerGas = chainMaxFee * 2n;
     
   } catch (e) {
     console.warn("Dynamic gas fetch failed completely, using fallbacks");
@@ -168,9 +148,9 @@ async function estimateUserOperationGas(userOp) {
     
     const est = data.result;
     if (est) {
-      if (est.callGasLimit) est.callGasLimit = ((BigInt(est.callGasLimit) * 120n) / 100n).toString();
-      if (est.verificationGasLimit) est.verificationGasLimit = ((BigInt(est.verificationGasLimit) * 150n) / 100n).toString();
-      if (est.preVerificationGas) est.preVerificationGas = (BigInt(est.preVerificationGas) + 5000n).toString();
+      if (est.callGasLimit) est.callGasLimit = ((BigInt(est.callGasLimit) * 150n) / 100n).toString();
+      if (est.verificationGasLimit) est.verificationGasLimit = ((BigInt(est.verificationGasLimit) * 200n) / 100n).toString();
+      if (est.preVerificationGas) est.preVerificationGas = ((BigInt(est.preVerificationGas) * 150n) / 100n + 10000n).toString();
     }
     return est;
   } catch (error) {
@@ -223,6 +203,37 @@ async function sendUserOperation(userOp) {
   }
 }
 
+async function waitForUserOp(opHash, timeoutMs = 90000) {
+  const rpcUrl = process.env.BUNDLER_URL;
+  const startTime = Date.now();
+  
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const res = await axios.post(
+        rpcUrl,
+        {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "eth_getUserOperationReceipt",
+          params: [opHash]
+        },
+        { headers: { "Content-Type": "application/json" } }
+      );
+      
+      if (res.data && res.data.result) {
+        return res.data.result;
+      }
+    } catch (e) {
+      // Ignore network errors during polling
+    }
+    
+    // Wait 2 seconds before polling again
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  
+  throw new Error(`Timeout waiting for UserOp ${opHash} to be mined`);
+}
+
 module.exports = {
   toHex,
   packUserOp,
@@ -233,7 +244,8 @@ module.exports = {
   getDynamicGasFees,
   estimateUserOperationGas,
   sendUserOperation,
-  buildAndSendAgentOp
+  buildAndSendAgentOp,
+  waitForUserOp
 };
 
 async function buildAndSendAgentOp(
@@ -263,23 +275,35 @@ async function buildAndSendAgentOp(
         paymasterPostOpGasLimit: "0x",
         paymasterData: "0x",
         // This MUST be an 85-byte signature for the SessionKeyValidator
-        signature: ethers.concat([
+        signature: ethers.hexlify(ethers.concat([
             agentWallet.address,
             "0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c"
-        ])
+        ]))
     };
 
     try {
-        const est = await estimateUserOperationGas(rpcUserOp);
-        
-        // Add a 20% margin to all gas limits to prevent execution reverts due to minor state fluctuations
-        const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
-        const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
-        const pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
+        try {
+            const est = await estimateUserOperationGas(rpcUserOp);
+            
+            // Add a 20% margin to all gas limits to prevent execution reverts due to minor state fluctuations
+            let callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
+            let vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
+            let pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
 
-        rpcUserOp.callGasLimit = toHex(callGasWithMargin);
-        rpcUserOp.verificationGasLimit = toHex(vgfWithMargin);
-        rpcUserOp.preVerificationGas = toHex(pvgWithMargin);
+            // Apply high minimums to prevent "account internally reverts on oog" during sendUserOperation
+            if (callGasWithMargin < 500000n) callGasWithMargin = 500000n;
+            if (vgfWithMargin < 500000n) vgfWithMargin = 500000n;
+
+            rpcUserOp.callGasLimit = toHex(callGasWithMargin);
+            rpcUserOp.verificationGasLimit = toHex(vgfWithMargin);
+            rpcUserOp.preVerificationGas = toHex(pvgWithMargin);
+        } catch(e) {
+            console.warn("Bundler estimation failed, using fallback high limits. Error:", e.message);
+            // Use very high fallbacks to ensure Uniswap and complex operations don't run Out Of Gas (OOG)
+            rpcUserOp.callGasLimit = toHex(2000000n);
+            rpcUserOp.verificationGasLimit = toHex(1000000n);
+            rpcUserOp.preVerificationGas = toHex(100000n);
+        }
     } catch (estErr) {
         console.error("Gas estimation failed:", estErr.message);
         throw new Error("Gas estimation failed: " + estErr.message);
