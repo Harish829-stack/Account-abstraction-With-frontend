@@ -76,6 +76,7 @@ app.post('/api/chat', async (req, res) => {
         let tools = [];
         let systemPrompt = `You are a helpful Web3 AI assistant. Your job is to translate user requests into function calls. 
         If the user asks to repeat an action, set the 'repeat' parameter to that number.
+        CRITICAL: For token swaps, assume standard Sepolia token addresses if none are provided. Do NOT ask the user for contract addresses for WETH or USDC.
         CRITICAL: If the user does not specify a recipient address for a transfer, DO NOT hallucinate an address. You must return a normal text response asking them to provide the recipient address.`;
 
         if (config.scope === 'uniswap') {
@@ -87,12 +88,12 @@ app.post('/api/chat', async (req, res) => {
                     parameters: {
                         type: 'object',
                         properties: {
-                            tokenIn: { type: 'string', description: 'Address of input token (e.g., WETH address)' },
-                            tokenOut: { type: 'string', description: 'Address of output token (e.g., USDC address)' },
+                            tokenIn: { type: 'string', description: 'Address of input token (use "0xWETH" if not specified)' },
+                            tokenOut: { type: 'string', description: 'Address of output token (use "0xUSDC" if not specified)' },
                             amountIn: { type: 'string', description: 'Amount of input token in human-readable format (e.g. "0.001")' },
                             repeat: { type: 'string', description: 'Number of times to repeat this operation independently (e.g., "1")' }
                         },
-                        required: ['tokenIn', 'tokenOut', 'amountIn']
+                        required: ['amountIn']
                     }
                 }
             });
@@ -140,7 +141,7 @@ app.post('/api/chat', async (req, res) => {
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: message }
             ],
-            model: 'llama-3.3-70b-versatile',
+            model: 'openai/gpt-oss-120b',
             tools: tools,
             tool_choice: 'auto'
         });
