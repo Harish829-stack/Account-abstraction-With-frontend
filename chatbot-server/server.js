@@ -28,6 +28,11 @@ const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
 // In-memory store: smartAccountAddress -> { privateKey, agentAddress, scope, maxAmount }
 const agentConfigs = new Map();
 
+
+app.post('/health',(req,res)=>{
+    res.send('OK');
+})
+
 // Generate an agent keypair for a smart account and set its scope
 app.post('/api/agent/generate', (req, res) => {
     try {
