@@ -20,8 +20,7 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.options('*', cors());
-app.use(express.json());
+app.options('/{*splat}', cors());app.use(express.json());
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
