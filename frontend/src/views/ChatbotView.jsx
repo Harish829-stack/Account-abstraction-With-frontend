@@ -256,7 +256,7 @@ const ChatbotView = () => {
                                         <div className="font-medium text-slate-200 mb-1">💸 ERC-20</div>
                                         <div className="text-xs text-slate-500">Allow ERC-20 transfers (USDC)</div>
                                     </button>
-                                    <button 
+                                    <button  
                                         onClick={() => setSelectedScope('custom')}
                                         className={`p-4 rounded-xl border text-left transition-all ${selectedScope === 'custom' ? 'border-blue-500 bg-blue-500/10 shadow-inner' : 'border-slate-800 bg-slate-900 hover:border-slate-700'}`}
                                     >
