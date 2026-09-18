@@ -1,36 +1,370 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useChatbotContext } from '../context/ChatbotContext';
 import { useAppContext } from '../context/AppContext';
-import { Send, Bot, User, CheckCircle2, Loader2, Key, Settings, Shield, ExternalLink } from 'lucide-react';
 import { ethers } from 'ethers';
 import { SessionKeyValidatorABI } from '../utils/abis';
-import { encodeERC7579Single, getNonceForValidator } from '../utils/helpers';
+import { encodeERC7579Single } from '../utils/helpers';
 import { estimateUserOperationGas, sendUserOperation, getUserOpReceipt, getDynamicGasFees } from '../utils/bundler';
+import "./agent-ui.css";
 
-const ChatbotView = () => {
-    const { isAgentConfigured, agentStatus, setIsAgentConfigured, setAgentStatus, messages, sendMessage, generateAgent, isChatLoading } = useChatbotContext();
+/* ---------- icons ---------- */
+const BotIcon = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="4" y="8" width="16" height="12" rx="3" />
+    <path d="M12 8V4M9 14h.01M15 14h.01M2 13h2M20 13h2" />
+  </svg>
+);
+
+const KeyIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="8" cy="15" r="4" />
+    <path d="M10.8 12.2 21 2M17 6l3 3M14 9l2.5 2.5" />
+  </svg>
+);
+
+const CheckCircle = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9" />
+    <path d="m8.5 12 2.5 2.5 4.5-5" />
+  </svg>
+);
+
+const ShieldIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z" />
+  </svg>
+);
+
+const ExternalLink = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+  </svg>
+);
+
+const SendIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 12 21 4l-7 17-2.5-7.5L4 12z" />
+  </svg>
+);
+
+const UserIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="8" r="3.4" />
+    <path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6" />
+  </svg>
+);
+
+const SpinnerIcon = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin">
+    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+  </svg>
+);
+
+/* ---------- shared bits ---------- */
+const Progress = ({ active = 1, total = 3 }) => (
+  <div className="progress">
+    {Array.from({ length: total }).map((_, i) => (
+      <span key={i} className={`progress__bar ${i < active ? "is-on" : ""}`} />
+    ))}
+  </div>
+);
+
+const CardHeader = ({ title, subtitle }) => (
+  <div className="card__head">
+    <div className="card__headRow">
+      <span className="iconBox"><BotIcon size={17} /></span>
+      <h2 className="card__title">{title}</h2>
+    </div>
+    <p className="card__sub">{subtitle}</p>
+  </div>
+);
+
+/* ---------- scope definitions ---------- */
+const SCOPES = [
+  { id: "uniswap", emoji: "🦄", name: "Uniswap V3", desc: "Swaps on Sepolia", suggestions: ['Swap 0.001 ETH for USDC', 'Swap 0.001 ETH for USDC 3 times'] },
+  { id: "erc20",   emoji: "💸", name: "ERC-20",     desc: "USDC transfers", suggestions: ['Send 0.5 USDC to 0x1234...', 'Send 1 USDC to my friend 3 times'] },
+  { id: "custom",  emoji: "⚙️", name: "Custom",     desc: "Contract + selector", suggestions: ['Call the target contract'] },
+];
+
+const TABS = [
+  { id: "setup",     label: "Configure", step: 1 },
+  { id: "authorize", label: "Authorize", step: 2 },
+  { id: "workspace", label: "Workspace", step: 3 },
+];
+
+/* ---------- 1. setup step ---------- */
+function SetupStep({ onGenerate, isGenerating, initialScopeId, initialLimit, initialTarget, initialSelector }) {
+  const [scope, setScope] = useState(initialScopeId || "uniswap");
+  const [limit, setLimit] = useState(initialLimit || "0.01");
+  const [customTarget, setCustomTarget] = useState(initialTarget || "");
+  const [customSelector, setCustomSelector] = useState(initialSelector || "");
+
+  return (
+    <div className="card card--setup">
+      <Progress active={1} />
+      <CardHeader
+        title="Initialize AI agent"
+        subtitle="Create an ephemeral session key so the agent can act on your behalf, within limits you set below."
+      />
+
+      <p className="label">1. Select capability scope</p>
+      <div className="scopeGrid">
+        {SCOPES.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setScope(s.id)}
+            className={`scope ${scope === s.id ? "is-selected" : ""}`}
+          >
+            <span className="scope__name">
+              <span className="scope__emoji">{s.emoji}</span>{s.name}
+            </span>
+            <span className="scope__desc">{s.desc}</span>
+          </button>
+        ))}
+      </div>
+
+      {scope === 'custom' && (
+        <div style={{ marginBottom: 20 }}>
+          <p className="label">Target contract</p>
+          <div className="field">
+            <input className="field__input" placeholder="0x..." value={customTarget} onChange={e => setCustomTarget(e.target.value)} />
+          </div>
+          <p className="label" style={{ marginTop: 10 }}>Function selector</p>
+          <div className="field">
+            <input className="field__input" placeholder="0x..." value={customSelector} onChange={e => setCustomSelector(e.target.value)} />
+          </div>
+        </div>
+      )}
+
+      <p className="label">
+        2. Set hard limit <span className="label__muted">(enforced on-chain)</span>
+      </p>
+      <div className="field">
+        <input
+          className="field__input"
+          value={limit}
+          onChange={(e) => setLimit(e.target.value)}
+          inputMode="decimal"
+        />
+        <span className="field__suffix">{scope === 'erc20' ? 'USDC' : 'ETH'}</span>
+      </div>
+
+      <button className="agent-btn" disabled={isGenerating} onClick={() => onGenerate?.({ scope, limit, customTarget, customSelector })}>
+        {isGenerating ? <SpinnerIcon /> : <KeyIcon />}
+        {isGenerating ? 'Generating...' : 'Generate secure agent key'}
+      </button>
+    </div>
+  );
+}
+
+/* ---------- 2. authorize step ---------- */
+function AuthorizeStep({ scope, limit, address, onAuthorize, isInstalling }) {
+  const isErc20 = scope.id === 'erc20';
+  const rows = [
+    { k: "Scope", v: <><span className="scope__emoji">{scope.emoji}</span>{scope.name}</> },
+    { k: "Agent address", v: <span className="mono">{address ? `${address.slice(0, 6)}...${address.slice(-4)}` : 'Generating...'}</span> },
+    { k: "Hard limit", v: `${limit} ${isErc20 ? 'USDC' : 'ETH'}` },
+  ];
+
+  return (
+    <div className="card card--auth">
+      <Progress active={2} />
+      <CardHeader
+        title="Initialize AI agent"
+        subtitle="Review and authorize the agent on-chain."
+      />
+
+      <div className="panel">
+        {rows.map((r) => (
+          <div className="panel__row" key={r.k}>
+            <span className="panel__k">{r.k}</span>
+            <span className="panel__v">{r.v}</span>
+          </div>
+        ))}
+      </div>
+
+      <p className="note">
+        <span className="note__icon"><ShieldIcon /></span>
+        The key is stored in backend memory and enforced on-chain by the session key validator.
+      </p>
+
+      <button className="agent-btn" disabled={isInstalling || !address} onClick={onAuthorize}>
+        {isInstalling ? <SpinnerIcon /> : <CheckCircle />}
+        {isInstalling ? 'Installing on-chain...' : 'Authorize agent'}
+      </button>
+    </div>
+  );
+}
+
+/* ---------- 3. workspace ---------- */
+function AgentWorkspace({
+  scope,
+  maxAmount,
+  messages,
+  sendMessage,
+  isChatLoading,
+  onResetTask
+}) {
+  const [value, setValue] = useState("");
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+      scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isChatLoading]);
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!value.trim() || isChatLoading) return;
+    sendMessage?.(value.trim());
+    setValue("");
+  };
+
+  return (
+    <div className="card card--ws">
+      <header className="ws__head">
+        <span className="iconBox"><BotIcon size={17} /></span>
+        <div className="ws__id">
+          <span className="ws__title">Agent workspace</span>
+          <span className="ws__status"><i className="dot" />Connected and authorized</span>
+        </div>
+        <div className="ws__pills">
+          <span className="pill">{scope.name.toUpperCase()}</span>
+          <span className="pill">Max: {maxAmount}</span>
+          <span className="pill pill--action" onClick={onResetTask} title="Reset / Change Task">↩ Reset</span>
+        </div>
+      </header>
+
+      <div className="ws__thread">
+        {messages.length === 0 && (
+          <div className="ws__empty">
+            <div className="ws__empty-icon"><BotIcon size={22} /></div>
+            <p className="ws__empty-title">How can I help?</p>
+            <p className="ws__empty-sub">Describe what you want me to do and I'll execute it using your session key.</p>
+            <div className="suggestions">
+              {scope.suggestions?.map(s => (
+                <button key={s} onClick={() => setValue(s)} className="suggestion-btn">"{s}"</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {messages.map((m, i) =>
+          m.role === "user" ? (
+            <div className="row row--user" key={i}>
+              <div className="bubble">{m.content}</div>
+              <span className="avatar"><UserIcon /></span>
+            </div>
+          ) : (
+            <div className="row row--agent" key={i}>
+              <span className="avatar avatar--bot"><BotIcon size={15} /></span>
+              <div className="stack">
+                <div className="bubble">{m.content}</div>
+                {m.ops?.map((op) => (
+                  <div className="op" key={op.iteration}>
+                    <span className="op__check"><CheckCircle size={15} /></span>
+                    <span className="op__label">Operation {op.iteration}</span>
+                    <a className="op__link" href={op.txUrl} target="_blank" rel="noreferrer">
+                      View tx <ExternalLink />
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        )}
+        
+        {isChatLoading && (
+          <div className="row row--agent">
+            <span className="avatar avatar--bot"><BotIcon size={15} /></span>
+            <div className="bubble">
+              <div className="typing-dots">
+                <span /> <span /> <span />
+              </div>
+            </div>
+          </div>
+        )}
+        <div ref={scrollRef} />
+      </div>
+
+      <form className="composer" onSubmit={submit}>
+        <input
+          className="composer__input"
+          placeholder="Ask the agent to do something..."
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <button className="composer__send" type="submit" aria-label="Send" disabled={!value.trim() || isChatLoading}>
+          <SendIcon />
+        </button>
+      </form>
+    </div>
+  );
+}
+
+/* ---------- main UI shell ---------- */
+export default function ChatbotView() {
+    const { isAgentConfigured, agentStatus, setIsAgentConfigured, setAgentStatus, messages, sendMessage, generateAgent, isChatLoading, clearMessages } = useChatbotContext();
     const { smartAccountAddress, provider, signer, eoaAddress, installedModules } = useAppContext();
+
+    const [tab, setTab] = useState("setup");
+    const [visited, setVisited] = useState(["setup"]);
     
-    const [setupStep, setSetupStep] = useState(1);
     const [isGenerating, setIsGenerating] = useState(false);
     const [isInstalling, setIsInstalling] = useState(false);
-    
-    // Setup form state
-    const [selectedScope, setSelectedScope] = useState('uniswap');
-    const [maxAmount, setMaxAmount] = useState('0.01'); // In human readable (e.g., ETH)
-    const [customTarget, setCustomTarget] = useState('');
-    const [customSelector, setCustomSelector] = useState('');
     const [generatedAgentAddress, setGeneratedAgentAddress] = useState('');
-    
-    // Chat state
-    const [input, setInput] = useState('');
+    const [config, setConfig] = useState({
+        scope: SCOPES[0],
+        limit: "0.01",
+        customTarget: '',
+        customSelector: ''
+    });
 
-    const handleGenerate = async () => {
+    useEffect(() => {
+        if (isAgentConfigured && agentStatus && !visited.includes("workspace")) {
+            const scopeObj = SCOPES.find(s => s.id === agentStatus.scope) || SCOPES[0];
+            setConfig({
+                scope: scopeObj,
+                limit: agentStatus.maxAmount,
+                customTarget: '',
+                customSelector: ''
+            });
+            setGeneratedAgentAddress(agentStatus.agentAddress);
+            setVisited(v => [...new Set([...v, "setup", "authorize", "workspace"])]);
+            setTab("workspace");
+        }
+    }, [isAgentConfigured, agentStatus, visited]);
+
+    const go = (id) => {
+        setTab(id);
+        setVisited((v) => (v.includes(id) ? v : [...v, id]));
+    };
+
+    const handleResetTask = () => {
+        setIsAgentConfigured(false);
+        setAgentStatus(null);
+        clearMessages();
+        setTab("setup");
+        setVisited(["setup"]);
+    };
+
+    const handleGenerate = async ({ scope, limit, customTarget, customSelector }) => {
+        const found = SCOPES.find((s) => s.id === scope) || SCOPES[0];
+        setConfig({ scope: found, limit, customTarget, customSelector });
+        
         setIsGenerating(true);
         try {
-            const addr = await generateAgent(selectedScope, maxAmount);
+            const addr = await generateAgent(scope, limit);
             setGeneratedAgentAddress(addr);
-            setSetupStep(3);
+            go("authorize");
         } catch (e) {
             alert("Failed to generate agent: " + e.message);
         } finally {
@@ -42,60 +376,44 @@ const ChatbotView = () => {
         setIsInstalling(true);
         try {
             const SESSION_KEY_VALIDATOR = "0xC578bF1899fF9E49d0FC65BE5b1a0A26EB11aF44";
-            const validUntil = Math.floor(Date.now() / 1000) + 86400 * 30; // 30 days
-            
+            const validUntil = Math.floor(Date.now() / 1000) + 86400 * 30;
+
             let target = "0x0000000000000000000000000000000000000000";
             let selector = "0x00000000";
-            let checkAmount = false;
-            let amountOffset = 0;
             let maxAmountWei = 0n;
             let maxValue = 0n;
 
-            if (selectedScope === 'uniswap') {
-                target = "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E"; // Sepolia SwapRouter02
-                selector = "0x00000000"; // allow any selector on the router
-                checkAmount = true;
-                amountOffset = 132;
-                maxAmountWei = ethers.parseEther(maxAmount);
-                maxValue = maxAmountWei; // native value might also be sent
-            } else if (selectedScope === 'erc20') {
-                target = customTarget || "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"; // Default USDC Sepolia
-                selector = "0xa9059cbb"; // transfer
-                checkAmount = true;
-                amountOffset = 36;
-                maxAmountWei = ethers.parseUnits(maxAmount, 6); // Assuming 6 decimals for USDC demo
+            if (config.scope.id === 'uniswap') {
+                target = "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E";
+                selector = "0x00000000";
+                maxAmountWei = ethers.parseEther(config.limit);
+                maxValue = maxAmountWei;
+            } else if (config.scope.id === 'erc20') {
+                target = config.customTarget || "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
+                selector = "0xa9059cbb";
+                maxAmountWei = ethers.parseUnits(config.limit, 6);
                 maxValue = 0n;
-            } else if (selectedScope === 'custom') {
-                target = customTarget || "0x0000000000000000000000000000000000000000";
-                selector = customSelector === "0x00" ? "0x00000000" : (customSelector || "0x00000000");
-                maxValue = ethers.parseEther(maxAmount);
+            } else if (config.scope.id === 'custom') {
+                target = config.customTarget || "0x0000000000000000000000000000000000000000";
+                selector = config.customSelector === "0x00" ? "0x00000000" : (config.customSelector || "0x00000000");
+                maxValue = ethers.parseEther(config.limit);
             }
 
-            const keyData = [
-                generatedAgentAddress,
-                target,
-                selector,
-                maxValue,
-                0, // validAfter
-                validUntil,
-                0 // maxUses
-            ];
+            const keyData = [generatedAgentAddress, target, selector, maxValue, 0, validUntil, 0];
 
             const validatorIface = new ethers.Interface(SessionKeyValidatorABI);
             const innerCallData = validatorIface.encodeFunctionData("addSessionKey", [keyData]);
-            
-            // Encode the installation through the account
             const callData = encodeERC7579Single(SESSION_KEY_VALIDATOR, "0x0", innerCallData);
-            
+
             const entryPoint = new ethers.Contract(
                 import.meta.env.VITE_ENTRY_POINT,
                 ["function getNonce(address sender, uint192 key) view returns (uint256)"],
                 provider
             );
-            
-            const nonce = await entryPoint.getNonce(smartAccountAddress, 0); // Key 0 for EOA signer
+
+            const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
             const { maxFeePerGas, maxPriorityFeePerGas } = await getDynamicGasFees(provider);
-            
+
             const userOp = {
                 sender: smartAccountAddress,
                 nonce: ethers.toBeHex(nonce),
@@ -140,24 +458,20 @@ const ChatbotView = () => {
                     signature: op.signature
                 };
             };
-            
+
             const packedForHash = packUserOp(userOp);
-            
             const epHashContract = new ethers.Contract(
                 import.meta.env.VITE_ENTRY_POINT,
                 ["function getUserOpHash(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature) userOp) view returns (bytes32)"],
                 provider
             );
-            
+
             const userOpHash = await epHashContract.getUserOpHash(packedForHash);
-            
             const sig = await signer.signMessage(ethers.getBytes(userOpHash));
             userOp.signature = sig;
-            
+
             const returnedHash = await sendUserOperation(userOp);
-            console.log("Tx Hash:", returnedHash);
-            
-            // Wait for receipt (Testnets can be slow, wait up to 90 seconds)
+
             let receipt = null;
             let retries = 45;
             while (!receipt && retries > 0) {
@@ -165,22 +479,13 @@ const ChatbotView = () => {
                 receipt = await getUserOpReceipt(returnedHash);
                 retries--;
             }
-            
-            if (receipt) {
-                if (receipt.success) {
-                    setIsAgentConfigured(true);
-                    setAgentStatus({
-                        agentAddress: generatedAgentAddress,
-                        scope: selectedScope,
-                        maxAmount: maxAmount
-                    });
-                } else {
-                    console.error("Installation reverted on-chain. Receipt:", receipt);
-                    alert("Agent installation reverted on-chain. Check browser console for receipt details.");
-                }
+
+            if (receipt && receipt.success) {
+                setIsAgentConfigured(true);
+                setAgentStatus({ agentAddress: generatedAgentAddress, scope: config.scope.id, maxAmount: config.limit });
+                go("workspace");
             } else {
-                console.warn("Installation timed out after 90 seconds.");
-                alert("Agent installation timed out after 90 seconds. The network might be congested, check JiffyScan for the pending UserOp hash.");
+                alert("Agent installation failed or timed out.");
             }
         } catch (e) {
             console.error(e);
@@ -190,297 +495,94 @@ const ChatbotView = () => {
         }
     };
 
-    const handleChatSubmit = (e) => {
-        e.preventDefault();
-        if (input.trim() && !isChatLoading) {
-            sendMessage(input);
-            setInput('');
-        }
-    };
-
     if (!eoaAddress || !smartAccountAddress) {
         return (
-            <div className="flex flex-col items-center justify-center h-[70vh]">
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 max-w-md w-full text-center shadow-xl shadow-slate-950/50">
-                    <Shield className="w-16 h-16 text-slate-500 mx-auto mb-4 opacity-50" />
-                    <h2 className="text-xl font-medium text-slate-200 mb-2">Connect Your Account</h2>
-                    <p className="text-slate-400">Please connect your EOA and initialize your Smart Account to use the AI Agent.</p>
-                </div>
+            <div className="guard-card">
+                <div className="guard-icon guard-icon--neutral"><ShieldIcon /></div>
+                <h2 className="guard-title">Connect your account</h2>
+                <p className="guard-sub">Connect your EOA and initialize your smart account to use the AI agent.</p>
             </div>
         );
     }
 
-    const hasSessionKeyValidator = installedModules?.rawValidators?.some(v => v.toLowerCase() === "0xC578bF1899fF9E49d0FC65BE5b1a0A26EB11aF44".toLowerCase());
+    const hasSessionKeyValidator = installedModules?.rawValidators?.some(
+        v => v.toLowerCase() === "0xC578bF1899fF9E49d0FC65BE5b1a0A26EB11aF44".toLowerCase()
+    );
     if (!hasSessionKeyValidator) {
-         return (
-            <div className="flex flex-col items-center justify-center h-[70vh]">
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 max-w-md w-full text-center shadow-xl shadow-slate-950/50">
-                    <Key className="w-16 h-16 text-yellow-500/80 mx-auto mb-4" />
-                    <h2 className="text-xl font-medium text-slate-200 mb-2">Missing Validator Module</h2>
-                    <p className="text-slate-400 text-sm">
-                        You need to install the SessionKeyValidator on your account first. Head over to the Modules section to install it.
-                    </p>
-                </div>
-            </div>
-        );
-    }
-
-    // Setup Flow
-    if (!isAgentConfigured) {
         return (
-            <div className="max-w-2xl mx-auto py-8 px-4">
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-xl relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-32 bg-blue-500/5 rounded-full blur-3xl mix-blend-screen pointer-events-none"></div>
-                    
-                    <h1 className="text-2xl font-semibold text-slate-100 mb-2 flex items-center gap-3">
-                        <Bot className="text-blue-400" /> Initialize AI Agent
-                    </h1>
-                    <p className="text-slate-400 mb-8 text-sm">Create an ephemeral session key for the chatbot server to act on your behalf.</p>
-                    
-                    {setupStep === 1 && (
-                        <div className="space-y-6">
-                            <div className="space-y-3">
-                                <label className="text-sm font-medium text-slate-300 block">1. Select Capability Scope</label>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                    <button 
-                                        onClick={() => setSelectedScope('uniswap')}
-                                        className={`p-4 rounded-xl border text-left transition-all ${selectedScope === 'uniswap' ? 'border-blue-500 bg-blue-500/10 shadow-inner' : 'border-slate-800 bg-slate-900 hover:border-slate-700'}`}
-                                    >
-                                        <div className="font-medium text-slate-200 mb-1">🦄 Uniswap V3</div>
-                                        <div className="text-xs text-slate-500">Allow exactInputSingle swaps on Sepolia</div>
-                                    </button>
-                                    <button 
-                                        onClick={() => setSelectedScope('erc20')}
-                                        className={`p-4 rounded-xl border text-left transition-all ${selectedScope === 'erc20' ? 'border-blue-500 bg-blue-500/10 shadow-inner' : 'border-slate-800 bg-slate-900 hover:border-slate-700'}`}
-                                    >
-                                        <div className="font-medium text-slate-200 mb-1">💸 ERC-20</div>
-                                        <div className="text-xs text-slate-500">Allow ERC-20 transfers (USDC)</div>
-                                    </button>
-                                    <button  
-                                        onClick={() => setSelectedScope('custom')}
-                                        className={`p-4 rounded-xl border text-left transition-all ${selectedScope === 'custom' ? 'border-blue-500 bg-blue-500/10 shadow-inner' : 'border-slate-800 bg-slate-900 hover:border-slate-700'}`}
-                                    >
-                                        <div className="font-medium text-slate-200 mb-1">⚙️ Custom</div>
-                                        <div className="text-xs text-slate-500">Specific contract and selector</div>
-                                    </button>
-                                </div>
-                            </div>
-
-                            {selectedScope === 'custom' && (
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-xs text-slate-400 font-medium">Target Contract</label>
-                                        <input 
-                                            value={customTarget} onChange={e => setCustomTarget(e.target.value)}
-                                            placeholder="0x..."
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-sm text-slate-200 outline-none focus:border-blue-500"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs text-slate-400 font-medium">Function Selector</label>
-                                        <input 
-                                            value={customSelector} onChange={e => setCustomSelector(e.target.value)}
-                                            placeholder="0x..."
-                                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-sm text-slate-200 outline-none focus:border-blue-500"
-                                        />
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-slate-300 block flex justify-between">
-                                    <span>2. Set Hard Limit</span>
-                                    <span className="text-xs text-slate-500">(enforced on-chain)</span>
-                                </label>
-                                <div className="relative">
-                                    <input 
-                                        type="number" step="0.01"
-                                        value={maxAmount} onChange={e => setMaxAmount(e.target.value)}
-                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-4 pr-16 py-3 text-slate-200 outline-none focus:border-blue-500 font-mono"
-                                    />
-                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-sm font-medium pointer-events-none">
-                                        {selectedScope === 'erc20' ? 'USDC' : 'ETH'}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="pt-4 border-t border-slate-800/50">
-                                <button
-                                    onClick={handleGenerate}
-                                    disabled={isGenerating}
-                                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-3 px-4 rounded-xl transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                >
-                                    {isGenerating ? <Loader2 className="animate-spin w-5 h-5" /> : 'Generate Secure Server Key'}
-                                </button>
-                                <p className="text-center text-xs text-slate-500 mt-3 flex items-center justify-center gap-1">
-                                    <Shield className="w-3 h-3" /> Key is stored securely in backend memory.
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    {setupStep === 3 && (
-                        <div className="space-y-6">
-                            <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
-                                <h3 className="text-emerald-400 font-medium mb-1 flex items-center gap-2">
-                                    <CheckCircle2 size={18} /> Backend Configured
-                                </h3>
-                                <p className="text-sm text-slate-300 mb-3">
-                                    The backend is ready to act on your behalf. Now, you must authorize its public address on-chain.
-                                </p>
-                                <div className="bg-slate-950 p-3 rounded-lg border border-slate-800/50">
-                                    <div className="text-xs text-slate-500 mb-1">Agent Address</div>
-                                    <div className="font-mono text-sm text-slate-300 break-all">{generatedAgentAddress}</div>
-                                </div>
-                            </div>
-                            
-                            <button
-                                onClick={handleInstall}
-                                disabled={isInstalling}
-                                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-3 px-4 rounded-xl transition-all shadow-lg shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                            >
-                                {isInstalling ? <Loader2 className="animate-spin w-5 h-5" /> : 'Sign & Install Agent on-chain'}
-                            </button>
-                        </div>
-                    )}
-                </div>
+            <div className="guard-card">
+                <div className="guard-icon guard-icon--warning"><KeyIcon /></div>
+                <h2 className="guard-title">Missing validator module</h2>
+                <p className="guard-sub">Install the SessionKeyValidator on your account first, from the Modules tab.</p>
             </div>
         );
     }
 
-    // Chat Interface
     return (
-        <div className="max-w-4xl mx-auto h-[calc(100vh-80px)] p-4 md:p-6">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl h-full flex flex-col shadow-xl overflow-hidden relative">
-                
-                {/* Header */}
-                <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/50 backdrop-blur-sm z-10">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-                            <Bot className="text-blue-400" />
-                        </div>
-                        <div>
-                            <h2 className="font-medium text-slate-200 leading-tight">Agent Workspace</h2>
-                            <div className="text-xs text-emerald-400 flex items-center gap-1 mt-0.5">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                                Connected & Authorized
-                            </div>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-4 text-xs font-medium text-slate-500 bg-slate-950 px-3 py-1.5 rounded-full border border-slate-800/50">
-                        <span className="flex items-center gap-1.5">
-                            <Settings size={14} className="text-slate-400" /> {agentStatus?.scope.toUpperCase()}
-                        </span>
-                        <div className="w-px h-3 bg-slate-800"></div>
-                        <span>Max: <span className="text-slate-300">{agentStatus?.maxAmount}</span></span>
-                    </div>
-                </div>
-
-                {/* Messages Area */}
-                <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 bg-slate-950/30">
-                    {messages.length === 0 && (
-                        <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto">
-                            <div className="w-16 h-16 rounded-2xl bg-slate-800/50 border border-slate-700/50 flex items-center justify-center mb-6">
-                                <Bot className="text-slate-400 w-8 h-8" />
-                            </div>
-                            <h3 className="text-lg font-medium text-slate-200 mb-2">How can I help you?</h3>
-                            <p className="text-slate-400 text-sm">
-                                Describe what you want me to do. I will translate it into actions and execute them using my session key.
-                            </p>
-                            {agentStatus?.scope === 'uniswap' && (
-                                <div className="mt-8 grid gap-2 w-full text-left">
-                                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider pl-2 mb-1">Try saying</div>
-                                    <button onClick={() => setInput("Swap 0.001 ETH for USDC")} className="p-3 text-sm text-slate-300 bg-slate-900 border border-slate-800 rounded-xl hover:border-blue-500/50 hover:bg-slate-800 transition-colors">
-                                        "Swap 0.001 ETH for USDC"
-                                    </button>
-                                    <button onClick={() => setInput("Swap 0.001 ETH for USDC 3 times")} className="p-3 text-sm text-slate-300 bg-slate-900 border border-slate-800 rounded-xl hover:border-blue-500/50 hover:bg-slate-800 transition-colors">
-                                        "Swap 0.001 ETH for USDC 3 times"
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {messages.map((msg, i) => (
-                        <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} max-w-[85%] ${msg.role === 'user' ? 'ml-auto' : ''}`}>
-                            <div className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-slate-800 text-slate-400' : 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'}`}>
-                                    {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
-                                </div>
-                                <div className={`flex flex-col gap-2 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                                    <div className={`px-5 py-3 rounded-2xl text-[15px] leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-slate-800 text-slate-200 rounded-tr-sm' : 'bg-slate-900 border border-slate-800 text-slate-300 rounded-tl-sm'}`}>
-                                        {msg.content}
-                                    </div>
-                                    
-                                    {msg.ops && msg.ops.length > 0 && (
-                                        <div className="flex flex-col gap-2 w-full mt-1">
-                                            {msg.ops.map((op, idx) => (
-                                                <div key={idx} className="bg-slate-900 border border-slate-800/80 rounded-xl p-3 flex items-center justify-between group">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${op.error ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
-                                                            {op.error ? <span className="font-bold text-xs">!</span> : <CheckCircle2 size={14} />}
-                                                        </div>
-                                                        <div className="text-sm font-medium text-slate-300">
-                                                            Operation {op.iteration}
-                                                        </div>
-                                                    </div>
-                                                    {op.txUrl ? (
-                                                        <a href={op.txUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 transition-colors">
-                                                            View Tx <ExternalLink size={12} />
-                                                        </a>
-                                                    ) : (
-                                                        <span className="text-xs text-red-400 bg-red-500/10 px-2 py-1 rounded">{op.error}</span>
-                                                    )}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                    {isChatLoading && (
-                        <div className="flex justify-start">
-                            <div className="flex gap-3">
-                                <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/20">
-                                    <Bot size={16} />
-                                </div>
-                                <div className="px-5 py-4 bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-sm flex items-center gap-2">
-                                    <span className="w-2 h-2 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                                    <span className="w-2 h-2 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                                    <span className="w-2 h-2 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Input Area */}
-                <div className="p-4 border-t border-slate-800 bg-slate-900 z-10">
-                    <form onSubmit={handleChatSubmit} className="relative max-w-3xl mx-auto">
-                        <input 
-                            type="text" 
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            disabled={isChatLoading}
-                            placeholder="Ask the agent to do something..." 
-                            className="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-5 pr-14 py-4 text-[15px] text-slate-200 placeholder-slate-500 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all disabled:opacity-50"
-                        />
-                        <button 
-                            type="submit"
-                            disabled={!input.trim() || isChatLoading}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-500 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors shadow-sm"
+        <div className="stage">
+          <div className="shell">
+                <nav className="tabs" role="tablist">
+                    {TABS.map((t) => (
+                        <button
+                            key={t.id}
+                            role="tab"
+                            aria-selected={tab === t.id}
+                            className={`tab ${tab === t.id ? "is-active" : ""} ${
+                                visited.includes(t.id) ? "is-visited" : ""
+                            }`}
+                            onClick={() => go(t.id)}
                         >
-                            <Send size={18} className={input.trim() && !isChatLoading ? "opacity-100" : "opacity-50"} />
+                            <span className="tab__num">{t.step}</span>
+                            {t.label}
                         </button>
-                    </form>
-                    <div className="text-center mt-3 text-xs text-slate-500 font-medium tracking-wide">
-                        Powered by Llama 3.3 70B & Nexus Account Abstraction
-                    </div>
+                    ))}
+                    <span
+                        className="tabs__ink"
+                        style={{
+                            width: `calc(100% / ${TABS.length})`,
+                            transform: `translateX(${TABS.findIndex((t) => t.id === tab) * 100}%)`,
+                        }}
+                    />
+                </nav>
+
+                <div className="panes">
+                    {tab === "setup" && (
+                        <div className="pane">
+                            <SetupStep 
+                                onGenerate={handleGenerate} 
+                                isGenerating={isGenerating} 
+                                initialScopeId={config.scope.id}
+                                initialLimit={config.limit}
+                                initialTarget={config.customTarget}
+                                initialSelector={config.customSelector}
+                            />
+                        </div>
+                    )}
+                    {tab === "authorize" && (
+                        <div className="pane">
+                            <AuthorizeStep
+                                scope={config.scope}
+                                limit={config.limit}
+                                address={generatedAgentAddress}
+                                onAuthorize={handleInstall}
+                                isInstalling={isInstalling}
+                            />
+                        </div>
+                    )}
+                    {tab === "workspace" && (
+                        <div className="pane">
+                            <AgentWorkspace
+                                scope={config.scope}
+                                maxAmount={config.limit}
+                                messages={messages}
+                                sendMessage={sendMessage}
+                                isChatLoading={isChatLoading}
+                                onResetTask={handleResetTask}
+                            />
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
     );
-};
-
-export default ChatbotView;
+}
