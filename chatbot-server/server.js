@@ -12,6 +12,8 @@ const {
     encodeERC20Transfer,
     buildAndSendAgentOp,
     waitForUserOp
+    buildAndSendAgentOp,
+    waitForUserOp
 } = require('./userOpBuilder');
 
 const app = express();
@@ -107,7 +109,9 @@ app.post('/api/chat', async (req, res) => {
                         type: 'object',
                         properties: {
                             tokenAddress: { type: 'string', description: 'Address of ERC20 token to transfer. Must use 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238 for USDC on Sepolia.' },
+                            tokenAddress: { type: 'string', description: 'Address of ERC20 token to transfer. Must use 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238 for USDC on Sepolia.' },
                             recipient: { type: 'string', description: 'Address of the recipient' },
+                            amount: { type: 'string', description: 'Amount of tokens in human-readable format (e.g., "0.00005" or "1.5")' },
                             amount: { type: 'string', description: 'Amount of tokens in human-readable format (e.g., "0.00005" or "1.5")' },
                             repeat: { type: 'string', description: 'Number of times to repeat this operation independently (e.g., "1")' }
                         },
@@ -174,19 +178,36 @@ app.post('/api/chat', async (req, res) => {
                 return res.json({ reply: `Error parsing amount. Please use a valid number format like "0.001".`, ops: [] });
             }
             
+            // Enforce WETH for tokenIn to avoid allowance issues and hallucinated addresses
+            const safeTokenIn = process.env.WETH_SEPOLIA;
+            const safeTokenOut = process.env.USDC_SEPOLIA; // Fallback to USDC if LLM hallucinates
+            
+            let amountInWei;
+            try {
+                amountInWei = ethers.parseEther(args.amountIn.toString());
+            } catch (e) {
+                return res.json({ reply: `Error parsing amount. Please use a valid number format like "0.001".`, ops: [] });
+            }
+            
             // Simplified ExactInputSingle for demo (using 0.3% fee pool, amountOutMinimum = 0)
             innerCallData = encodeUniswapSwap(
+                safeTokenIn.toLowerCase(), 
+                safeTokenOut.toLowerCase(), 
                 safeTokenIn.toLowerCase(), 
                 safeTokenOut.toLowerCase(), 
                 3000, 
                 smartAccountAddress, 
                 amountInWei, 
+                amountInWei, 
                 0n, 
                 0n
             );
             value = amountInWei; // Always send ETH for WETH swaps
+            value = amountInWei; // Always send ETH for WETH swaps
             
             // Off-chain limit check
+            if (amountInWei > BigInt(ethers.parseEther(config.maxAmount))) {
+                return res.json({ reply: `Rejected: Amount ${args.amountIn} exceeds max allowed (${config.maxAmount}).`, ops: [] });
             if (amountInWei > BigInt(ethers.parseEther(config.maxAmount))) {
                 return res.json({ reply: `Rejected: Amount ${args.amountIn} exceeds max allowed (${config.maxAmount}).`, ops: [] });
             }
@@ -204,8 +225,21 @@ app.post('/api/chat', async (req, res) => {
             }
             
             innerCallData = encodeERC20Transfer(args.recipient, amountInWei);
+            // Enforce authorized USDC token to prevent SessionKey target mismatch
+            target = process.env.USDC_SEPOLIA;
+            
+            // The LLM now provides a human-readable amount (e.g. "0.00005"). We convert it to base units using 6 decimals.
+            let amountInWei;
+            try {
+                amountInWei = ethers.parseUnits(args.amount.toString(), 6);
+            } catch (e) {
+                return res.json({ reply: `Error parsing amount. Please use a valid number format like "0.00005".`, ops: [] });
+            }
+            
+            innerCallData = encodeERC20Transfer(args.recipient, amountInWei);
             
             // Off-chain limit check
+            if (amountInWei > BigInt(ethers.parseUnits(config.maxAmount, 6))) { // Assuming USDC 6 decimals for demo maxAmount
             if (amountInWei > BigInt(ethers.parseUnits(config.maxAmount, 6))) { // Assuming USDC 6 decimals for demo maxAmount
                 return res.json({ reply: `Rejected: Amount exceeds max allowed (${config.maxAmount}).`, ops: [] });
             }
@@ -262,6 +296,12 @@ app.post('/api/chat', async (req, res) => {
                     opHash: opHash,
                     txUrl: `https://jiffyscan.xyz/userOpHash/${opHash}?network=sepolia`
                 });
+                
+                // Wait for the UserOp to be completely mined before sending the next one
+                // This prevents "AA25 invalid account nonce" errors from the bundler during estimation
+                console.log(`Waiting for UserOp ${opHash} to be mined...`);
+                await waitForUserOp(opHash);
+                console.log(`UserOp ${opHash} mined successfully!`);
                 
                 // Wait for the UserOp to be completely mined before sending the next one
                 // This prevents "AA25 invalid account nonce" errors from the bundler during estimation
