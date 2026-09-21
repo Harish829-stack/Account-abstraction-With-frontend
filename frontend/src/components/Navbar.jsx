@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { shortenAddress } from '../utils/helpers';
 import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, LayoutDashboard, Shield, Fingerprint, Globe, ChevronDown, Blocks, Bot } from 'lucide-react';
@@ -10,8 +10,21 @@ export default function Navbar() {
 
   const NavItem = ({ viewId, icon, label, disabled = false }) => {
     const isActive = currentView === viewId;
+    const activeRef = useRef(null);
+
+    useEffect(() => {
+      if (isActive && activeRef.current) {
+        activeRef.current.scrollIntoView({
+          behavior: "smooth",
+          inline: "center",
+          block: "nearest",
+        });
+      }
+    }, [isActive]);
+
     return (
       <button
+        ref={isActive ? activeRef : null}
         className={`wallet-nav-item ${isActive ? 'is-active' : ''}`}
         onClick={() => !disabled && setCurrentView(viewId)}
         title={disabled ? "Connect Smart Account First" : ""}
@@ -76,17 +89,19 @@ export default function Navbar() {
       {/* Navigation Tabs */}
       <div className="wallet-nav-shell">
         <div className="wallet-nav-scroll" aria-label="Primary navigation">
-          <NavItem viewId="home" icon={<LayoutDashboard size={18} />} label="Dashboard" />
-          <NavItem viewId="setup" icon={<Settings size={18} />} label="Account Setup" />
-          <NavItem viewId="paymaster" icon={<DollarSign size={18} />} label="Paymaster" />
-          <NavItem viewId="modules" icon={<Blocks size={18} />} label="Modules" />
-          <NavItem viewId="send" icon={<Send size={18} />} label="Send Ops" disabled={!smartAccountAddress} />
-          <NavItem viewId="batch-send" icon={<Send size={18} />} label="Batch Ops" disabled={!smartAccountAddress} />
-          <NavItem viewId="chatbot" icon={<Bot size={18} />} label="AI Agent" disabled={!smartAccountAddress} />
-          <NavItem viewId="history" icon={<Clock size={18} />} label="UserOp History" disabled={!smartAccountAddress} />
-          {isMultisigOwner && (
-            <NavItem viewId="admin" icon={<Shield size={18} />} label="Admin Control" />
-          )}
+          <div className="wallet-nav-items">
+            <NavItem viewId="home" icon={<LayoutDashboard size={18} />} label="Dashboard" />
+            <NavItem viewId="setup" icon={<Settings size={18} />} label="Account Setup" />
+            <NavItem viewId="paymaster" icon={<DollarSign size={18} />} label="Paymaster" />
+            <NavItem viewId="modules" icon={<Blocks size={18} />} label="Modules" />
+            <NavItem viewId="send" icon={<Send size={18} />} label="Send Ops" disabled={!smartAccountAddress} />
+            <NavItem viewId="batch-send" icon={<Send size={18} />} label="Batch Ops" disabled={!smartAccountAddress} />
+            <NavItem viewId="chatbot" icon={<Bot size={18} />} label="AI Agent" disabled={!smartAccountAddress} />
+            <NavItem viewId="history" icon={<Clock size={18} />} label="UserOp History" disabled={!smartAccountAddress} />
+            {isMultisigOwner && (
+              <NavItem viewId="admin" icon={<Shield size={18} />} label="Admin Control" />
+            )}
+          </div>
         </div>
       </div>
     </>

@@ -118,9 +118,9 @@ a:hover {
 
 /* Base UTILS */
 .container {
-  max-width: 1200px;
+  max-width: 100%;
   margin: 0 auto;
-  padding: 0 2rem;
+  padding: 0 1.5rem;
   width: 100%;
 }
 
@@ -473,7 +473,7 @@ a:hover {
 /* Premium Web3 Admin Dashboard */
 .admin-shell {
   width: 100%;
-  max-width: 1120px;
+  max-width: 100%;
   margin: 1.5rem auto 3rem;
   display: grid;
   gap: 1.25rem;
@@ -2541,24 +2541,46 @@ a:hover {
 .wallet-nav-shell {
   position: relative;
   margin-bottom: 2rem;
-}
-
-.wallet-nav-scroll {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
+  overflow: hidden;
   background: #fff;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-pill);
-  padding: 0.3rem;
   box-shadow: 0 1px 4px var(--border-light);
+  width: 100%;
+  max-width: 100%;
 }
 
+.wallet-nav-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.3rem 0.3rem 0.5rem 0.3rem;
+}
+
+/* Styled horizontal scrollbar */
 .wallet-nav-scroll::-webkit-scrollbar {
-  display: none;
+  height: 6px;
+}
+.wallet-nav-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 0 1rem;
+}
+.wallet-nav-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: var(--radius-pill);
+}
+.wallet-nav-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.wallet-nav-items {
+  display: flex;
+  flex-wrap: nowrap;
+  width: max-content;
+  min-width: max-content;
+  gap: 0.25rem;
 }
 
 .wallet-nav-item {
@@ -3382,10 +3404,13 @@ a:hover {
   }
 
   .wallet-nav-scroll {
-    gap: 0.35rem;
     overflow-x: auto;
     scroll-snap-type: x proximity;
     padding: 0.3rem;
+  }
+
+  .wallet-nav-items {
+    gap: 0.35rem;
   }
 
   .wallet-nav-item {
