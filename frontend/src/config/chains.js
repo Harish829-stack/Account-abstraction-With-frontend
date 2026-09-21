@@ -140,6 +140,69 @@ export const CHAIN_REGISTRY = [
   },
 ];
 
+const CONFIG_CACHE_KEY = "aa_wallet_config";
+let configLoadPromise = null;
+
+function readCachedConfig() {
+  try {
+    const raw = window.localStorage.getItem(CONFIG_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedConfig(config) {
+  try {
+    window.localStorage.setItem(CONFIG_CACHE_KEY, JSON.stringify(config));
+  } catch {
+    // Cache writes are best-effort only.
+  }
+}
+
+function applyRemoteConfig(config) {
+  if (!config || !Array.isArray(config.chains)) return;
+
+  const staticByChainId = new Map(CHAIN_REGISTRY.map((chain) => [chain.chainId, chain]));
+  const remoteChains = config.chains.map((chain) => ({
+    ...(staticByChainId.get(chain.chainId) || {}),
+    ...chain,
+  }));
+
+  CHAIN_REGISTRY.splice(0, CHAIN_REGISTRY.length, ...remoteChains);
+
+  if (config.sharedContracts && typeof config.sharedContracts === "object") {
+    Object.assign(SHARED_CONTRACTS, config.sharedContracts);
+  }
+}
+
+async function loadRemoteConfig() {
+  if (!env.VITE_CONFIG_API_URL) return null;
+  if (!configLoadPromise) {
+    configLoadPromise = fetch(`${env.VITE_CONFIG_API_URL.replace(/\/$/, "")}/config`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Config request failed: ${res.status}`);
+        return res.json();
+      })
+      .then((config) => {
+        applyRemoteConfig(config);
+        writeCachedConfig(config);
+        return config;
+      })
+      .catch((error) => {
+        console.warn("[chains] Falling back to static config:", error);
+        return null;
+      })
+      .finally(() => {
+        configLoadPromise = null;
+      });
+  }
+  return configLoadPromise;
+}
+
+applyRemoteConfig(readCachedConfig());
+void loadRemoteConfig();
+
 export function getSupportedChains({ includeViewOnly = false } = {}) {
   return CHAIN_REGISTRY.filter((chain) => chain.isActive || (includeViewOnly && chain.viewOnly));
 }
@@ -189,9 +252,11 @@ export function getNativeCurrency(chainId) {
 }
 
 export async function getChainRegistry() {
+  await loadRemoteConfig();
   return CHAIN_REGISTRY;
 }
 
 export async function getSharedContracts() {
+  await loadRemoteConfig();
   return SHARED_CONTRACTS;
 }

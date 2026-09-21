@@ -4,6 +4,7 @@ import { useAppContext } from "./AppContext";
 import { getDefaultChainId } from "../config/chains";
 
 const ChatbotContext = createContext();
+const CHATBOT_API_URL = import.meta.env.VITE_CHATBOT_API_URL || "";
 
 export const useChatbotContext = () => useContext(ChatbotContext);
 
@@ -14,8 +15,6 @@ export const ChatbotProvider = ({ children }) => {
     const [agentStatus, setAgentStatus] = useState(null); // { agentAddress, scope, maxAmount }
     const [isChatLoading, setIsChatLoading] = useState(false);
 
-    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
-
     // Load agent status on mount or when account changes
     useEffect(() => {
         const checkStatus = async () => {
@@ -25,7 +24,7 @@ export const ChatbotProvider = ({ children }) => {
                 return;
             }
             try {
-                const res = await axios.get(`${BACKEND_URL}/api/agent/status/${smartAccountAddress}`);
+                const res = await axios.get(`${CHATBOT_API_URL}/api/agent/status/${smartAccountAddress}`);
                 if (res.data.configured) {
                     setIsAgentConfigured(true);
                     setAgentStatus({
@@ -47,7 +46,7 @@ export const ChatbotProvider = ({ children }) => {
 
     const generateAgent = async (scope, maxAmount) => {
         try {
-            const res = await axios.post(`${BACKEND_URL}/api/agent/generate`, {
+            const res = await axios.post(`${CHATBOT_API_URL}/api/agent/generate`, {
                 smartAccountAddress,
                 scope,
                 maxAmount
@@ -68,7 +67,7 @@ export const ChatbotProvider = ({ children }) => {
         setIsChatLoading(true);
 
         try {
-            const res = await axios.post(`${BACKEND_URL}/api/chat`, {
+            const res = await axios.post(`${CHATBOT_API_URL}/api/chat`, {
                 message: messageText,
                 smartAccountAddress,
                 chainId: chainId ? chainId.toString() : String(getDefaultChainId())

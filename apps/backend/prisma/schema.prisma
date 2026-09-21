@@ -1,0 +1,126 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Chain {
+  id                Int             @id @default(autoincrement())
+  chainId           Int             @unique
+  name              String
+  rpcUrl            String
+  bundlerUrl        String
+  explorerUrl       String
+  explorerApiUrl    String?
+  explorerApiChainId Int?
+  nativeSymbol      String
+  nativeName        String
+  nativeDecimals    Int             @default(18)
+  isTestnet         Boolean
+  isActive          Boolean         @default(true)
+  viewOnly          Boolean         @default(false)
+  minPriorityFeeWei String
+  minFeeWei         String
+  lastIndexedBlock  Int?
+  lastSyncError     String?
+  lastSyncAt        DateTime?
+  contracts         ChainContract[]
+  userOps           UserOperation[]
+}
+
+model ChainContract {
+  id      Int    @id @default(autoincrement())
+  chain   Chain  @relation(fields: [chainId], references: [id])
+  chainId Int
+  key     String
+  address String
+
+  @@unique([chainId, key])
+}
+
+model SharedContract {
+  id      Int    @id @default(autoincrement())
+  key     String @unique
+  address String
+}
+
+model AdminUser {
+  id      Int      @id @default(autoincrement())
+  address String   @unique
+  role    String
+  addedBy String
+  addedAt DateTime @default(now())
+}
+
+model SiweSession {
+  id        String   @id @default(cuid())
+  address   String
+  nonce     String
+  issuedAt  DateTime
+  expiresAt DateTime
+}
+
+model SmartAccount {
+  id          Int             @id @default(autoincrement())
+  ownerEoa    String
+  chainId     Int
+  address     String
+  salt        String
+  deployedAt  DateTime        @default(now())
+  sessionKeys SessionKey[]
+  guardians   Guardian[]
+  userOps     UserOperation[]
+
+  @@unique([chainId, address])
+}
+
+model Guardian {
+  id             Int          @id @default(autoincrement())
+  smartAccountId Int
+  smartAccount   SmartAccount @relation(fields: [smartAccountId], references: [id])
+  address        String
+  addedAt        DateTime     @default(now())
+}
+
+model SessionKey {
+  id             Int          @id @default(autoincrement())
+  smartAccountId Int
+  smartAccount   SmartAccount @relation(fields: [smartAccountId], references: [id])
+  keyAddress     String
+  allowedTargets String[]
+  maxValueWei    String
+  validAfter     Int
+  validUntil     Int
+  revoked        Boolean      @default(false)
+  txHashInstall  String
+  rawPermissions Json
+}
+
+model UserOperation {
+  id             Int          @id @default(autoincrement())
+  hash           String       @unique
+  smartAccountId Int
+  smartAccount   SmartAccount @relation(fields: [smartAccountId], references: [id])
+  chain          Chain        @relation(fields: [chainId], references: [id])
+  chainId        Int
+  status         String
+  confirmedBlock Int?
+  confirmedAt    DateTime?
+  droppedAt      DateTime?
+  calldata        String
+  receipt         Json?
+  createdAt       DateTime     @default(now())
+}
+
+model MultisigProposal {
+  id             Int      @id @default(autoincrement())
+  chainId        Int
+  targetContract String
+  calldata       String
+  signatures     Json
+  status         String
+  createdAt      DateTime @default(now())
+}

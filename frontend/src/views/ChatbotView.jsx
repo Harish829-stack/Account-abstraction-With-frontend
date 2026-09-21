@@ -313,7 +313,7 @@ function AgentWorkspace({
 /* ---------- main UI shell ---------- */
 export default function ChatbotView() {
     const { isAgentConfigured, agentStatus, setIsAgentConfigured, setAgentStatus, messages, sendMessage, generateAgent, isChatLoading, clearMessages } = useChatbotContext();
-    const { smartAccountAddress, provider, signer, eoaAddress, env, chainId, installedModules } = useAppContext();
+    const { smartAccountAddress, provider, signer, eoaAddress, env, chainId, installedModules, loadingModules } = useAppContext();
 
     const [tab, setTab] = useState("setup");
     const [visited, setVisited] = useState(["setup"]);
@@ -506,9 +506,19 @@ export default function ChatbotView() {
         );
     }
 
-    const hasSessionKeyValidator = installedModules?.rawValidators?.some(
+    const hasSessionKeyValidator = installedModules?.hasSessionKey || installedModules?.rawValidators?.some(
         v => v.toLowerCase() === env.SESSION_KEY_VALIDATOR?.toLowerCase()
     );
+    if (loadingModules && !installedModules?.rawValidators?.length) {
+        return (
+            <div className="guard-card">
+                <div className="guard-icon guard-icon--neutral"><SpinnerIcon /></div>
+                <h2 className="guard-title">Checking validator module</h2>
+                <p className="guard-sub">Reading your smart account modules from the selected chain.</p>
+            </div>
+        );
+    }
+
     if (!hasSessionKeyValidator) {
         return (
             <div className="guard-card">

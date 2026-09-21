@@ -358,7 +358,7 @@ export const AppProvider = ({ children }) => {
       const modules = await getInstalledModules(saAddress, _provider, envConfig);
       setInstalledModules(modules);
     } catch (e) {
-      console.warn("refreshInstalledModules failed:", e);
+      console.warn("refreshInstalledModules failed; keeping previous module state:", e);
     } finally {
       setLoadingModules(false);
     }

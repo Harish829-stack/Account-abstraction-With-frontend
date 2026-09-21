@@ -233,7 +233,7 @@ export async function getInstalledModules(smartAccountAddress, provider, env) {
         }
     } catch (e) {
         console.warn("getValidatorsPaginated failed:", e);
-        return { hasSessionKey: false, hasSocialRecovery: false, hasWebAuthn: false, rawValidators: [] };
+        throw e;
     }
 
     const lower = (addr) => (addr || "").toLowerCase();
