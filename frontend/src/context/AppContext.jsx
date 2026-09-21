@@ -334,7 +334,7 @@ export const AppProvider = ({ children }) => {
         const k1Validator = new ethers.Contract(k1Address, K1ValidatorABI, _provider);
         const owner = await k1Validator.getOwner(saAddress);
         setSaOwner(owner);
-      } catch (e) {
+      } catch {
         setSaOwner("Unknown (Error fetching owner)");
       }
     } catch (err) {
@@ -377,7 +377,7 @@ export const AppProvider = ({ children }) => {
         setPmDeposit(info.deposit.toString());
         setPmStake(info.stake.toString());
         setPmUnstakeDelay(info.unstakeDelaySec.toString());
-      } catch (e) {
+      } catch {
         const deposit = await entryPoint.balanceOf(pmAddress);
         setPmDeposit(deposit.toString());
         setPmStake("0");
@@ -394,7 +394,7 @@ export const AppProvider = ({ children }) => {
         setPmTokenDecimals(Number(dec));
         const tokenBal = await tokenContract.balanceOf(pmAddress);
         setPmUsdcBalance(ethers.formatUnits(tokenBal, Number(dec)));
-      } catch (e) {
+      } catch {
         setPmTokenSymbol("USDC");
         setPmTokenDecimals(6);
         const tokenBal = await tokenContract.balanceOf(pmAddress);

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { shortenAddress, encodeERC7579Single, encodeERC7579Batch, packUserOp, toHex, buildAndSendAccountOp, getPrevValidator, getNonceForValidator } from '../utils/helpers';
+import { shortenAddress, encodeERC7579Batch, packUserOp, toHex, buildAndSendAccountOp, getPrevValidator, getNonceForValidator } from '../utils/helpers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { Shield, CheckCircle, UserPlus, PlayCircle, Settings, ChevronRight, XCircle, Trash2 } from 'lucide-react';
@@ -39,7 +39,6 @@ export default function ProfileView() {
   // Shared Form State for actions
   const [targetSmartAccount, setTargetSmartAccount] = useState("");
   const [newOwner, setNewOwner] = useState("");
-  const [appStatus, setAppStatus] = useState("idle");
   const [isExecuting, setIsExecuting] = useState(false);
 
   const checkRecoveryModule = async () => {
@@ -122,8 +121,8 @@ export default function ProfileView() {
           let guardians = [];
           try {
               guardians = await recoveryValidator.getGuardians(smartAccountAddress);
-          } catch (e) {
-              console.warn("Failed to get guardians directly from contract", e);
+          } catch (err) {
+              console.warn("Failed to get guardians directly from contract", err);
           }
 
           setRecoveryDetails({
@@ -172,7 +171,6 @@ export default function ProfileView() {
         toast.error("Please enter the Smart Account and New Owner addresses.");
         return;
     }
-    setAppStatus("loading");
     setGlobalLoading(true, "Approving Recovery...");
     try {
         const recoveryValidator = new ethers.Contract(validatorAddr, SocialRecoveryValidatorABI, signer);
@@ -180,7 +178,6 @@ export default function ProfileView() {
         const hasApproved = await recoveryValidator.hasApproved(targetSmartAccount, newOwner, eoaAddress);
         if (hasApproved) {
             toast.success("You have already approved this recovery request.");
-            setAppStatus("done");
             return;
         }
 
@@ -189,11 +186,9 @@ export default function ProfileView() {
         const tx = await recoveryValidator.approveRecovery(targetSmartAccount, newOwner, overrides);
         await tx.wait();
         toast.success(`Approval successful!`);
-        setAppStatus("done");
     } catch (err) {
         console.error(err);
         toast.error("Approval failed: " + (err.reason || err.message));
-        setAppStatus("idle");
     } finally {
         setGlobalLoading(false);
     }
@@ -204,7 +199,6 @@ export default function ProfileView() {
         toast.error("Please enter the Smart Account and New Owner addresses.");
         return;
     }
-    setAppStatus("loading");
     setGlobalLoading(true, "Revoking Recovery...");
     try {
         const recoveryValidator = new ethers.Contract(validatorAddr, SocialRecoveryValidatorABI, signer);
@@ -213,11 +207,9 @@ export default function ProfileView() {
         const tx = await recoveryValidator.revokeRecovery(targetSmartAccount, newOwner, overrides);
         await tx.wait();
         toast.success(`Revoked successfully!`);
-        setAppStatus("idle");
     } catch (err) {
         console.error(err);
         toast.error("Revoke failed: " + (err.reason || err.message));
-        setAppStatus("idle");
     } finally {
         setGlobalLoading(false);
     }
@@ -234,8 +226,6 @@ export default function ProfileView() {
               throw new Error("Cannot recover yet. Threshold not met or delay hasn't passed.");
           }
 
-          const account = new ethers.Contract(targetSmartAccount, SmartAccountABI, provider);
-          
           const recoveryValidatorContract = new ethers.Contract(validatorAddr, SocialRecoveryValidatorABI, provider);
           const clearRecoveryData = recoveryValidatorContract.interface.encodeFunctionData("clearRecovery", [newOwner]);
           const k1Validator = new ethers.Contract(env.K1_VALIDATOR, K1ValidatorABI, provider);
@@ -246,8 +236,6 @@ export default function ProfileView() {
               [0, 0],
               [clearRecoveryData, changeOwnerData]
           );
-          const signature = ethers.AbiCoder.defaultAbiCoder().encode(["address"], [newOwner]);
-
           const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, signer);
           const nonce = await entryPoint.getNonce(targetSmartAccount, getNonceForValidator(validatorAddr));
 
@@ -276,8 +264,8 @@ export default function ProfileView() {
              userOp.callGasLimit = toHex(est.callGasLimit);
              userOp.verificationGasLimit = toHex(est.verificationGasLimit);
              userOp.preVerificationGas = toHex(est.preVerificationGas);
-          } catch(e) {
-             console.warn("Bundler estimation failed, using fallback limits", e);
+          } catch(err) {
+             console.warn("Bundler estimation failed, using fallback limits", err);
              userOp.callGasLimit = toHex(100000);
              userOp.verificationGasLimit = toHex(150000);
              userOp.preVerificationGas = toHex(50000);
@@ -304,7 +292,9 @@ export default function ProfileView() {
                  try {
                      const decoded = entryPoint.interface.parseError(simErr.data);
                      throw new Error(`Simulation Failed: ${decoded?.name}`);
-                 } catch(e) {}
+                 } catch {
+                    // If the revert data is not a known EntryPoint error, throw the original simulation error below.
+                 }
               }
               throw simErr;
           }
@@ -315,7 +305,6 @@ export default function ProfileView() {
           toast.success("Recovery Executed Successfully!");
           await refreshAllData();
           setNewOwner("");
-          setAppStatus("idle");
       } catch (err) {
           console.error(err);
           toast.error(err.message || "Failed to execute recovery");

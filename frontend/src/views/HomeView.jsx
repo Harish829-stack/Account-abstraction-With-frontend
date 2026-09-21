@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { formatNum, shortenAddress, toHex, getEthPriceInUsd, packUserOp, encodeERC7579Single } from '../utils/helpers';
-import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
+import { shortenAddress, toHex, getEthPriceInUsd, packUserOp, encodeERC7579Single } from '../utils/helpers';
+import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
 import { IEntryPointABI, SmartAccountABI } from '../utils/abis';
 import {
   Zap, ShieldCheck, Layers, Gift, Clock, Network,
@@ -109,8 +109,7 @@ function ConnectedDashboard() {
   const {
     eoaAddress, eoaETHBalance, eoaUSDCBalance, eoaEURCBalance,
     smartAccountAddress, saETHBalance, saUSDCBalance, saEURCBalance, saEntryPointDeposit, saOwner,
-    paymasterAddress, pmDeposit,
-    pendingUserOps,
+    paymasterAddress,
     setCurrentView, refreshAllData, signer, provider, env, chainId, nativeToken, isAmoy,
     trackOp, setGlobalLoading, setSetupStep
   } = useAppContext();
@@ -211,8 +210,6 @@ function ConnectedDashboard() {
   const saEURC = parseFloat(ethers.formatUnits(saEURCBalance || '0', 6));
   const eoaETH = parseFloat(ethers.formatEther(eoaETHBalance || '0'));
   const saETH = parseFloat(ethers.formatEther(saETHBalance || '0'));
-  const confirmedOps = (pendingUserOps || []).filter(op => typeof op === 'object' && op.txHash);
-
   // Checklist
   const checklist = [
     { label: 'EOA Wallet Connected', done: !!eoaAddress },

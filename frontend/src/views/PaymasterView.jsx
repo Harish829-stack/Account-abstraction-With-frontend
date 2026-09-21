@@ -1,28 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
-import { ERC20PaymasterABI, IEntryPointABI, ERC20_ABI, SmartAccountABI } from '../utils/abis';
-import pmArtifact from '../utils/ERC20Paymaster.json';
+import { ERC20PaymasterABI, IEntryPointABI, ERC20_ABI } from '../utils/abis';
 import { shortenAddress, formatNum, toHex, packUserOp, encodeERC7579Single } from '../utils/helpers';
-import { sendUserOperation, getUserOpReceipt, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
+import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
 import { useToast } from '../context/ToastContext';
-import { DollarSign, ShieldAlert, ArrowDownCircle, ArrowUpCircle, Lock, Unlock, PlayCircle, CheckCircle, RotateCcw, ChevronRight, Info, Settings, X, Plus, AlertTriangle } from 'lucide-react';
-import Stepper from '../components/Stepper';
+import { DollarSign, ShieldAlert, ArrowUpCircle, Lock, CheckCircle, RotateCcw, Info, Settings, X, Plus, AlertTriangle } from 'lucide-react';
 
 
 export default function PaymasterView() {
   const { 
-    provider, signer, eoaAddress, smartAccountAddress, paymasterAddress, setPaymasterAddress, refreshAllData, env,
-    pmETHBalance, pmUSDCBalance, pmDeposit, pmStake, pmUnstakeDelay, pmTokenSymbol, pmTokenDecimals, loadPaymasterDetails,
+    provider, signer, eoaAddress, smartAccountAddress, paymasterAddress, refreshAllData, env,
+    pmETHBalance, pmDeposit, pmStake, pmTokenSymbol, pmTokenDecimals, loadPaymasterDetails,
     saETHBalance, saUSDCBalance, saEntryPointDeposit,
     trackOp, setCurrentView, setGlobalLoading, refreshTrigger, chainId, nativeToken, isAmoy
   } = useAppContext();
   const toast = useToast();
-
-
-  // Stepper State
-  const [currentStep, setCurrentStep] = useState(1);
-  const steps = ["Deploy / Connect", "Approve", "Fund & Stake"];
 
   // Admin State
   const [pmOwner, setPmOwner] = useState('');
@@ -42,36 +35,9 @@ export default function PaymasterView() {
   const [adminNewTokenFeed, setAdminNewTokenFeed] = useState(env.PRICE_FEED || '');
   const [adminNewTokenMinPrice, setAdminNewTokenMinPrice] = useState('95000000'); // $0.95 with 8 decimals (Chainlink standard)
 
-
-  // Deploy States
-  const [dEntryPoint, setDEntryPoint] = useState(env.ENTRY_POINT || '');
-  const [dToken, setDToken] = useState(env.USDC_TOKEN || '');
-  const [dPriceFeed, setDPriceFeed] = useState(env.PRICE_FEED || '');
-  const [deploying, setDeploying] = useState(false);
-
-  // Connect States
-  const [connectPmAddress, setConnectPmAddress] = useState('');
-  const [connecting, setConnecting] = useState(false);
-
-  // Fund States
-  const [depositAmount, setDepositAmount] = useState('');
-  const [stakeAmount, setStakeAmount] = useState('');
-  const [unstakeDelay, setUnstakeDelay] = useState('86400');
-  const [funding, setFunding] = useState(false);
-
-  // Withdraw / Unstake States
-  const [wEthAddress, setWEthAddress] = useState('');
-  const [wEthAmount, setWEthAmount] = useState('');
-  const [wUsdcAddress, setWUsdcAddress] = useState('');
-  const [wUsdcAmount, setWUsdcAmount] = useState('');
-  const [wStakeAddress, setWStakeAddress] = useState('');
-  const [unlockedState, setUnlockedState] = useState(false);
-  const [withdrawing, setWithdrawing] = useState(false);
-
   // Approve State
   const [approveAmount, setApproveAmount] = useState('10');
   const [approving, setApproving] = useState(false);
-  const [lastOpHash, setLastOpHash] = useState('');
 
   const [selectedApproveToken, setSelectedApproveToken] = useState(env.USDC_TOKEN || '');
   const [tokenAllowances, setTokenAllowances] = useState({});
@@ -100,7 +66,7 @@ export default function PaymasterView() {
 
         const pmBal = await erc20.balanceOf(paymasterAddress);
         pmBalances[t.symbol] = ethers.formatUnits(pmBal, t.decimals || 6);
-      } catch (err) {
+      } catch {
         allowances[t.symbol] = "0.0";
         pmBalances[t.symbol] = "0.0";
       }
@@ -125,72 +91,14 @@ export default function PaymasterView() {
     fetchPmOwner();
   }, [smartAccountAddress, paymasterAddress, provider, refreshTrigger]);
 
-  // Auto-redirect
   useEffect(() => {
-    if (paymasterAddress && currentStep === 1) {
-       setCurrentStep(2);
-    }
-  }, [paymasterAddress]);
-
-
-  useEffect(() => {
-    if (paymasterAddress && dEntryPoint && dToken && provider) {
+    if (paymasterAddress && provider) {
       loadPaymasterDetails(paymasterAddress, provider);
     }
-  }, [paymasterAddress, dEntryPoint, dToken, provider]);
-
-  const handleDeploy = async () => {
-    if (!signer || !dEntryPoint || !dToken || !dPriceFeed) return;
-    setDeploying(true);
-    setGlobalLoading(true, "Deploying Paymaster...");
-    try {
-      const pmFactory = new ethers.ContractFactory(pmArtifact.abi, pmArtifact.bytecode, signer);
-      
-      const pmContract = await pmFactory.deploy(
-         eoaAddress,   // _initialOwner: the connected EOA wallet
-         dEntryPoint,  // _entryPoint
-         dPriceFeed    // _nativeUsdFeed (ETH/USD Chainlink feed)
-      );
-      
-      await pmContract.waitForDeployment();
-      const deployedAddress = await pmContract.getAddress();
-      setPaymasterAddress(deployedAddress);
-      toast.success(`Paymaster successfully deployed at: ${deployedAddress}`);
-    } catch (err) {
-      if (err.code === 4001) toast.error("Transaction rejected by user");
-      else toast.error(err.reason || err.message || "Deployment failed");
-    } finally {
-      setDeploying(false);
-      setGlobalLoading(false);
-    }
-  };
-
-  const handleConnectPaymaster = async () => {
-    if (!connectPmAddress || !ethers.isAddress(connectPmAddress)) {
-      alert("Invalid Address format");
-      return;
-    }
-    setConnecting(true);
-    setGlobalLoading(true, "Connecting Paymaster...");
-    try {
-      const code = await provider.getCode(connectPmAddress);
-      if (code === "0x") {
-        toast.error("No contract deployed at this address!");
-        return;
-      }
-      setPaymasterAddress(connectPmAddress);
-      toast.success(`Paymaster successfully connected at ${connectPmAddress}`);
-    } catch(err) {
-      toast.error("Error connecting: " + err.message);
-    } finally {
-      setConnecting(false);
-      setGlobalLoading(false);
-    }
-  };
+  }, [paymasterAddress, provider]);
 
   const executePmAction = async (actionFn, actionName) => {
     if (!signer || !paymasterAddress) return;
-    setFunding(true); setWithdrawing(true);
     setGlobalLoading(true, `Processing ${actionName}...`);
     try {
        const pmContract = new ethers.Contract(paymasterAddress, ERC20PaymasterABI, signer);
@@ -202,9 +110,8 @@ export default function PaymasterView() {
        if (err.code === 4001) toast.error("Transaction rejected by user");
        else toast.error(err.reason || err.message || `${actionName} failed`);
     } finally {
-       setFunding(false); setWithdrawing(false);
        setGlobalLoading(false);
-    }
+     }
   };
 
   // --- Admin Handlers ---
@@ -252,32 +159,8 @@ export default function PaymasterView() {
     await executePmAction(async (pm) => pm.addToken(adminNewToken, adminNewTokenFeed, BigInt(adminNewTokenMinPrice)), "Add Token Support");
   };
 
-  const handleDeposit = () => executePmAction(
-    pm => pm.deposit({ value: ethers.parseEther(depositAmount) }), "Deposit " + nativeToken
-  );
-
-  const handleStake = () => executePmAction(
-    pm => pm.addStake(unstakeDelay, { value: ethers.parseEther(stakeAmount) }), "Add Stake"
-  );
-
-  const handleWithdrawEth = () => executePmAction(
-    pm => pm.withdrawTo(wEthAddress, ethers.parseEther(wEthAmount)), "Withdraw " + nativeToken
-  );
-  
-  const handleWithdrawUsdc = () => executePmAction(
-    pm => pm.withdrawToken(wUsdcAddress, ethers.parseUnits(wUsdcAmount, 6)), "Withdraw USDC"
-  );
-
-  const handleUnlockStake = () => executePmAction(
-    pm => pm.unlockStake(), "Unlock Stake"
-  );
-
-  const handleWithdrawStake = () => executePmAction(
-    pm => pm.withdrawStake(wStakeAddress), "Withdraw Stake"
-  );
-
   const handleApprovePaymaster = async () => {
-    const targetToken = selectedApproveToken || dToken;
+    const targetToken = selectedApproveToken || env.USDC_TOKEN;
     console.log("[Approve-V3] Starting approval flow via Smart Account...");
     if (!smartAccountAddress || !approveAmount || !signer || !paymasterAddress || !targetToken) {
       toast.error("Missing inputs: Smart Account, Paymaster, or Token address.");
@@ -357,14 +240,12 @@ export default function PaymasterView() {
 
       // Fire and forget — global tracker handles confirmation in background
       trackOp(opHash, 'USDC Approval to Paymaster');
-      setLastOpHash(opHash);
       toast.withAction(
         'UserOp submitted to bundler!',
         'View in History →',
         () => setCurrentView('history'),
         'info'
       );
-      setCurrentStep(3); // Optimistically advance stepper
     } catch (err) {
       if (err.code === 4001) toast.error("Transaction rejected by user");
       else toast.error(err.reason || err.message || "Failed to approve Paymaster");

@@ -4,7 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { SmartAccountABI, ERC20_ABI, IEntryPointABI } from '../utils/abis';
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
-import { toHex, getEthPriceInUsd, formatNum, packUserOp, encodeERC7579Batch } from '../utils/helpers';
+import { toHex, getEthPriceInUsd, packUserOp, encodeERC7579Batch } from '../utils/helpers';
 import { Layers, Settings, ExternalLink, Plus, Trash2, Send, CheckCircle2, RotateCcw } from 'lucide-react';
 
 const UNISWAP_ROUTER = '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E';
@@ -14,13 +14,10 @@ export default function BatchSendView() {
   const { 
     provider, 
     signer, 
-    eoaAddress,
     smartAccountAddress, 
     paymasterAddress,
-    refreshAllData,
     env,
     trackOp,
-    setCurrentView,
     setGlobalLoading,
     chainId,
     nativeToken,
@@ -49,7 +46,6 @@ export default function BatchSendView() {
 
   const [pending, setPending] = useState(false);
   const [isEstimating, setIsEstimating] = useState(false);
-  const [userOpHashResult, setUserOpHashResult] = useState('');
   const [estimatedFee, setEstimatedFee] = useState(null);
 
   const addOperation = () => {
@@ -205,8 +201,6 @@ export default function BatchSendView() {
 
     setPending(true);
     setGlobalLoading(true, "Sending Batch UserOperation...");
-    setUserOpHashResult('');
-
     try {
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
@@ -267,7 +261,6 @@ export default function BatchSendView() {
 
       const opHash = await sendUserOperation(userOp, chainId);
       toast.success("Bundler accepted the transaction!");
-      setUserOpHashResult(opHash);
 
       // Fire and forget — global tracker handles confirmation in background
       trackOp(opHash, 'Batch UserOperation');
@@ -280,14 +273,6 @@ export default function BatchSendView() {
       setPending(false);
       setGlobalLoading(false);
     }
-  };
-
-  const resetForm = () => {
-    setUserOpHashResult('');
-    setOperations([{ receiver: '', amount: '', token: 'ETH', functionSig: '', parameters: '' }]);
-    setUsePaymaster(false);
-    setShowAdvanced(false);
-    setEstimatedFee(null);
   };
 
   if (!smartAccountAddress) {

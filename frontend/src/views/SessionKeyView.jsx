@@ -8,7 +8,7 @@ import { Key, PlusCircle, Zap, Settings, ChevronRight, XCircle } from 'lucide-re
 import { SmartAccountABI, IEntryPointABI, SessionKeyValidatorABI } from '../utils/abis';
 
 export default function SessionKeyView() {
-  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, chainId, refreshTrigger, nativeToken, installedModules, refreshInstalledModules } = useAppContext();
+  const { smartAccountAddress, signer, provider, env, setGlobalLoading, chainId, refreshTrigger, nativeToken, installedModules, refreshInstalledModules } = useAppContext();
   const toast = useToast();
 
   const [showSessionKeys, setShowSessionKeys] = useState(false);
@@ -23,7 +23,6 @@ export default function SessionKeyView() {
   const isSkInstalled = installedModules.hasSessionKey;
   const checkingSk = false; // No per-view polling needed
 
-  const [sessionKeyDetails, setSessionKeyDetails] = useState(null);
   const [allSessionKeys, setAllSessionKeys] = useState([]);
   const [querying, setQuerying] = useState(false);
 
@@ -53,27 +52,18 @@ export default function SessionKeyView() {
   useEffect(() => {
     const loadKeyDetails = async () => {
       if (!smartAccountAddress || !provider || !validatorAddr || !isSkInstalled) {
-        setSessionKeyDetails(null);
         return;
       }
       const storedKey = localStorage.getItem("session_burner_key");
-      if (!storedKey) { setSessionKeyDetails(null); return; }
+      if (!storedKey) return;
       try {
         const burnerWallet = new ethers.Wallet(storedKey);
         const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
         const skData = await skValidator.sessionKeys(burnerWallet.address, smartAccountAddress);
-        if (skData.enabled) {
-          setSessionKeyDetails({
-            address: burnerWallet.address,
-            target: skData.target,
-            selector: skData.selector,
-            maxValue: ethers.formatEther(skData.maxValue),
-            validUntil: Number(skData.validUntil)
-          });
-        } else {
-          setSessionKeyDetails(null);
-        }
-      } catch { setSessionKeyDetails(null); }
+        if (!skData.enabled) return;
+      } catch {
+        // Module/key details are optional for this view.
+      }
     };
     loadKeyDetails();
   }, [smartAccountAddress, provider, validatorAddr, isSkInstalled, refreshTrigger]);
@@ -88,7 +78,7 @@ export default function SessionKeyView() {
             const map = mapStr ? JSON.parse(mapStr) : {};
             map[wallet.address.toLowerCase()] = wallet.privateKey;
             localStorage.setItem("session_burner_keys_map", JSON.stringify(map));
-        } catch (e) {
+        } catch {
             console.warn("Failed to update keys map");
         }
         
@@ -118,7 +108,9 @@ export default function SessionKeyView() {
                             map[keyAddress.toLowerCase()] = privKey;
                             localStorage.setItem("session_burner_keys_map", JSON.stringify(map));
                         }
-                    } catch (e) {}
+                    } catch {
+                        // Ignore malformed legacy burner key.
+                    }
                 }
             }
             
@@ -168,7 +160,6 @@ export default function SessionKeyView() {
              if (currentBurnerWallet.address.toLowerCase() === keyAddress.toLowerCase()) {
                  localStorage.removeItem("session_burner_key");
                  setBurnerKey("");
-                 setSessionKeyDetails(null);
              }
           }
           await queryAllSessionKeys();
@@ -197,7 +188,6 @@ export default function SessionKeyView() {
           
           localStorage.removeItem("session_burner_key");
           setBurnerKey("");
-          setSessionKeyDetails(null);
           // Refresh the global module status in context
           await refreshInstalledModules();
       } catch (err) {
@@ -225,7 +215,9 @@ export default function SessionKeyView() {
           const map = mapStr ? JSON.parse(mapStr) : {};
           map[sessionKeyAddr.toLowerCase()] = burnerKey;
           localStorage.setItem("session_burner_keys_map", JSON.stringify(map));
-      } catch (e) {}
+      } catch {
+          // Local key map persistence is best-effort.
+      }
 
       const parsedValue = ethers.parseEther(maxValue || "0");
       const validUntilTimestamp = Math.floor(Date.now() / 1000) + (Number(validForMinutes) * 60);
@@ -290,8 +282,6 @@ export default function SessionKeyView() {
       try {
           const burnerWallet = new ethers.Wallet(burnerKey, provider);
           const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
-          const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
-
           const target = execTarget || targetAddr || smartAccountAddress;
           const value = ethers.parseEther(execValue || "0");
           const data = execData || "0x";

@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { SmartAccountABI, ERC20_ABI, IEntryPointABI } from '../utils/abis';
+import { ERC20_ABI, IEntryPointABI } from '../utils/abis';
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
-import { toHex, getEthPriceInUsd, formatNum, packUserOp, encodeERC7579Single } from '../utils/helpers';
+import { toHex, getEthPriceInUsd, packUserOp, encodeERC7579Single } from '../utils/helpers';
 import { Send, Settings, CheckCircle2, RotateCcw, ExternalLink } from 'lucide-react';
 
 const UNISWAP_ROUTER = '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E';
@@ -14,13 +14,10 @@ export default function SendOpView() {
   const {
     provider,
     signer,
-    eoaAddress,
     smartAccountAddress,
     paymasterAddress,
-    refreshAllData,
     env,
     trackOp,
-    setCurrentView,
     setGlobalLoading,
     chainId,
     nativeToken,
@@ -54,7 +51,6 @@ export default function SendOpView() {
 
   const [pending, setPending] = useState(false);
   const [isEstimating, setIsEstimating] = useState(false);
-  const [userOpHashResult, setUserOpHashResult] = useState('');
   const [estimatedFee, setEstimatedFee] = useState(null);
 
   const normalize = (val) => {
@@ -64,8 +60,6 @@ export default function SendOpView() {
   };
 
   const buildCalldata = () => {
-    const saInterface = new ethers.Interface(SmartAccountABI);
-
     if (token === 'ETH') {
       const val = amount ? ethers.parseEther(amount) : 0n;
       return encodeERC7579Single(receiver, val, "0x");
@@ -201,8 +195,6 @@ export default function SendOpView() {
 
     setPending(true);
     setGlobalLoading(true, "Sending UserOperation...");
-    setUserOpHashResult('');
-
     try {
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
@@ -268,7 +260,6 @@ export default function SendOpView() {
 
       // Fire and forget — global tracker handles confirmation in background
       trackOp(opHash, 'Send UserOperation');
-      setUserOpHashResult(opHash);
       setPending(false);
       setGlobalLoading(false);
     } catch (err) {
@@ -277,18 +268,6 @@ export default function SendOpView() {
       setPending(false);
       setGlobalLoading(false);
     }
-  };
-
-  const resetForm = () => {
-    setUserOpHashResult('');
-    setReceiver('');
-    setAmount('');
-    setToken('ETH');
-    setFunctionSig('');
-    setParameters('');
-    setUsePaymaster(false);
-    setShowAdvanced(false);
-    setEstimatedFee(null);
   };
 
   if (!smartAccountAddress) {

@@ -1,4 +1,4 @@
-const { ethers } = require('ethers');
+import { ethers } from 'ethers';
 
 const validatorAddress = "0x9a3b3a6b50ea32a777c5ee5aa209f1ed487cf21b";
 const webAuthnSig = "0x0000000000000000000000000000000000000000000000000000000000000000";

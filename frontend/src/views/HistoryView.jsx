@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { shortenAddress } from '../utils/helpers';
+import { getExplorerTxUrl } from '../config/chains';
 import { Activity, Clock } from 'lucide-react';
-import { IEntryPointABI } from '../utils/abis';
 
 export default function HistoryView() {
-  const { smartAccountAddress, provider, env, pendingUserOps, recentOps, loadingOps, fetchRecentOps, isAmoy } = useAppContext();
+  const { smartAccountAddress, chainId, recentOps, loadingOps, fetchRecentOps } = useAppContext();
   const toast = useToast();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const timeAgo = (ms) => {
     if (!ms) return '';
-    const diff = Date.now() - ms;
+    const diff = now - ms;
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
@@ -92,12 +96,12 @@ export default function HistoryView() {
 
                     <div className="flex items-center gap-2">
                       <a
-                        href={isAmoy ? `https://amoy.polygonscan.com/tx/${op.txHash}` : `https://sepolia.etherscan.io/tx/${op.txHash}`}
+                        href={getExplorerTxUrl(chainId, op.txHash)}
                         target="_blank"
                         rel="noreferrer"
                         className="btn btn-secondary py-1.5 px-3 text-xs opacity-80 group-hover:opacity-100 transition-opacity"
                       >
-                        {isAmoy ? 'Polygonscan' : 'Etherscan'}
+                        Explorer
                       </a>
                     </div>
                   </div>

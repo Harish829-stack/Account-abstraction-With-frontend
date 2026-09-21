@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ethers, getAddress } from 'ethers';
+import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { shortenAddress, formatNum, encodeERC7579Single, buildAndSendAccountOp } from '../utils/helpers';
@@ -19,8 +19,6 @@ export default function AccountSetupView() {
     saUSDCBalance,
     saEURCBalance,
     saEntryPointDeposit,
-    saOwner,
-    loadSmartAccountDetails,
     refreshAllData,
     env,
     setGlobalLoading,
@@ -39,7 +37,6 @@ export default function AccountSetupView() {
   const [salt, setSalt] = useState('');
   const [predictedAddress, setPredictedAddress] = useState('');
   const [deploying, setDeploying] = useState(false);
-  const [predicting, setPredicting] = useState(false);
   const [predictionError, setPredictionError] = useState(null);
 
   // Option B State
@@ -91,7 +88,6 @@ export default function AccountSetupView() {
         }
         return;
       }
-      setPredicting(true);
       if (active) setPredictionError(null);
       try {
         const factory = new ethers.Contract(env.FACTORY, K1ValidatorFactoryABI, provider);
@@ -103,8 +99,6 @@ export default function AccountSetupView() {
           setPredictedAddress('');
           setPredictionError(err.message || err.toString());
         }
-      } finally {
-        if (active) setPredicting(false);
       }
     };
 

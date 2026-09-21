@@ -16,7 +16,7 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
 
 
  export default function WebAuthnView() {
-  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, trackOp, chainId, refreshTrigger, nativeToken, installedModules, refreshInstalledModules } = useAppContext();
+  const { smartAccountAddress, signer, provider, env, setGlobalLoading, trackOp, chainId, refreshTrigger, nativeToken, installedModules, refreshInstalledModules } = useAppContext();
   const toast = useToast();
 
 
@@ -31,9 +31,6 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
 
  // ── Key mismatch: module installed on-chain but local passkey differs ──
  const [keyMismatch, setKeyMismatch] = useState(false);
- const [checkingMismatch, setCheckingMismatch] = useState(false);
-
-
  // ── Passkey credential (from localStorage) ──
  const [savedCredential, setSavedCredential] = useState(null);
 
@@ -64,15 +61,12 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
      setKeyMismatch(false);
      return;
    }
-   setCheckingMismatch(true);
    try {
      const result = await verifyPublicKeyMatch(smartAccountAddress, validatorAddr, provider);
      // Mismatch: module is installed but local credential doesn't match on-chain key
      setKeyMismatch(!result.match);
    } catch {
      setKeyMismatch(false);
-   } finally {
-     setCheckingMismatch(false);
    }
  };
 
@@ -93,7 +87,7 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
    setRegistering(true);
    setGlobalLoading(true, 'Waiting for biometric prompt...');
    try {
-     const { qx, qy } = await registerPasskey(username.trim());
+     const { qx } = await registerPasskey(username.trim());
      setSavedCredential(loadPasskeyCredential());
      toast.success(`Passkey registered! Public key saved. (qx: 0x${qx.slice(0, 8)}...)`);
    } catch (err) {
@@ -262,9 +256,6 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
 
    try {
      const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
-     const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
-
-
      // Build callData using ERC-7579 format
      const value = ethers.parseEther(execValue || '0');
      const callData = encodeERC7579Single(execTarget, value, execData || '0x');
