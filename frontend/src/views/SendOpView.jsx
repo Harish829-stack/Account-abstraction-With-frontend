@@ -22,6 +22,7 @@ export default function SendOpView() {
     trackOp,
     setCurrentView,
     setGlobalLoading,
+    chainId,
     nativeToken,
     isAmoy
   } = useAppContext();
@@ -42,8 +43,8 @@ export default function SendOpView() {
     ? [{ symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 }]
     : [
         { symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 },
-        { symbol: 'EURC', address: '0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4', decimals: 6 }
-      ];
+        { symbol: 'EURC', address: env?.EURC_TOKEN, decimals: 6 }
+      ].filter((token) => token.address);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -136,7 +137,7 @@ export default function SendOpView() {
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
 
-      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider, chainId);
 
       const userOp = {
         sender: smartAccountAddress,
@@ -156,7 +157,7 @@ export default function SendOpView() {
         signature: "0x"
       };
 
-      const est = await estimateUserOperationGas(userOp);
+      const est = await estimateUserOperationGas(userOp, chainId);
       
       // Add 20% margin to ensure execution succeeds despite state fluctuations
       const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
@@ -206,7 +207,7 @@ export default function SendOpView() {
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
 
-      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider, chainId);
 
       const userOp = {
         sender: smartAccountAddress,
@@ -229,7 +230,7 @@ export default function SendOpView() {
       // Try to estimate gas dynamically right before sending WITHOUT the paymaster
       // This ensures we get real execution gas limits without paymaster simulation failing
       try {
-        const est = await estimateUserOperationGas(userOp);
+        const est = await estimateUserOperationGas(userOp, chainId);
         
         // Add 20% margin
         const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
@@ -262,7 +263,7 @@ export default function SendOpView() {
       const hash = await entryPoint.getUserOpHash(packUserOp(userOp));
       userOp.signature = await signer.signMessage(ethers.getBytes(hash));
 
-      const opHash = await sendUserOperation(userOp);
+      const opHash = await sendUserOperation(userOp, chainId);
       toast.success("Bundler accepted the transaction!");
 
       // Fire and forget — global tracker handles confirmation in background

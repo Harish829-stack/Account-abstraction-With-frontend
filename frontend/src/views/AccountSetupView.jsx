@@ -26,6 +26,7 @@ export default function AccountSetupView() {
     setGlobalLoading,
     setupStep,
     setSetupStep,
+    chainId,
     nativeToken,
     isAmoy
   } = useAppContext();
@@ -61,7 +62,7 @@ export default function AccountSetupView() {
 
   const [approveAmount, setApproveAmount] = useState('1000');
   const [approving, setApproving] = useState(false);
-  const [pullTokenAddress, setPullTokenAddress] = useState(env.USDC_TOKEN || import.meta.env.VITE_USDC_TOKEN || '');
+  const [pullTokenAddress, setPullTokenAddress] = useState(env.USDC_TOKEN || '');
 
   useEffect(() => {
     if (env.USDC_TOKEN) {
@@ -226,7 +227,7 @@ export default function AccountSetupView() {
       const innerCallData = saInterface.encodeFunctionData("withdrawDepositTo", [withdrawEPTo, ethers.parseEther(withdrawEPAmount)]);
       const callData = encodeERC7579Single(smartAccountAddress, 0n, innerCallData);
 
-      const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+      const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
       
       setWithdrawEPAmount('');
       setWithdrawEPTo('');
@@ -258,7 +259,7 @@ export default function AccountSetupView() {
       const innerCallData = k1Interface.encodeFunctionData("transferOwnership", [newOwner]);
       const callData = encodeERC7579Single(env.K1_VALIDATOR, 0n, innerCallData);
 
-      const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+      const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
       
       setNewOwner('');
       setConfirmTransfer(false);

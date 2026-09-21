@@ -15,7 +15,7 @@ export default function PaymasterView() {
     provider, signer, eoaAddress, smartAccountAddress, paymasterAddress, setPaymasterAddress, refreshAllData, env,
     pmETHBalance, pmUSDCBalance, pmDeposit, pmStake, pmUnstakeDelay, pmTokenSymbol, pmTokenDecimals, loadPaymasterDetails,
     saETHBalance, saUSDCBalance, saEntryPointDeposit,
-    trackOp, setCurrentView, setGlobalLoading, refreshTrigger, nativeToken, isAmoy
+    trackOp, setCurrentView, setGlobalLoading, refreshTrigger, chainId, nativeToken, isAmoy
   } = useAppContext();
   const toast = useToast();
 
@@ -81,8 +81,8 @@ export default function PaymasterView() {
     ? [{ symbol: 'USDC', address: env.USDC_TOKEN, decimals: 6 }]
     : [
         { symbol: 'USDC', address: env.USDC_TOKEN, decimals: 6 },
-        { symbol: 'EURC', address: '0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4', decimals: 6 }
-      ];
+        { symbol: 'EURC', address: env.EURC_TOKEN, decimals: 6 }
+      ].filter((token) => token.address);
 
   const fetchTokenData = async () => {
     if (!signer || !smartAccountAddress || !paymasterAddress) return;
@@ -286,7 +286,7 @@ export default function PaymasterView() {
     setApproving(true);
     setGlobalLoading(true, "Approving Paymaster via Smart Account...");
     try {
-      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider, chainId);
 
       // EntryPoint gas prefund (maxCost) validation check
       const totalGasLimit = 150000n + 150000n + 50000n; // callGasLimit + verificationGasLimit + preVerificationGas
@@ -338,7 +338,7 @@ export default function PaymasterView() {
       };
 
       try {
-        const est = await estimateUserOperationGas(userOp);
+        const est = await estimateUserOperationGas(userOp, chainId);
         userOp.callGasLimit = toHex(est.callGasLimit);
         userOp.verificationGasLimit = toHex(est.verificationGasLimit);
         userOp.preVerificationGas = toHex(BigInt(est.preVerificationGas) + 5000n);
@@ -353,7 +353,7 @@ export default function PaymasterView() {
       userOp.signature = await signer.signMessage(ethers.getBytes(hash));
 
       toast.info("Sending UserOp to approve Paymaster...");
-      const opHash = await sendUserOperation(userOp);
+      const opHash = await sendUserOperation(userOp, chainId);
 
       // Fire and forget — global tracker handles confirmation in background
       trackOp(opHash, 'USDC Approval to Paymaster');

@@ -10,7 +10,7 @@ import SessionKeyView from './SessionKeyView';
 import WebAuthnView from './WebAuthnView';
 
 export default function ProfileView() {
-  const { eoaAddress, smartAccountAddress, signer, provider, env, refreshAllData, refreshTrigger, setGlobalLoading, isAmoy } = useAppContext();
+  const { eoaAddress, smartAccountAddress, signer, provider, env, refreshAllData, refreshTrigger, setGlobalLoading, chainId } = useAppContext();
   const toast = useToast();
 
   // --- SOCIAL RECOVERY STATE ---
@@ -94,7 +94,7 @@ export default function ProfileView() {
       const accountIface = new ethers.Interface(SmartAccountABI);
       const callData = accountIface.encodeFunctionData("installModule", [1, validatorAddr, initData]);
       
-      const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+      const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
       
       toast.success(`Social Recovery Module Installed Successfully! OpHash: ${shortenAddress(opHash)}`);
       await checkRecoveryModule();
@@ -155,7 +155,7 @@ export default function ProfileView() {
         const accountIface = new ethers.Interface(SmartAccountABI);
         const callData = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, deInitData]);
 
-        const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+        const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
         
         toast.success(`Module Uninstalled. OpHash: ${shortenAddress(opHash)}`);
         await checkRecoveryModule();
@@ -184,7 +184,7 @@ export default function ProfileView() {
             return;
         }
 
-        const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+        const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider, chainId);
         const overrides = { maxPriorityFeePerGas, maxFeePerGas };
         const tx = await recoveryValidator.approveRecovery(targetSmartAccount, newOwner, overrides);
         await tx.wait();
@@ -208,7 +208,7 @@ export default function ProfileView() {
     setGlobalLoading(true, "Revoking Recovery...");
     try {
         const recoveryValidator = new ethers.Contract(validatorAddr, SocialRecoveryValidatorABI, signer);
-        const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+        const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider, chainId);
         const overrides = { maxPriorityFeePerGas, maxFeePerGas };
         const tx = await recoveryValidator.revokeRecovery(targetSmartAccount, newOwner, overrides);
         await tx.wait();
@@ -251,7 +251,7 @@ export default function ProfileView() {
           const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, signer);
           const nonce = await entryPoint.getNonce(targetSmartAccount, getNonceForValidator(validatorAddr));
 
-          const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+          const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider, chainId);
 
           const userOp = {
               sender: targetSmartAccount,
@@ -272,7 +272,7 @@ export default function ProfileView() {
           };
 
           try {
-             const est = await estimateUserOperationGas(userOp);
+             const est = await estimateUserOperationGas(userOp, chainId);
              userOp.callGasLimit = toHex(est.callGasLimit);
              userOp.verificationGasLimit = toHex(est.verificationGasLimit);
              userOp.preVerificationGas = toHex(est.preVerificationGas);

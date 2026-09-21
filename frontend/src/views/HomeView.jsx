@@ -111,7 +111,7 @@ function ConnectedDashboard() {
     smartAccountAddress, saETHBalance, saUSDCBalance, saEURCBalance, saEntryPointDeposit, saOwner,
     paymasterAddress, pmDeposit,
     pendingUserOps,
-    setCurrentView, refreshAllData, signer, provider, env, nativeToken, isAmoy,
+    setCurrentView, refreshAllData, signer, provider, env, chainId, nativeToken, isAmoy,
     trackOp, setGlobalLoading, setSetupStep
   } = useAppContext();
   const toast = useToast();
@@ -144,8 +144,8 @@ function ConnectedDashboard() {
     ? [{ symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 }]
     : [
         { symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 },
-        { symbol: 'EURC', address: '0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4', decimals: 6 }
-      ];
+        { symbol: 'EURC', address: env?.EURC_TOKEN, decimals: 6 }
+      ].filter((token) => token.address);
 
   const [ethPrice, setEthPrice] = useState(3300);
   const [estimatedUsdcOutput, setEstimatedUsdcOutput] = useState('0.00');
@@ -273,7 +273,7 @@ function ConnectedDashboard() {
 
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
-      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider, chainId);
 
       const userOp = {
         sender: smartAccountAddress,
@@ -295,7 +295,7 @@ function ConnectedDashboard() {
 
       // Try to estimate gas WITHOUT paymaster to bypass paymaster simulation errors
       try {
-        const est = await estimateUserOperationGas(userOp);
+        const est = await estimateUserOperationGas(userOp, chainId);
         userOp.callGasLimit = toHex(est.callGasLimit);
         userOp.verificationGasLimit = toHex(est.verificationGasLimit);
         userOp.preVerificationGas = toHex(est.preVerificationGas);
@@ -316,7 +316,7 @@ function ConnectedDashboard() {
       userOp.signature = await signer.signMessage(ethers.getBytes(hash));
 
       toast.info(`Sending UserOp to swap ${nativeToken} for USDC...`);
-      const opHash = await sendUserOperation(userOp);
+      const opHash = await sendUserOperation(userOp, chainId);
       toast.success("Bundler accepted the transaction!");
 
       // Fire and forget — global tracker handles confirmation in background

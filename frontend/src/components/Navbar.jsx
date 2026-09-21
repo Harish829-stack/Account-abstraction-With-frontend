@@ -1,10 +1,13 @@
 import React, { useRef, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { shortenAddress } from '../utils/helpers';
+import { getDefaultChainId, getSupportedChains } from '../config/chains';
 import { LogOut, User, Settings, Send, DollarSign, Activity, Clock, LayoutDashboard, Shield, Fingerprint, Globe, ChevronDown, Blocks, Bot } from 'lucide-react';
 
 export default function Navbar() {
     const { eoaAddress, smartAccountAddress, disconnect, currentView, setCurrentView, chainId, switchNetwork, isMultisigOwner } = useAppContext();
+  const activeChains = getSupportedChains();
+  const defaultChainId = getDefaultChainId();
 
   if (!eoaAddress) return null;
 
@@ -60,15 +63,14 @@ export default function Navbar() {
             </div>
             <select 
               className="network-select"
-              value={chainId ? chainId.toString() : "11155111"}
+              value={chainId ? chainId.toString() : String(defaultChainId)}
               onChange={(e) => {
-                const val = e.target.value;
-                if (val === "11155111") switchNetwork(11155111);
-                if (val === "80002") switchNetwork(80002);
+                switchNetwork(Number(e.target.value));
               }}
             >
-              <option value="11155111">Sepolia</option>
-              <option value="80002">Amoy</option>
+              {activeChains.map((chain) => (
+                <option key={chain.chainId} value={chain.chainId}>{chain.name}</option>
+              ))}
               <option value="coming_soon" disabled>More Networks Soon...</option>
             </select>
             <div className="icon-right">

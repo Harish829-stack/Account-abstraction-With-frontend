@@ -4,6 +4,14 @@ import { IEntryPointABI, SmartAccountABI, ERC20_ABI, K1ValidatorABI, MultisigABI
 import { useToast } from "./ToastContext";
 import { getUserOpReceipt } from "../utils/bundler";
 import { getInstalledModules } from "../utils/helpers";
+import {
+  getChainConfig,
+  getChainContracts,
+  getDefaultChainId,
+  getNativeCurrency,
+  getReadRpcUrl,
+  SHARED_CONTRACTS,
+} from "../config/chains";
 
 const AppContext = createContext();
 
@@ -31,10 +39,13 @@ export const AppProvider = ({ children }) => {
   const [chainId, setChainId] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  const nativeToken = Number(chainId) === 80002 ? "POL" : "ETH";
-  const isAmoy = Number(chainId) === 80002;
+  const expectedChainId = getDefaultChainId();
+  const currentChain = getChainConfig(chainId) || getChainConfig(expectedChainId);
+  const currentContracts = getChainContracts(currentChain?.chainId);
+  const nativeToken = getNativeCurrency(currentChain?.chainId).symbol;
+  const isAmoy = currentChain?.name === "Polygon Amoy";
 
-  const getUsdcAddress = () => isAmoy ? "0xA0C3907b1fc323AdB95dA27e08e289deaE87BD8C" : import.meta.env.VITE_USDC_TOKEN;
+  const getUsdcAddress = (targetChainId = currentChain?.chainId) => getChainContracts(targetChainId).usdcToken || "";
 
 
   const [eoaETHBalance, setEoaETHBalance] = useState("0");
@@ -74,7 +85,10 @@ export const AppProvider = ({ children }) => {
   });
   const [loadingModules, setLoadingModules] = useState(false);
 
-  const [paymasterAddress, setPaymasterAddress] = useState(import.meta.env.VITE_PAYMASTER || "");
+  const [paymasterAddress, setPaymasterAddress] = useState(getChainContracts(getDefaultChainId()).paymaster || "");
+  useEffect(() => {
+    setPaymasterAddress(currentContracts.paymaster || "");
+  }, [currentContracts.paymaster]);
   const [pmETHBalance, setPmEthBalance] = useState("0");
   const [pmUSDCBalance, setPmUsdcBalance] = useState("0"); // PM Token balance
   const [pmDeposit, setPmDeposit] = useState("0");
@@ -108,19 +122,20 @@ export const AppProvider = ({ children }) => {
     if (!saAddress || !_provider) return;
     setLoadingOps(true);
     try {
-      const entryPointAddress = import.meta.env.VITE_ENTRY_POINT;
-      const isAmoyChain = Number((await _provider.getNetwork()).chainId) === 80002;
-      const chainId = isAmoyChain ? 80002 : 11155111;
+      const entryPointAddress = SHARED_CONTRACTS.ENTRY_POINT;
+      const network = await _provider.getNetwork();
+      const opChain = getChainConfig(Number(network.chainId)) || currentChain;
+      if (!opChain?.explorerApiUrl || !entryPointAddress) return;
       
       // Etherscan V2 API unifies all chains under a single API endpoint and key!
       const apiKey = import.meta.env.VITE_ETHERSCAN_API_KEY;
-      const baseUrl = "https://api.etherscan.io/v2/api";
+      const baseUrl = opChain.explorerApiUrl;
       
       const topic0 = "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f"; // UserOperationEvent
       const paddedSender = ethers.zeroPadValue(saAddress, 32);
       
       // Remove offset so it fetches all logs, as sort=desc is ignored by some explorer API endpoints
-      const url = `${baseUrl}?chainid=${chainId}&module=logs&action=getLogs&fromBlock=0&toBlock=latest&address=${entryPointAddress}&topic0=${topic0}&topic0_2_opr=and&topic2=${paddedSender}&apikey=${apiKey}`;
+      const url = `${baseUrl}?chainid=${opChain.explorerApiChainId || opChain.chainId}&module=logs&action=getLogs&fromBlock=0&toBlock=latest&address=${entryPointAddress}&topic0=${topic0}&topic0_2_opr=and&topic2=${paddedSender}&apikey=${apiKey}`;
       
       const res = await fetch(url);
       const data = await res.json();
@@ -211,18 +226,17 @@ export const AppProvider = ({ children }) => {
     });
   };
 
-  const expectedChainId = parseInt(import.meta.env.VITE_CHAIN_ID || 11155111);
-
   const loadEOABalances = async (address, _provider = provider) => {
     if (!address || !_provider) return;
     try {
       const network = await _provider.getNetwork();
-      const amoy = Number(network.chainId) === 80002;
+      const balanceChain = getChainConfig(Number(network.chainId)) || currentChain;
+      const contracts = getChainContracts(balanceChain?.chainId);
 
       const ethBal = await _provider.getBalance(address);
       setEoaETHBalance(ethBal.toString());
 
-      const usdcAddress = amoy ? "0xA0C3907b1fc323AdB95dA27e08e289deaE87BD8C" : import.meta.env.VITE_USDC_TOKEN;
+      const usdcAddress = contracts.usdcToken;
       if (usdcAddress) {
         try {
           const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
@@ -234,10 +248,9 @@ export const AppProvider = ({ children }) => {
         }
       }
 
-      if (!amoy) {
+      if (contracts.eurcToken) {
         try {
-          const eurcAddress = "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4";
-          const eurc = new ethers.Contract(eurcAddress, ERC20_ABI, _provider);
+          const eurc = new ethers.Contract(contracts.eurcToken, ERC20_ABI, _provider);
           const eurcBal = await eurc.balanceOf(address);
           setEoaEURCBalance(eurcBal.toString());
         } catch (e) {
@@ -249,7 +262,7 @@ export const AppProvider = ({ children }) => {
       }
 
       // Check Multisig Ownership
-      const multisigProxy = import.meta.env.VITE_MULTISIG_PROXY;
+      const multisigProxy = contracts.multisigProxy;
       if (multisigProxy) {
         try {
           const multisig = new ethers.Contract(multisigProxy, MultisigABI, _provider);
@@ -273,12 +286,13 @@ export const AppProvider = ({ children }) => {
     if (!saAddress || !_provider) return;
     try {
       const network = await _provider.getNetwork();
-      const amoy = Number(network.chainId) === 80002;
+      const accountChain = getChainConfig(Number(network.chainId)) || currentChain;
+      const contracts = getChainContracts(accountChain?.chainId);
 
       const balance = await _provider.getBalance(saAddress);
       setSaETHBalance(balance.toString());
 
-      const usdcAddress = amoy ? "0xA0C3907b1fc323AdB95dA27e08e289deaE87BD8C" : import.meta.env.VITE_USDC_TOKEN;
+      const usdcAddress = contracts.usdcToken;
       if (usdcAddress) {
         try {
           const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
@@ -290,10 +304,9 @@ export const AppProvider = ({ children }) => {
         }
       }
 
-      if (!amoy) {
+      if (contracts.eurcToken) {
         try {
-          const eurcAddress = "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4";
-          const eurc = new ethers.Contract(eurcAddress, ERC20_ABI, _provider);
+          const eurc = new ethers.Contract(contracts.eurcToken, ERC20_ABI, _provider);
           const eurcBal = await eurc.balanceOf(saAddress);
           setSaEURCBalance(eurcBal.toString());
         } catch (e) {
@@ -312,12 +325,12 @@ export const AppProvider = ({ children }) => {
         return;
       }
 
-      const entryPoint = new ethers.Contract(import.meta.env.VITE_ENTRY_POINT, IEntryPointABI, _provider);
+      const entryPoint = new ethers.Contract(SHARED_CONTRACTS.ENTRY_POINT, IEntryPointABI, _provider);
       const deposit = await entryPoint.balanceOf(saAddress);
       setSaEntryPointDeposit(deposit.toString());
 
       try {
-        const k1Address = import.meta.env.VITE_K1_VALIDATOR;
+        const k1Address = SHARED_CONTRACTS.K1_VALIDATOR;
         const k1Validator = new ethers.Contract(k1Address, K1ValidatorABI, _provider);
         const owner = await k1Validator.getOwner(saAddress);
         setSaOwner(owner);
@@ -338,9 +351,9 @@ export const AppProvider = ({ children }) => {
     setLoadingModules(true);
     try {
       const envConfig = _env || {
-        SESSION_KEY_VALIDATOR:     import.meta.env.VITE_SESSION_KEY_VALIDATOR,
-        SOCIAL_RECOVERY_VALIDATOR: import.meta.env.VITE_SOCIAL_RECOVERY_VALIDATOR,
-        WEBAUTHN_VALIDATOR:        import.meta.env.VITE_WEBAUTHN_VALIDATOR,
+        SESSION_KEY_VALIDATOR:     SHARED_CONTRACTS.SESSION_KEY_VALIDATOR,
+        SOCIAL_RECOVERY_VALIDATOR: SHARED_CONTRACTS.SOCIAL_RECOVERY_VALIDATOR,
+        WEBAUTHN_VALIDATOR:        SHARED_CONTRACTS.WEBAUTHN_VALIDATOR,
       };
       const modules = await getInstalledModules(saAddress, _provider, envConfig);
       setInstalledModules(modules);
@@ -355,7 +368,7 @@ export const AppProvider = ({ children }) => {
   const loadPaymasterDetails = async (pmAddress, _provider = provider) => {
     if (!pmAddress || !_provider) return;
     try {
-      const entryPoint = new ethers.Contract(import.meta.env.VITE_ENTRY_POINT, IEntryPointABI, _provider);
+      const entryPoint = new ethers.Contract(SHARED_CONTRACTS.ENTRY_POINT, IEntryPointABI, _provider);
       const usdcAddress = getUsdcAddress();
       const tokenContract = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
 
@@ -448,6 +461,8 @@ export const AppProvider = ({ children }) => {
   // Store refs for provider and entryPoint so the interval (created once) can access latest values
   const providerRef = useRef(null);
   useEffect(() => { providerRef.current = provider; }, [provider]);
+  const chainIdRef = useRef(null);
+  useEffect(() => { chainIdRef.current = chainId; }, [chainId]);
 
   useEffect(() => {
     // Increase poll interval to 12s to prevent 429 Too Many Requests on Infura free tier
@@ -485,7 +500,7 @@ export const AppProvider = ({ children }) => {
 
         try {
           // Step 1: Try the bundler's eth_getUserOperationReceipt API first (fast path)
-          const result = await getUserOpReceipt(op.opHash);
+          const result = await getUserOpReceipt(op.opHash, chainIdRef.current);
           if (result && result.receipt) {
             markConfirmed(op.opHash, result.receipt.transactionHash, op.label);
             continue;
@@ -495,7 +510,7 @@ export const AppProvider = ({ children }) => {
           // This handles the case where the bundler has pruned the op from its mempool
           // but the tx was actually mined on-chain.
           const _provider = providerRef.current;
-          const entryPointAddress = import.meta.env.VITE_ENTRY_POINT;
+          const entryPointAddress = SHARED_CONTRACTS.ENTRY_POINT;
           if (_provider && entryPointAddress) {
             try {
               const epContract = new ethers.Contract(entryPointAddress, IEntryPointABI, _provider);
@@ -536,12 +551,11 @@ export const AppProvider = ({ children }) => {
       const network = await browserProvider.getNetwork();
       const currentChainId = Number(network.chainId);
 
-      // Use dedicated Infura RPC for read operations if available in .env to bypass MetaMask rate limits
+      // Use dedicated RPC for read operations if configured to bypass wallet RPC rate limits.
       let readProvider = browserProvider;
-      if (currentChainId === 80002 && import.meta.env.VITE_AMOY_RPC_URL) {
-        readProvider = new ethers.JsonRpcProvider(import.meta.env.VITE_AMOY_RPC_URL);
-      } else if (currentChainId === 11155111 && import.meta.env.VITE_SEPOLIA_RPC_URL) {
-        readProvider = new ethers.JsonRpcProvider(import.meta.env.VITE_SEPOLIA_RPC_URL);
+      const readRpcUrl = getReadRpcUrl(currentChainId);
+      if (readRpcUrl) {
+        readProvider = new ethers.JsonRpcProvider(readRpcUrl);
       }
 
       setProvider(readProvider);
@@ -585,6 +599,7 @@ export const AppProvider = ({ children }) => {
       toast.error("MetaMask is required to switch networks!");
       return;
     }
+    const targetChain = getChainConfig(targetChainId);
     const hexChainId = "0x" + targetChainId.toString(16);
     try {
       await window.ethereum.request({
@@ -594,26 +609,15 @@ export const AppProvider = ({ children }) => {
     } catch (switchError) {
       if (switchError.code === 4902) {
         try {
-          if (targetChainId === 11155111) {
+          if (targetChain?.switchNetwork) {
             await window.ethereum.request({
               method: "wallet_addEthereumChain",
               params: [{
                 chainId: hexChainId,
-                chainName: "Sepolia Test Network",
-                nativeCurrency: { name: "Sepolia Ether", symbol: "ETH", decimals: 18 },
-                rpcUrls: ["https://sepolia.infura.io/v3/a710f8c2379a44fda67fce69cf197679"],
-                blockExplorerUrls: ["https://sepolia.etherscan.io"],
-              }],
-            });
-          } else if (targetChainId === 80002) {
-            await window.ethereum.request({
-              method: "wallet_addEthereumChain",
-              params: [{
-                chainId: hexChainId,
-                chainName: "Polygon Amoy Testnet",
-                nativeCurrency: { name: "POL", symbol: "POL", decimals: 18 },
-                rpcUrls: ["https://rpc-amoy.polygon.technology/"],
-                blockExplorerUrls: ["https://amoy.polygonscan.com/"],
+                chainName: targetChain.switchNetwork.chainName,
+                nativeCurrency: targetChain.nativeCurrency,
+                rpcUrls: targetChain.switchNetwork.rpcUrls,
+                blockExplorerUrls: targetChain.switchNetwork.blockExplorerUrls,
               }],
             });
           }
@@ -668,10 +672,9 @@ export const AppProvider = ({ children }) => {
             const currentChainId = Number(network.chainId);
 
             let readProvider = browserProvider;
-            if (currentChainId === 80002 && import.meta.env.VITE_AMOY_RPC_URL) {
-              readProvider = new ethers.JsonRpcProvider(import.meta.env.VITE_AMOY_RPC_URL);
-            } else if (currentChainId === 11155111 && import.meta.env.VITE_SEPOLIA_RPC_URL) {
-              readProvider = new ethers.JsonRpcProvider(import.meta.env.VITE_SEPOLIA_RPC_URL);
+            const readRpcUrl = getReadRpcUrl(currentChainId);
+            if (readRpcUrl) {
+              readProvider = new ethers.JsonRpcProvider(readRpcUrl);
             }
 
             setProvider(readProvider);
@@ -722,20 +725,17 @@ export const AppProvider = ({ children }) => {
     trackedOps, trackOp,
     recentOps, loadingOps, fetchRecentOps,
     env: {
-      ENTRY_POINT: import.meta.env.VITE_ENTRY_POINT,
-      FACTORY: import.meta.env.VITE_FACTORY,
+      ...SHARED_CONTRACTS,
+      ENTRY_POINT: SHARED_CONTRACTS.ENTRY_POINT,
+      FACTORY: SHARED_CONTRACTS.FACTORY,
+      PAYMASTER: currentContracts.paymaster,
+      MULTISIG_PROXY: currentContracts.multisigProxy,
       USDC_TOKEN: getUsdcAddress(),
-      PRICE_FEED: isAmoy ? import.meta.env.VITE_MOCK_AGGREGATOR : import.meta.env.VITE_PRICE_FEED,
-      BUNDLER_URL: isAmoy 
-        ? (import.meta.env.VITE_PIMLICO_BUNDLER_URL ? import.meta.env.VITE_PIMLICO_BUNDLER_URL.replace("137", "80002") : import.meta.env.VITE_SKANDHA_RPC_URL.replace("11155111", "80002"))
-        : import.meta.env.VITE_SKANDHA_RPC_URL,
+      EURC_TOKEN: currentContracts.eurcToken,
+      PRICE_FEED: currentContracts.priceFeed,
+      BUNDLER_URL: currentChain?.bundlerUrl,
       VERIFYING_SIGNER: import.meta.env.VITE_VERIFYING_SIGNER,
-      K1_VALIDATOR: import.meta.env.VITE_K1_VALIDATOR,
-      SOCIAL_RECOVERY_VALIDATOR: import.meta.env.VITE_SOCIAL_RECOVERY_VALIDATOR,
-      SESSION_KEY_VALIDATOR: import.meta.env.VITE_SESSION_KEY_VALIDATOR,
-      WEBAUTHN_VALIDATOR: import.meta.env.VITE_WEBAUTHN_VALIDATOR,
-      NEXUS_IMPLEMENTATION: import.meta.env.VITE_NEXUS_IMPLEMENTATION,
-      NEXUS_BOOTSTRAP: import.meta.env.VITE_NEXUS_BOOTSTRAP,
+      CHAIN_CONFIG: currentChain,
     }
   };
 

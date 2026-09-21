@@ -1,23 +1,18 @@
 import axios from "axios";
+import { getBundlerUrl, getChainConfig, SHARED_CONTRACTS } from "../config/chains";
 
-export async function estimateUserOperationGas(userOp) {
-  let rpcUrl = import.meta.env.VITE_SKANDHA_RPC_URL;
-  if (window.ethereum) {
-    try {
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-      if (parseInt(chainId, 16) === 80002) {
-        if (import.meta.env.VITE_PIMLICO_BUNDLER_URL) {
-          rpcUrl = import.meta.env.VITE_PIMLICO_BUNDLER_URL.replace("137", "80002");
-        } else {
-          rpcUrl = rpcUrl.replace("11155111", "80002");
-        }
-      }
-    } catch (e) { console.warn("Failed to get chainId", e); }
-  }
-  const entryPoint = import.meta.env.VITE_ENTRY_POINT;
+function getBundlerRequestConfig(chainId) {
+  const rpcUrl = getBundlerUrl(chainId);
+  const entryPoint = SHARED_CONTRACTS.ENTRY_POINT;
 
   if (!rpcUrl) throw new Error("Bundler RPC URL not found in env");
   if (!entryPoint) throw new Error("Entry Point missing in env");
+
+  return { rpcUrl, entryPoint };
+}
+
+export async function estimateUserOperationGas(userOp, chainId) {
+  const { rpcUrl, entryPoint } = getBundlerRequestConfig(chainId);
 
   // Create a copy for estimation
   const opToEstimate = { ...userOp };
@@ -92,24 +87,8 @@ export async function estimateUserOperationGas(userOp) {
   }
 }
 
-export async function sendUserOperation(userOp) {
-  let rpcUrl = import.meta.env.VITE_SKANDHA_RPC_URL;
-  if (window.ethereum) {
-    try {
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-      if (parseInt(chainId, 16) === 80002) {
-        if (import.meta.env.VITE_PIMLICO_BUNDLER_URL) {
-          rpcUrl = import.meta.env.VITE_PIMLICO_BUNDLER_URL.replace("137", "80002");
-        } else {
-          rpcUrl = rpcUrl.replace("11155111", "80002");
-        }
-      }
-    } catch (e) { console.warn("Failed to get chainId", e); }
-  }
-  const entryPoint = import.meta.env.VITE_ENTRY_POINT;
-
-  if (!rpcUrl) throw new Error("Bundler RPC URL not found in env");
-  if (!entryPoint) throw new Error("Entry Point missing in env");
+export async function sendUserOperation(userOp, chainId) {
+  const { rpcUrl, entryPoint } = getBundlerRequestConfig(chainId);
 
   try {
     const opToSend = { ...userOp };
@@ -156,20 +135,8 @@ export async function sendUserOperation(userOp) {
   }
 }
 
-export async function getUserOpReceipt(userOpHash) {
-  let rpcUrl = import.meta.env.VITE_SKANDHA_RPC_URL;
-  if (window.ethereum) {
-    try {
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-      if (parseInt(chainId, 16) === 80002) {
-        if (import.meta.env.VITE_PIMLICO_BUNDLER_URL) {
-          rpcUrl = import.meta.env.VITE_PIMLICO_BUNDLER_URL.replace("137", "80002");
-        } else {
-          rpcUrl = rpcUrl.replace("11155111", "80002");
-        }
-      }
-    } catch (e) { console.warn("Failed to get chainId", e); }
-  }
+export async function getUserOpReceipt(userOpHash, chainId) {
+  const rpcUrl = getBundlerUrl(chainId);
   if (!rpcUrl) return null;
 
   try {
@@ -192,7 +159,8 @@ export async function getUserOpReceipt(userOpHash) {
   }
 }
 
-export async function getDynamicGasFees(provider) {
+export async function getDynamicGasFees(provider, chainId) {
+  const chainConfig = getChainConfig(chainId);
   let maxPriorityFeePerGas = 1500000000n;
   let maxFeePerGas = 5000000000n;
   
@@ -206,18 +174,11 @@ export async function getDynamicGasFees(provider) {
     maxPriorityFeePerGas = chainPriority;
     maxFeePerGas = chainMaxFee;
     
-    let isAmoy = false;
-    if (window.ethereum) {
-      try {
-        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-        if (parseInt(chainId, 16) === 80002) isAmoy = true;
-      } catch (e) { console.warn("Failed to get chainId in fee fetch", e); }
-    }
-
-    // Apply Amoy minimums if necessary
-    if (isAmoy || import.meta.env.VITE_ACTIVE_NETWORK === "amoy") {
-        if (maxPriorityFeePerGas < 30000000000n) maxPriorityFeePerGas = 30000000000n;
-        if (maxFeePerGas < 35000000000n) maxFeePerGas = 35000000000n;
+    if (chainConfig) {
+      const chainPriorityFloor = BigInt(chainConfig.minPriorityFeeWei || 0);
+      const chainFeeFloor = BigInt(chainConfig.minFeeWei || 0);
+      if (maxPriorityFeePerGas < chainPriorityFloor) maxPriorityFeePerGas = chainPriorityFloor;
+      if (maxFeePerGas < chainFeeFloor) maxFeePerGas = chainFeeFloor;
     }
 
     // Add a 100% buffer (2x) on testnet to guarantee it never gets stuck pending and times out

@@ -17,12 +17,12 @@ import {
 import { MultisigABI, ERC20PaymasterABI, StakeableABI } from '../utils/abis';
 
 export default function AdminView() {
-  const { eoaAddress, isAmoy } = useAppContext();
+  const { eoaAddress, env } = useAppContext();
 
   const [targetType, setTargetType] = useState('paymaster');
   const [action, setAction] = useState('unlockStake');
 
-  const [targetAddress, setTargetAddress] = useState(import.meta.env.VITE_PAYMASTER || "");
+  const [targetAddress, setTargetAddress] = useState(env.PAYMASTER || "");
   const [newImplAddress, setNewImplAddress] = useState("");
   const [nativeValue, setNativeValue] = useState("");
   const [tokenAddress, setTokenAddress] = useState("");
@@ -36,7 +36,7 @@ export default function AdminView() {
   const [encodedData, setEncodedData] = useState('');
   const [ownersList, setOwnersList] = useState([]);
 
-  const MULTISIG_ADDRESS = import.meta.env.VITE_MULTISIG_PROXY;
+  const MULTISIG_ADDRESS = env.MULTISIG_PROXY;
 
   useEffect(() => {
     const fetchOwners = async () => {
@@ -55,13 +55,13 @@ export default function AdminView() {
 
   useEffect(() => {
     if (targetType === 'paymaster') {
-      setTargetAddress(import.meta.env.VITE_PAYMASTER || "");
+      setTargetAddress(env.PAYMASTER || "");
       setAction('unlockStake');
     } else {
-      setTargetAddress(import.meta.env.VITE_FACTORY || "");
+      setTargetAddress(env.FACTORY || "");
       setAction('unlockStake');
     }
-  }, [targetType]);
+  }, [targetType, env.PAYMASTER, env.FACTORY]);
 
   useEffect(() => {
     if (eoaAddress && targetAddress && MULTISIG_ADDRESS) {
@@ -365,7 +365,7 @@ export default function AdminView() {
 
         <div className="admin-status-banner">
           <BadgeCheck size={17} />
-          <span>This transaction will be executed on {isAmoy ? "Amoy" : "Sepolia"} testnet.</span>
+          <span>This transaction will be executed on {env.CHAIN_CONFIG?.name || "the selected"} testnet.</span>
         </div>
       </section>
 

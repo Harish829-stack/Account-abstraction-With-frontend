@@ -7,6 +7,21 @@ import {
   injectedWallet,
 } from '@rainbow-me/rainbowkit/wallets';
 import { sepolia, polygonAmoy, holesky, baseSepolia, optimismSepolia } from 'wagmi/chains';
+import { getSupportedChainIds } from './config/chains';
+
+const viemChainsById = {
+  [sepolia.id]: sepolia,
+  [polygonAmoy.id]: polygonAmoy,
+  [holesky.id]: holesky,
+  [baseSepolia.id]: baseSepolia,
+  [optimismSepolia.id]: optimismSepolia,
+};
+
+const activeChains = getSupportedChainIds()
+  .map((chainId) => viemChainsById[chainId])
+  .filter(Boolean);
+
+const configuredChains = activeChains.length > 0 ? activeChains : [sepolia];
 
 /**
  * RainbowKit + Wagmi configuration.
@@ -14,12 +29,8 @@ import { sepolia, polygonAmoy, holesky, baseSepolia, optimismSepolia } from 'wag
  * Wallets (browser-extension only — no WalletConnect ID needed):
  *   MetaMask, Coinbase Wallet, Rabby, Brave, + any other injected wallet
  *
- * Chains:
- *   Sepolia (11155111)    — full AA support
- *   Polygon Amoy (80002)  — full AA support
- *   Holesky (17000)       — view only
- *   Base Sepolia (84532)  — view only
- *   Optimism Sepolia (11155420) — view only
+ * Chains are sourced from src/config/chains.js so wallet config and app
+ * network behavior stay in lockstep.
  */
 export const wagmiConfig = getDefaultConfig({
   appName: 'AA Smart Wallet',
@@ -38,6 +49,6 @@ export const wagmiConfig = getDefaultConfig({
       ],
     },
   ],
-  chains: [sepolia, polygonAmoy, holesky, baseSepolia, optimismSepolia],
+  chains: configuredChains,
   ssr: false,
 });

@@ -118,7 +118,8 @@ export async function buildAndSendAccountOp(
   smartAccountAddress, 
   callData, 
   entryPointAddress, 
-  validatorAddress
+  validatorAddress,
+  chainId
 ) {
     const entryPoint = new ethers.Contract(
       entryPointAddress, 
@@ -140,7 +141,7 @@ export async function buildAndSendAccountOp(
       }
     }
 
-    const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+    const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider, chainId);
 
     const rpcUserOp = {
         sender: smartAccountAddress,
@@ -162,7 +163,7 @@ export async function buildAndSendAccountOp(
     };
 
     try {
-        const est = await estimateUserOperationGas(rpcUserOp);
+        const est = await estimateUserOperationGas(rpcUserOp, chainId);
         
         // Add a 20% margin to all gas limits to prevent execution reverts due to minor state fluctuations
         const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
@@ -183,7 +184,7 @@ export async function buildAndSendAccountOp(
     const rawSig = await signer.signMessage(ethers.getBytes(userOpHash));
     rpcUserOp.signature = rawSig;
 
-    const opHash = await sendUserOperation(rpcUserOp);
+    const opHash = await sendUserOperation(rpcUserOp, chainId);
     return opHash;
 }
 
@@ -285,4 +286,3 @@ export async function getActiveSessionKeysOnChain(validatorAddr, smartAccountAdd
         return [];
     }
 }
-

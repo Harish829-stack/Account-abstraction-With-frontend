@@ -313,7 +313,7 @@ function AgentWorkspace({
 /* ---------- main UI shell ---------- */
 export default function ChatbotView() {
     const { isAgentConfigured, agentStatus, setIsAgentConfigured, setAgentStatus, messages, sendMessage, generateAgent, isChatLoading, clearMessages } = useChatbotContext();
-    const { smartAccountAddress, provider, signer, eoaAddress, installedModules } = useAppContext();
+    const { smartAccountAddress, provider, signer, eoaAddress, env, chainId, installedModules } = useAppContext();
 
     const [tab, setTab] = useState("setup");
     const [visited, setVisited] = useState(["setup"]);
@@ -375,7 +375,8 @@ export default function ChatbotView() {
     const handleInstall = async () => {
         setIsInstalling(true);
         try {
-            const SESSION_KEY_VALIDATOR = "0xC578bF1899fF9E49d0FC65BE5b1a0A26EB11aF44";
+            const SESSION_KEY_VALIDATOR = env.SESSION_KEY_VALIDATOR;
+            if (!SESSION_KEY_VALIDATOR) throw new Error("SessionKeyValidator address missing from chain config.");
             const validUntil = Math.floor(Date.now() / 1000) + 86400 * 30;
 
             let target = "0x0000000000000000000000000000000000000000";
@@ -406,13 +407,13 @@ export default function ChatbotView() {
             const callData = encodeERC7579Single(SESSION_KEY_VALIDATOR, "0x0", innerCallData);
 
             const entryPoint = new ethers.Contract(
-                import.meta.env.VITE_ENTRY_POINT,
+                env.ENTRY_POINT,
                 ["function getNonce(address sender, uint192 key) view returns (uint256)"],
                 provider
             );
 
             const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
-            const { maxFeePerGas, maxPriorityFeePerGas } = await getDynamicGasFees(provider);
+            const { maxFeePerGas, maxPriorityFeePerGas } = await getDynamicGasFees(provider, chainId);
 
             const userOp = {
                 sender: smartAccountAddress,
@@ -432,7 +433,7 @@ export default function ChatbotView() {
                 signature: "0x"
             };
 
-            const est = await estimateUserOperationGas(userOp);
+            const est = await estimateUserOperationGas(userOp, chainId);
             userOp.callGasLimit = ethers.toBeHex(BigInt(est.callGasLimit));
             userOp.verificationGasLimit = ethers.toBeHex(BigInt(est.verificationGasLimit));
             userOp.preVerificationGas = ethers.toBeHex(BigInt(est.preVerificationGas));
@@ -461,7 +462,7 @@ export default function ChatbotView() {
 
             const packedForHash = packUserOp(userOp);
             const epHashContract = new ethers.Contract(
-                import.meta.env.VITE_ENTRY_POINT,
+                env.ENTRY_POINT,
                 ["function getUserOpHash(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature) userOp) view returns (bytes32)"],
                 provider
             );
@@ -470,13 +471,13 @@ export default function ChatbotView() {
             const sig = await signer.signMessage(ethers.getBytes(userOpHash));
             userOp.signature = sig;
 
-            const returnedHash = await sendUserOperation(userOp);
+            const returnedHash = await sendUserOperation(userOp, chainId);
 
             let receipt = null;
             let retries = 45;
             while (!receipt && retries > 0) {
                 await new Promise(r => setTimeout(r, 2000));
-                receipt = await getUserOpReceipt(returnedHash);
+                receipt = await getUserOpReceipt(returnedHash, chainId);
                 retries--;
             }
 
@@ -506,7 +507,7 @@ export default function ChatbotView() {
     }
 
     const hasSessionKeyValidator = installedModules?.rawValidators?.some(
-        v => v.toLowerCase() === "0xC578bF1899fF9E49d0FC65BE5b1a0A26EB11aF44".toLowerCase()
+        v => v.toLowerCase() === env.SESSION_KEY_VALIDATOR?.toLowerCase()
     );
     if (!hasSessionKeyValidator) {
         return (

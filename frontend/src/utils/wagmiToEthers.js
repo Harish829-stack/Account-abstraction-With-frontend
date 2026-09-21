@@ -1,4 +1,5 @@
 import { BrowserProvider, JsonRpcSigner, JsonRpcProvider, hexlify } from 'ethers';
+import { getChainConfig, getReadRpcUrl } from '../config/chains';
 
 /**
  * Converts a Wagmi/Viem WalletClient into an ethers v6 JsonRpcSigner.
@@ -49,14 +50,11 @@ export function walletClientToSigner(walletClient) {
  * @returns {JsonRpcProvider | null}
  */
 export function getReadProvider(chainId) {
-  const sepoliaRpc = import.meta.env.VITE_SEPOLIA_RPC_URL;
-  const amoyRpc = import.meta.env.VITE_AMOY_RPC_URL;
+  const rpcUrl = getReadRpcUrl(chainId);
+  const chain = getChainConfig(chainId);
 
-  if (chainId === 11155111 && sepoliaRpc) {
-    return new JsonRpcProvider(sepoliaRpc, { chainId: 11155111, name: 'sepolia' });
-  }
-  if (chainId === 80002 && amoyRpc) {
-    return new JsonRpcProvider(amoyRpc, { chainId: 80002, name: 'polygon-amoy' });
+  if (rpcUrl && chain) {
+    return new JsonRpcProvider(rpcUrl, { chainId: chain.chainId, name: chain.name });
   }
   // For other chains, return null — AppContext will use the BrowserProvider from walletClient
   return null;

@@ -22,6 +22,7 @@ export default function BatchSendView() {
     trackOp,
     setCurrentView,
     setGlobalLoading,
+    chainId,
     nativeToken,
     isAmoy
   } = useAppContext();
@@ -37,8 +38,8 @@ export default function BatchSendView() {
     ? [{ symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 }]
     : [
         { symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 },
-        { symbol: 'EURC', address: '0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4', decimals: 6 }
-      ];
+        { symbol: 'EURC', address: env?.EURC_TOKEN, decimals: 6 }
+      ].filter((token) => token.address);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -149,7 +150,7 @@ export default function BatchSendView() {
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
 
-      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider, chainId);
 
       const userOp = {
         sender: smartAccountAddress,
@@ -169,7 +170,7 @@ export default function BatchSendView() {
         signature: "0x"
       };
 
-      const est = await estimateUserOperationGas(userOp);
+      const est = await estimateUserOperationGas(userOp, chainId);
       
       const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
       const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
@@ -210,7 +211,7 @@ export default function BatchSendView() {
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
 
-      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+      const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider, chainId);
 
       const userOp = {
         sender: smartAccountAddress,
@@ -232,7 +233,7 @@ export default function BatchSendView() {
 
       // Try to estimate gas dynamically right before sending WITHOUT the paymaster
       try {
-        const est = await estimateUserOperationGas(userOp);
+        const est = await estimateUserOperationGas(userOp, chainId);
         
         const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
         const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
@@ -264,7 +265,7 @@ export default function BatchSendView() {
       const hash = await entryPoint.getUserOpHash(packUserOp(userOp));
       userOp.signature = await signer.signMessage(ethers.getBytes(hash));
 
-      const opHash = await sendUserOperation(userOp);
+      const opHash = await sendUserOperation(userOp, chainId);
       toast.success("Bundler accepted the transaction!");
       setUserOpHashResult(opHash);
 

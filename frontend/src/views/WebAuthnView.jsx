@@ -8,7 +8,6 @@ import {
   registerPasskey,
   loadPasskeyCredential,
   installWebAuthnValidator,
-  isWebAuthnInstalled,
   signUserOpWithPasskey,
   verifyPublicKeyMatch,
 } from '../utils/webauthn';
@@ -17,7 +16,7 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
 
 
  export default function WebAuthnView() {
-  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, trackOp, chainId, isAmoy, refreshTrigger, nativeToken, installedModules, refreshInstalledModules } = useAppContext();
+  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, trackOp, chainId, refreshTrigger, nativeToken, installedModules, refreshInstalledModules } = useAppContext();
   const toast = useToast();
 
 
@@ -129,7 +128,7 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
    setInstalling(true);
    setGlobalLoading(true, 'Installing WebAuthn Validator Module...');
    try {
-     await installWebAuthnValidator(smartAccountAddress, validatorAddr, qx, qy, signer, env.K1_VALIDATOR);
+     await installWebAuthnValidator(smartAccountAddress, validatorAddr, qx, qy, signer, env.K1_VALIDATOR, chainId);
      toast.success('WebAuthn Validator installed! Your smart account can now be controlled by your passkey.');
      await refreshInstalledModules();
      setKeyMismatch(false);
@@ -156,7 +155,7 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
       const innerCallData = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, deInitData]);
       const callData = encodeERC7579Single(smartAccountAddress, 0n, innerCallData);
 
-      const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+      const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
       
       toast.success(`WebAuthn Validator uninstalled! OpHash: ${shortenAddress(opHash)}`);
       await refreshInstalledModules();
@@ -206,7 +205,7 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
       );
 
       const opHash = await buildAndSendAccountOp(
-        signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR
+        signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId
       );
       toast.success(`Key Replaced! New device passkey is now active. OpHash: ${shortenAddress(opHash)}`);
       await refreshInstalledModules();
@@ -272,16 +271,9 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
 
 
      // Build UserOp
-     const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+     const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider, chainId);
 
-     let BUNDLER_URL = import.meta.env.VITE_SKANDHA_RPC_URL;
-     if (isAmoy) {
-       if (import.meta.env.VITE_PIMLICO_BUNDLER_URL) {
-         BUNDLER_URL = import.meta.env.VITE_PIMLICO_BUNDLER_URL.replace("137", "80002");
-       } else if (BUNDLER_URL) {
-         BUNDLER_URL = BUNDLER_URL.replace("11155111", "80002");
-       }
-     }
+     const BUNDLER_URL = env.BUNDLER_URL;
      const nonce = await entryPoint.getNonce(smartAccountAddress, getNonceForValidator(validatorAddr));
 
      const unpackedUserOp = {
@@ -310,7 +302,7 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
      };
 
       try {
-        const est = await estimateUserOperationGas(unpackedUserOp);
+        const est = await estimateUserOperationGas(unpackedUserOp, chainId);
         
         let callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
         let vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
@@ -346,7 +338,7 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
 
      setGlobalLoading(true, 'Submitting to bundler...');
 
-     if (!BUNDLER_URL) throw new Error('Missing VITE_SKANDHA_RPC_URL in .env');
+     if (!BUNDLER_URL) throw new Error('Missing bundler URL in chain config');
 
      // Pimlico v0.7 bundler expects unpacked fields
      const rpcUserOp = {

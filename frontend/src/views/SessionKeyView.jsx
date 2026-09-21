@@ -8,7 +8,7 @@ import { Key, PlusCircle, Zap, Settings, ChevronRight, XCircle } from 'lucide-re
 import { SmartAccountABI, IEntryPointABI, SessionKeyValidatorABI } from '../utils/abis';
 
 export default function SessionKeyView() {
-  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, isAmoy, refreshTrigger, nativeToken, installedModules, refreshInstalledModules } = useAppContext();
+  const { eoaAddress, smartAccountAddress, signer, provider, env, setGlobalLoading, chainId, refreshTrigger, nativeToken, installedModules, refreshInstalledModules } = useAppContext();
   const toast = useToast();
 
   const [showSessionKeys, setShowSessionKeys] = useState(false);
@@ -159,7 +159,7 @@ export default function SessionKeyView() {
           const innerCall = skValidator.interface.encodeFunctionData("revokeSessionKey", [keyAddress]);
           const callData = encodeERC7579Single(validatorAddr, 0n, innerCall);
 
-          const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+          const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
           
           toast.success(`Key Revoked Successfully! OpHash: ${shortenAddress(opHash)}`);
           
@@ -191,7 +191,7 @@ export default function SessionKeyView() {
           const accountIface = new ethers.Interface(SmartAccountABI);
           const callData = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, deInitData]);
 
-          const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+          const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
           
           toast.success(`Module Uninstalled & Session Key Revoked! OpHash: ${shortenAddress(opHash)}`);
           
@@ -254,7 +254,7 @@ export default function SessionKeyView() {
           const accountIface = new ethers.Interface(SmartAccountABI);
           const callData = accountIface.encodeFunctionData("installModule", [1, validatorAddr, initData]);
           
-          const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+          const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
           toast.success(`Module Installed & Session Key Added! OpHash: ${shortenAddress(opHash)}...`);
           await refreshInstalledModules();
       } else {
@@ -269,7 +269,7 @@ export default function SessionKeyView() {
               innerCall
           );
 
-          const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR);
+          const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
           toast.success(`Session Key adding! OpHash: ${shortenAddress(opHash)}...`);
           await queryAllSessionKeys();
       }
@@ -298,7 +298,7 @@ export default function SessionKeyView() {
           
           const callData = encodeERC7579Single(target, value, data);
 
-          const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+          const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider, chainId);
 
           const nonce = await entryPoint.getNonce(smartAccountAddress, getNonceForValidator(validatorAddr));
 
@@ -321,7 +321,7 @@ export default function SessionKeyView() {
           };
 
           try {
-            const est = await estimateUserOperationGas(rpcUserOp);
+            const est = await estimateUserOperationGas(rpcUserOp, chainId);
             
             const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
             const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
@@ -348,7 +348,7 @@ export default function SessionKeyView() {
           
           rpcUserOp.signature = ethers.hexlify(packedSignature);
 
-          const opHash = await sendUserOperation(rpcUserOp);
+          const opHash = await sendUserOperation(rpcUserOp, chainId);
 
           toast.success(`Bundler executing! OpHash: ${shortenAddress(opHash)}...`);
       } catch (err) {

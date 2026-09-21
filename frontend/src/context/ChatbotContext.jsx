@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import axios from "axios";
 import { useAppContext } from "./AppContext";
+import { getDefaultChainId } from "../config/chains";
 
 const ChatbotContext = createContext();
 
@@ -70,7 +71,7 @@ export const ChatbotProvider = ({ children }) => {
             const res = await axios.post(`${BACKEND_URL}/api/chat`, {
                 message: messageText,
                 smartAccountAddress,
-                chainId: chainId ? chainId.toString() : "11155111"
+                chainId: chainId ? chainId.toString() : String(getDefaultChainId())
             });
             
             const aiMsg = { 

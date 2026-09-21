@@ -11,12 +11,14 @@ import WebAuthnView from './views/WebAuthnView';
 import AdminView from './views/AdminView';
 import ChatbotView from './views/ChatbotView';
 import { AlertTriangle } from 'lucide-react';
+import { getDefaultChainId, getSupportedChainIds } from './config/chains';
 
 function App() {
   const { currentView, eoaAddress, chainId, switchNetwork, isTxLoading, txLoadingMessage } = useAppContext();
   const isConnected = !!eoaAddress;
   
-  const SUPPORTED_CHAINS = [11155111, 80002];
+  const SUPPORTED_CHAINS = getSupportedChainIds();
+  const defaultChainId = getDefaultChainId();
   const isNetworkMismatch = isConnected && chainId && !SUPPORTED_CHAINS.includes(Number(chainId));
 
   const renderGlobalLoader = () => {
@@ -51,13 +53,13 @@ function App() {
             <div className="network-alert__text">
               <h4>Network Mismatch</h4>
               <p>
-                Connected to Chain ID <b>{chainId}</b>, but this app requires Sepolia or Amoy.
+                Connected to Chain ID <b>{chainId}</b>, but this app requires a supported active chain.
               </p>
             </div>
           </div>
           <button 
             className="network-alert__action"
-            onClick={() => switchNetwork(11155111)}
+            onClick={() => switchNetwork(defaultChainId)}
           >
             Switch to Sepolia
           </button>
@@ -105,4 +107,3 @@ function App() {
 }
 
 export default App;
-

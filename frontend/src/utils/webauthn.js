@@ -3,6 +3,7 @@ import { ethers } from "ethers";
 import { SmartAccountABI, IEntryPointABI } from "./abis";
 import { getDynamicGasFees } from "./bundler";
 import { encodeERC7579Single, buildAndSendAccountOp } from "./helpers";
+import { SHARED_CONTRACTS } from "../config/chains";
 
 
 const STORAGE_KEY = "webauthn_credential";
@@ -60,7 +61,8 @@ export async function installWebAuthnValidator(
  qx,
  qy,
  signer,
- k1ValidatorAddr
+ k1ValidatorAddr,
+ chainId
 ) {
  const initData = ethers.AbiCoder.defaultAbiCoder().encode(
    ["bytes32", "bytes32"],
@@ -68,13 +70,13 @@ export async function installWebAuthnValidator(
  );
 
   const provider = signer.provider;
-  const entryPoint = import.meta.env.VITE_ENTRY_POINT;
+  const entryPoint = SHARED_CONTRACTS.ENTRY_POINT;
 
   const accountIface = new ethers.Interface(SmartAccountABI);
   const innerCallData = accountIface.encodeFunctionData("installModule", [1, webAuthnValidatorAddr, initData]);
   const callData = encodeERC7579Single(smartAccountAddress, 0n, innerCallData);
 
-  const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, entryPoint, k1ValidatorAddr);
+  const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, entryPoint, k1ValidatorAddr, chainId);
 
   return opHash;
 }
@@ -129,11 +131,10 @@ export async function verifyPublicKeyMatch(smartAccountAddress, webAuthnValidato
 // Parameters:
 //   userOpHash      — bytes32 hash from entryPoint.getUserOpHash(userOp)
 //   credentialId    — from loadPasskeyCredential().id
-//   validatorAddress — WebAuthnValidator contract address
 //
 // Returns: packed bytes ready to set as userOp.signature
 // ─────────────────────────────────────────────────────────────────────────────
-export async function signUserOpWithPasskey(userOpHash, credentialId, validatorAddress) {
+export async function signUserOpWithPasskey(userOpHash, credentialId) {
   const { signature, metadata } = await WebAuthnP256.sign({
     challenge: userOpHash,
     credentialId,
@@ -181,7 +182,7 @@ export async function signUserOpWithPasskey(userOpHash, credentialId, validatorA
 //   callData              — encoded calldata for the operation (e.g. execute(...))
 //   webAuthnValidatorAddr — deployed WebAuthnValidator address
 //   credentialId          — from loadPasskeyCredential().id
-//   env                   — AppContext env (ENTRY_POINT, BUNDLER_RPC, etc.)
+//   env                   — AppContext env (ENTRY_POINT, BUNDLER_URL, etc.)
 //   provider              — ethers.js provider from AppContext
 // ─────────────────────────────────────────────────────────────────────────────
 export async function sendUserOpWithPasskey({
@@ -194,9 +195,9 @@ export async function sendUserOpWithPasskey({
 }) {
  const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
 
- const BUNDLER_URL = env.BUNDLER_RPC || import.meta.env.VITE_SKANDHA_RPC_URL;
+ const BUNDLER_URL = env.BUNDLER_URL;
 
- const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
+ const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider, env.CHAIN_CONFIG?.chainId);
 
  const accountGasLimits = ethers.concat([
    ethers.zeroPadValue(ethers.toBeHex(0), 16),
@@ -267,4 +268,3 @@ export async function sendUserOpWithPasskey({
 
  return data.result; // userOpHash from bundler
 }
-
