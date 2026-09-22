@@ -9,7 +9,7 @@ const CHATBOT_API_URL = import.meta.env.VITE_CHATBOT_API_URL || "";
 export const useChatbotContext = () => useContext(ChatbotContext);
 
 export const ChatbotProvider = ({ children }) => {
-    const { smartAccountAddress, chainId } = useAppContext();
+    const { smartAccountAddress, chainId, trackOp } = useAppContext();
     const [messages, setMessages] = useState([]);
     const [isAgentConfigured, setIsAgentConfigured] = useState(false);
     const [agentStatus, setAgentStatus] = useState(null); // { agentAddress, scope, maxAmount }
@@ -78,6 +78,12 @@ export const ChatbotProvider = ({ children }) => {
                 content: res.data.reply,
                 ops: res.data.ops || []
             };
+
+            (res.data.ops || []).forEach((op) => {
+                if (op.opHash) {
+                    trackOp(op.opHash, `AI Agent Operation ${op.iteration || ""}`.trim());
+                }
+            });
             
             setMessages((prev) => [...prev, aiMsg]);
         } catch (e) {

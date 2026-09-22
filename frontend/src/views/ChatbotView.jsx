@@ -313,7 +313,7 @@ function AgentWorkspace({
 /* ---------- main UI shell ---------- */
 export default function ChatbotView() {
     const { isAgentConfigured, agentStatus, setIsAgentConfigured, setAgentStatus, messages, sendMessage, generateAgent, isChatLoading, clearMessages } = useChatbotContext();
-    const { smartAccountAddress, provider, signer, eoaAddress, env, chainId, installedModules, loadingModules } = useAppContext();
+    const { smartAccountAddress, provider, signer, eoaAddress, env, chainId, installedModules, loadingModules, trackOp } = useAppContext();
 
     const [tab, setTab] = useState("setup");
     const [visited, setVisited] = useState(["setup"]);
@@ -472,6 +472,7 @@ export default function ChatbotView() {
             userOp.signature = sig;
 
             const returnedHash = await sendUserOperation(userOp, chainId);
+            trackOp(returnedHash, 'Authorize AI Agent', { calldata: userOp.callData });
 
             let receipt = null;
             let retries = 45;

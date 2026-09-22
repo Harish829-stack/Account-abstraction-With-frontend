@@ -263,7 +263,7 @@ export default function BatchSendView() {
       toast.success("Bundler accepted the transaction!");
 
       // Fire and forget — global tracker handles confirmation in background
-      trackOp(opHash, 'Batch UserOperation');
+      trackOp(opHash, 'Batch UserOperation', { calldata: userOp.callData });
 
       setPending(false);
       setGlobalLoading(false);

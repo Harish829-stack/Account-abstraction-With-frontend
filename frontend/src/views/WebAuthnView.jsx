@@ -122,7 +122,8 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
    setInstalling(true);
    setGlobalLoading(true, 'Installing WebAuthn Validator Module...');
    try {
-     await installWebAuthnValidator(smartAccountAddress, validatorAddr, qx, qy, signer, env.K1_VALIDATOR, chainId);
+     const opHash = await installWebAuthnValidator(smartAccountAddress, validatorAddr, qx, qy, signer, env.K1_VALIDATOR, chainId);
+     trackOp(opHash, 'Install WebAuthn Validator');
      toast.success('WebAuthn Validator installed! Your smart account can now be controlled by your passkey.');
      await refreshInstalledModules();
      setKeyMismatch(false);
@@ -150,6 +151,7 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
       const callData = encodeERC7579Single(smartAccountAddress, 0n, innerCallData);
 
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
+      trackOp(opHash, 'Uninstall WebAuthn Validator', { calldata: callData });
       
       toast.success(`WebAuthn Validator uninstalled! OpHash: ${shortenAddress(opHash)}`);
       await refreshInstalledModules();
@@ -201,6 +203,7 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
       const opHash = await buildAndSendAccountOp(
         signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId
       );
+      trackOp(opHash, 'Replace WebAuthn Key', { calldata: callData });
       toast.success(`Key Replaced! New device passkey is now active. OpHash: ${shortenAddress(opHash)}`);
       await refreshInstalledModules();
       setKeyMismatch(false);
@@ -367,7 +370,7 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
 
 
      const opHash = result.result;
-     trackOp(opHash, 'WebAuthn UserOp');
+     trackOp(opHash, 'WebAuthn UserOp', { calldata: rpcUserOp.callData });
      toast.success(`Submitted via passkey! OpHash: ${opHash.slice(0, 12)}...`);
    } catch (err) {
      console.error(err);

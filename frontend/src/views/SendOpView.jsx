@@ -259,7 +259,7 @@ export default function SendOpView() {
       toast.success("Bundler accepted the transaction!");
 
       // Fire and forget — global tracker handles confirmation in background
-      trackOp(opHash, 'Send UserOperation');
+      trackOp(opHash, 'Send UserOperation', { calldata: userOp.callData });
       setPending(false);
       setGlobalLoading(false);
     } catch (err) {

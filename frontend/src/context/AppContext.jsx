@@ -5,6 +5,12 @@ import { useToast } from "./ToastContext";
 import { getUserOpReceipt } from "../utils/bundler";
 import { getInstalledModules } from "../utils/helpers";
 import {
+  getAccountHistory,
+  saveUserOperation,
+  updateUserOperationStatus,
+  upsertSmartAccount,
+} from "../utils/backendApi";
+import {
   getChainConfig,
   getChainContracts,
   getDefaultChainId,
@@ -122,9 +128,23 @@ export const AppProvider = ({ children }) => {
     if (!saAddress || !_provider) return;
     setLoadingOps(true);
     try {
-      const entryPointAddress = SHARED_CONTRACTS.ENTRY_POINT;
       const network = await _provider.getNetwork();
       const opChain = getChainConfig(Number(network.chainId)) || currentChain;
+      try {
+        const backendOps = await getAccountHistory({
+          smartAccountAddress: saAddress,
+          chainId: opChain.chainId,
+          limit: 10,
+        });
+        if (Array.isArray(backendOps) && backendOps.length > 0) {
+          setRecentOps(backendOps);
+          return;
+        }
+      } catch (backendErr) {
+        console.warn("Backend history unavailable, falling back to explorer:", backendErr);
+      }
+
+      const entryPointAddress = SHARED_CONTRACTS.ENTRY_POINT;
       if (!opChain?.explorerApiUrl || !entryPointAddress) return;
       
       // Etherscan V2 API unifies all chains under a single API endpoint and key!
@@ -204,14 +224,45 @@ export const AppProvider = ({ children }) => {
     localStorage.setItem('trackedOps', JSON.stringify(trackedOps));
   }, [trackedOps]);
 
+  const eoaAddressRef = useRef(null);
+  useEffect(() => { eoaAddressRef.current = eoaAddress; }, [eoaAddress]);
+  const smartAccountAddressRef = useRef(null);
+  useEffect(() => { smartAccountAddressRef.current = smartAccountAddress; }, [smartAccountAddress]);
+  const chainIdRef = useRef(null);
+  useEffect(() => { chainIdRef.current = chainId; }, [chainId]);
+
   // Call this right after sendUserOperation() — instantly unblocks the view
-  const trackOp = useCallback((opHash, label = 'UserOperation') => {
+  const trackOp = useCallback((opHash, label = 'UserOperation', metadata = {}) => {
     setTrackedOps(prev => [
       { opHash, label, submittedAt: Date.now(), status: 'pending' },
       ...prev.filter(op => op.opHash !== opHash)
     ]);
     addPendingUserOp(opHash);
+    void persistUserOperation(opHash, label, metadata);
   }, []);
+
+  const persistUserOperation = async (opHash, label, metadata = {}) => {
+    const accountAddress = metadata.smartAccountAddress || smartAccountAddressRef.current;
+    const owner = metadata.ownerEoa || eoaAddressRef.current;
+    const opChainId = metadata.chainId || chainIdRef.current;
+    if (!opHash || !accountAddress || !owner || !opChainId) return;
+
+    try {
+      await saveUserOperation({
+        hash: opHash,
+        smartAccountAddress: accountAddress,
+        ownerEoa: owner,
+        chainId: opChainId,
+        label,
+        calldata: metadata.calldata || "0x",
+        status: metadata.status || "pending",
+        txHash: metadata.txHash,
+        receipt: metadata.receipt,
+      });
+    } catch (error) {
+      console.warn("Failed to persist UserOp:", error);
+    }
+  };
 
   const addPendingUserOp = (hash, txHash) => {
     setPendingUserOps(prev => {
@@ -461,8 +512,6 @@ export const AppProvider = ({ children }) => {
   // Store refs for provider and entryPoint so the interval (created once) can access latest values
   const providerRef = useRef(null);
   useEffect(() => { providerRef.current = provider; }, [provider]);
-  const chainIdRef = useRef(null);
-  useEffect(() => { chainIdRef.current = chainId; }, [chainId]);
 
   useEffect(() => {
     // Increase poll interval to 12s to prevent 429 Too Many Requests on Infura free tier
@@ -474,6 +523,13 @@ export const AppProvider = ({ children }) => {
         o.opHash === opHash ? { ...o, status: 'confirmed' } : o
       ));
       addPendingUserOp(opHash, txHash);
+      void updateUserOperationStatus(opHash, {
+        status: "confirmed",
+        txHash,
+        confirmedAt: new Date().toISOString(),
+      }).catch((error) => {
+        console.warn("Failed to persist UserOp confirmation:", error);
+      });
       toast.withAction(
         `"${label}" confirmed on-chain!`,
         'View in History →',
@@ -494,6 +550,12 @@ export const AppProvider = ({ children }) => {
           setTrackedOps(prev => prev.map(o =>
             o.opHash === op.opHash ? { ...o, status: 'dropped' } : o
           ));
+          void updateUserOperationStatus(op.opHash, {
+            status: "dropped",
+            droppedAt: new Date().toISOString(),
+          }).catch((error) => {
+            console.warn("Failed to persist dropped UserOp:", error);
+          });
           toast.error(`"${op.label}" may have been dropped by the bundler. Check JiffyScan with hash: ${op.opHash.slice(0, 10)}...`);
           continue;
         }
@@ -699,6 +761,15 @@ export const AppProvider = ({ children }) => {
   // Sync smart account dynamically whenever it changes
   useEffect(() => {
     if (smartAccountAddress) {
+      if (eoaAddress && chainId) {
+        void upsertSmartAccount({
+          address: smartAccountAddress,
+          ownerEoa: eoaAddress,
+          chainId,
+        }).catch((error) => {
+          console.warn("Failed to persist smart account:", error);
+        });
+      }
       loadSmartAccountDetails(smartAccountAddress);
       fetchRecentOps(smartAccountAddress);
       // Fetch installed modules from blockchain once on connect

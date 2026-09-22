@@ -1,6 +1,6 @@
 # Architecture And Phase Status
 
-Last updated: 2026-09-21
+Last updated: 2026-09-22
 
 ## Current Architecture
 
@@ -13,7 +13,13 @@ Frontend (Vite React)
 
 Nest backend (apps/backend)
   - GET /config
-  - Prisma + Postgres for chain and contract configuration
+  - POST /accounts/upsert
+  - GET /accounts/:address
+  - GET /accounts/:address/history
+  - POST /user-ops
+  - GET /user-ops
+  - PATCH /user-ops/:hash/status
+  - Prisma + Postgres for chain config, contract config, smart accounts, and UserOps
   - Redis cache for config responses
 
 Chatbot server (chatbot-server)
@@ -50,7 +56,7 @@ For Supabase local dev, use the Supabase Session Pooler URL, not the direct `db.
 
 ### Postgres
 
-Currently written by `npm run prisma:seed`:
+Written by `npm run prisma:seed`:
 
 - `Chain`
 - `ChainContract`
@@ -58,14 +64,19 @@ Currently written by `npm run prisma:seed`:
 
 These store active chain config, view-only chain config, RPC URLs, bundler URLs, explorer metadata, gas fee floors, per-chain contract addresses, and shared contract addresses.
 
+Written by normal runtime flows after Phase 2:
+
+- `SmartAccount`
+- `UserOperation`
+
+These store owner EOA, smart account address, chain ID, salt/deployment metadata when available, UserOp hash, label, calldata, pending/confirmed/reverted/dropped status, receipt JSON, tx hash, block number, and confirmation/drop timestamps.
+
 The schema already includes these future tables, but the app does not yet write them in normal runtime flows:
 
 - `AdminUser`
 - `SiweSession`
-- `SmartAccount`
 - `Guardian`
 - `SessionKey`
-- `UserOperation`
 - `MultisigProposal`
 
 ### Redis
@@ -89,6 +100,8 @@ Still used for some frontend state:
 - pending UserOps
 - tracked UserOps
 - cached frontend config response
+
+Browser local storage is now a fallback/cache for UserOp history. When `VITE_CONFIG_API_URL` is set and the backend is reachable, the frontend writes UserOps to Postgres and reads history from the backend first.
 
 ## Completed Work
 
@@ -136,6 +149,31 @@ Verified:
 - Frontend build passes
 - Local `GET /config` returns DB-backed Sepolia and Amoy config
 
+### Phase 2: Smart Account And UserOperation Persistence
+
+Done:
+
+- Added account API module with `POST /accounts/upsert`, `GET /accounts/:address`, and `GET /accounts/:address/history`
+- Added UserOp API module with `POST /user-ops`, `GET /user-ops`, and `PATCH /user-ops/:hash/status`
+- Added runtime validators for addresses, hashes, hex calldata, chain IDs, pagination limits, strings, and dates
+- Added repository/service boundaries for account and UserOp persistence
+- Made UserOp writes idempotent by `hash`
+- Linked UserOps to durable `SmartAccount` rows
+- Updated the Prisma `UserOperation` model with label, calldata, status, tx hash, receipt, and update timestamp fields
+- Updated frontend tracking so manual sends, batch sends, paymaster approval, swaps, setup actions, module actions, session-key actions, WebAuthn actions, and AI-agent ops can be persisted
+- Updated `HistoryView` to read backend history first and keep the existing explorer/RPC/local fallback
+- Updated AI-agent chat flow to register returned operation hashes with the shared history path
+
+Verified:
+
+- Backend Prisma schema validates
+- Backend Prisma Client generation passes
+- Backend tests pass
+- Backend lint passes
+- Backend build passes
+- Frontend lint passes with existing warnings
+- Frontend build passes
+
 ## Current Runtime Behavior
 
 ### Config Flow
@@ -155,16 +193,18 @@ If `VITE_CONFIG_API_URL` is missing or the request fails, the frontend continues
 
 Current behavior:
 
-- Frontend tracks pending ops in local storage
-- Frontend polls bundler receipt
-- Frontend falls back to EntryPoint logs
-- History view still depends on frontend/explorer/RPC behavior
+- Frontend tracks pending ops in local storage for immediate UI feedback
+- Frontend saves tracked UserOps to the backend when `VITE_CONFIG_API_URL` is set
+- Backend persists UserOps in Postgres and links them to a smart account
+- Frontend marks backend UserOps confirmed or dropped when its current polling path resolves
+- History view reads backend history first
+- If backend history is unavailable or empty, the frontend falls back to explorer/RPC/local behavior
 
 Not done yet:
 
-- backend UserOp persistence
 - backend receipt worker
-- DB-backed history endpoint
+- backend-owned pending-op sweep
+- backend-owned EntryPoint log indexing
 
 ### AI Agent Flow
 
@@ -178,6 +218,7 @@ Current behavior:
 Recent fix:
 
 - A failed module refresh no longer makes the Chatbot view incorrectly show "Missing validator module" when the previous known state had the SessionKeyValidator installed.
+- AI-agent UserOp hashes returned from the chatbot are now handed to the shared frontend tracking path, so they can persist to backend history when the backend URL is configured.
 
 Not done yet:
 
@@ -190,7 +231,9 @@ Not done yet:
 
 ### Phase 2A: Smart Account Persistence
 
-Features:
+Status: complete.
+
+Implemented features:
 
 - `POST /accounts/upsert`
 - `GET /accounts/:address`
@@ -208,7 +251,9 @@ Benefits:
 
 ### Phase 2B: UserOperation Persistence
 
-Features:
+Status: complete.
+
+Implemented features:
 
 - `POST /user-ops`
 - `GET /user-ops?smartAccount=&chainId=`
@@ -248,6 +293,8 @@ Benefits:
 
 - frontend no longer owns receipt polling as the source of truth
 - lower RPC pressure from every browser tab
+
+Status: pending.
 
 ### Phase 3: AI Agent Persistence
 
@@ -357,24 +404,25 @@ Features:
 
 ## Recommended Next Step
 
-Implement Phase 2A and Phase 2B together:
+Implement Phase 2C:
 
 ```text
-SmartAccount persistence + UserOperation persistence + HistoryView backend read path
+UserOperation receipt worker + pending-op sweep + chain-aware receipt reconciliation
 ```
 
-This stabilizes the workflows currently being tested:
+This moves the source of truth for UserOp status out of browser tabs and into the backend:
 
-- manual send op
-- batch send
-- paymaster approval
-- AI-agent execution
-- post-execution history refresh
+- poll bundler receipts from the backend
+- fallback to EntryPoint `UserOperationEvent`
+- mark confirmed/reverted/dropped in Postgres
+- avoid duplicate polling across multiple frontend sessions
+- prepare the way for production monitoring and retry tooling
 
 ## Known Risks / Notes
 
 - Frontend/public RPC and bundler URLs are browser-visible by design. Do not put private provider secrets in values returned by `/config`.
 - Supabase direct database URLs may fail locally if IPv6 is unavailable. Use the Supabase Session Pooler for local dev.
 - Upstash Redis URLs must start with `rediss://`, not `rrediss://`.
+- Phase 2 changed the Prisma schema. Run `npx prisma db push` against the dev database before testing the new backend history endpoints.
 - The chatbot server still needs persistence; otherwise agent state can disappear on process restart.
 - Contracts and AA invariants have not been changed and should remain frozen unless a dedicated review phase is started.

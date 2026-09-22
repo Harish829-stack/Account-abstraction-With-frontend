@@ -8,27 +8,27 @@ datasource db {
 }
 
 model Chain {
-  id                Int             @id @default(autoincrement())
-  chainId           Int             @unique
-  name              String
-  rpcUrl            String
-  bundlerUrl        String
-  explorerUrl       String
-  explorerApiUrl    String?
+  id                 Int             @id @default(autoincrement())
+  chainId            Int             @unique
+  name               String
+  rpcUrl             String
+  bundlerUrl         String
+  explorerUrl        String
+  explorerApiUrl     String?
   explorerApiChainId Int?
-  nativeSymbol      String
-  nativeName        String
-  nativeDecimals    Int             @default(18)
-  isTestnet         Boolean
-  isActive          Boolean         @default(true)
-  viewOnly          Boolean         @default(false)
-  minPriorityFeeWei String
-  minFeeWei         String
-  lastIndexedBlock  Int?
-  lastSyncError     String?
-  lastSyncAt        DateTime?
-  contracts         ChainContract[]
-  userOps           UserOperation[]
+  nativeSymbol       String
+  nativeName         String
+  nativeDecimals     Int             @default(18)
+  isTestnet          Boolean
+  isActive           Boolean         @default(true)
+  viewOnly           Boolean         @default(false)
+  minPriorityFeeWei  String
+  minFeeWei          String
+  lastIndexedBlock   Int?
+  lastSyncError      String?
+  lastSyncAt         DateTime?
+  contracts          ChainContract[]
+  userOps            UserOperation[]
 }
 
 model ChainContract {
@@ -104,15 +104,18 @@ model UserOperation {
   hash           String       @unique
   smartAccountId Int
   smartAccount   SmartAccount @relation(fields: [smartAccountId], references: [id])
-  chain          Chain        @relation(fields: [chainId], references: [id])
+  chain          Chain        @relation(fields: [chainId], references: [chainId])
   chainId        Int
-  status         String
+  label          String?
+  status         String       @default("pending")
+  txHash         String?
   confirmedBlock Int?
   confirmedAt    DateTime?
   droppedAt      DateTime?
-  calldata        String
+  calldata        String      @default("0x")
   receipt         Json?
   createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 }
 
 model MultisigProposal {

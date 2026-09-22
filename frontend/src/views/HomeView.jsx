@@ -317,7 +317,7 @@ function ConnectedDashboard() {
       toast.success("Bundler accepted the transaction!");
 
       // Fire and forget — global tracker handles confirmation in background
-      trackOp(opHash, `${nativeToken} → USDC Swap`);
+      trackOp(opHash, `${nativeToken} → USDC Swap`, { calldata: userOp.callData });
       toast.withAction(
         'Swap submitted to bundler!',
         'View in History →',

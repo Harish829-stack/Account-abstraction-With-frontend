@@ -10,7 +10,7 @@ import SessionKeyView from './SessionKeyView';
 import WebAuthnView from './WebAuthnView';
 
 export default function ProfileView() {
-  const { eoaAddress, smartAccountAddress, signer, provider, env, refreshAllData, refreshTrigger, setGlobalLoading, chainId } = useAppContext();
+  const { eoaAddress, smartAccountAddress, signer, provider, env, refreshAllData, refreshTrigger, setGlobalLoading, chainId, trackOp } = useAppContext();
   const toast = useToast();
 
   // --- SOCIAL RECOVERY STATE ---
@@ -94,6 +94,7 @@ export default function ProfileView() {
       const callData = accountIface.encodeFunctionData("installModule", [1, validatorAddr, initData]);
       
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
+      trackOp(opHash, 'Install Social Recovery Module', { calldata: callData });
       
       toast.success(`Social Recovery Module Installed Successfully! OpHash: ${shortenAddress(opHash)}`);
       await checkRecoveryModule();
@@ -155,6 +156,7 @@ export default function ProfileView() {
         const callData = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, deInitData]);
 
         const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
+        trackOp(opHash, 'Uninstall Social Recovery Module', { calldata: callData });
         
         toast.success(`Module Uninstalled. OpHash: ${shortenAddress(opHash)}`);
         await checkRecoveryModule();

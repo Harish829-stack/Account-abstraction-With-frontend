@@ -26,7 +26,8 @@ export default function AccountSetupView() {
     setSetupStep,
     chainId,
     nativeToken,
-    isAmoy
+    isAmoy,
+    trackOp
   } = useAppContext();
   const toast = useToast();
 
@@ -222,6 +223,7 @@ export default function AccountSetupView() {
       const callData = encodeERC7579Single(smartAccountAddress, 0n, innerCallData);
 
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
+      trackOp(opHash, 'EntryPoint Withdraw', { calldata: callData });
       
       setWithdrawEPAmount('');
       setWithdrawEPTo('');
@@ -254,6 +256,7 @@ export default function AccountSetupView() {
       const callData = encodeERC7579Single(env.K1_VALIDATOR, 0n, innerCallData);
 
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
+      trackOp(opHash, 'Transfer Smart Account Ownership', { calldata: callData });
       
       setNewOwner('');
       setConfirmTransfer(false);

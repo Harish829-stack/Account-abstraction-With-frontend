@@ -239,7 +239,7 @@ export default function PaymasterView() {
       const opHash = await sendUserOperation(userOp, chainId);
 
       // Fire and forget — global tracker handles confirmation in background
-      trackOp(opHash, 'USDC Approval to Paymaster');
+      trackOp(opHash, 'USDC Approval to Paymaster', { calldata: userOp.callData });
       toast.withAction(
         'UserOp submitted to bundler!',
         'View in History →',

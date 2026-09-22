@@ -8,7 +8,7 @@ import { Key, PlusCircle, Zap, Settings, ChevronRight, XCircle } from 'lucide-re
 import { SmartAccountABI, IEntryPointABI, SessionKeyValidatorABI } from '../utils/abis';
 
 export default function SessionKeyView() {
-  const { smartAccountAddress, signer, provider, env, setGlobalLoading, chainId, refreshTrigger, nativeToken, installedModules, refreshInstalledModules } = useAppContext();
+  const { smartAccountAddress, signer, provider, env, setGlobalLoading, chainId, refreshTrigger, nativeToken, installedModules, refreshInstalledModules, trackOp } = useAppContext();
   const toast = useToast();
 
   const [showSessionKeys, setShowSessionKeys] = useState(false);
@@ -152,6 +152,7 @@ export default function SessionKeyView() {
           const callData = encodeERC7579Single(validatorAddr, 0n, innerCall);
 
           const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
+          trackOp(opHash, 'Session Key Revocation', { calldata: callData });
           
           toast.success(`Key Revoked Successfully! OpHash: ${shortenAddress(opHash)}`);
           
@@ -183,6 +184,7 @@ export default function SessionKeyView() {
           const callData = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, deInitData]);
 
           const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
+          trackOp(opHash, 'Uninstall Session Key Module', { calldata: callData });
           
           toast.success(`Module Uninstalled & Session Key Revoked! OpHash: ${shortenAddress(opHash)}`);
           
@@ -247,6 +249,7 @@ export default function SessionKeyView() {
           const callData = accountIface.encodeFunctionData("installModule", [1, validatorAddr, initData]);
           
           const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
+          trackOp(opHash, 'Install Session Key Module', { calldata: callData });
           toast.success(`Module Installed & Session Key Added! OpHash: ${shortenAddress(opHash)}...`);
           await refreshInstalledModules();
       } else {
@@ -262,6 +265,7 @@ export default function SessionKeyView() {
           );
 
           const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
+          trackOp(opHash, 'Add Session Key', { calldata: callData });
           toast.success(`Session Key adding! OpHash: ${shortenAddress(opHash)}...`);
           await queryAllSessionKeys();
       }
@@ -339,6 +343,7 @@ export default function SessionKeyView() {
           rpcUserOp.signature = ethers.hexlify(packedSignature);
 
           const opHash = await sendUserOperation(rpcUserOp, chainId);
+          trackOp(opHash, 'Session Key Execution', { calldata: rpcUserOp.callData });
 
           toast.success(`Bundler executing! OpHash: ${shortenAddress(opHash)}...`);
       } catch (err) {
