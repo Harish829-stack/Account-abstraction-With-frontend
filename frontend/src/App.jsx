@@ -21,6 +21,32 @@ function App() {
   const defaultChainId = getDefaultChainId();
   const isNetworkMismatch = isConnected && chainId && !SUPPORTED_CHAINS.includes(Number(chainId));
 
+  const renderCurrentView = () => {
+    if (!isConnected) return <HomeView />;
+
+    switch (currentView) {
+      case "modules":
+        return <ModulesView />;
+      case "setup":
+        return <AccountSetupView />;
+      case "send":
+        return <SendOpView />;
+      case "batch-send":
+        return <BatchSendView />;
+      case "paymaster":
+        return <PaymasterView />;
+      case "history":
+        return <HistoryView />;
+      case "admin":
+        return <AdminView />;
+      case "chatbot":
+        return <ChatbotView />;
+      case "home":
+      default:
+        return <HomeView />;
+    }
+  };
+
   const renderGlobalLoader = () => {
     if (!isTxLoading) return null;
     return (
@@ -68,38 +94,7 @@ function App() {
 
       {isConnected && <Navbar />}
       <main className="animate-fade-in">
-        <div style={{ display: currentView === "home" ? "block" : "none" }}>
-          <HomeView />
-        </div>
-        {isConnected && (
-          <>
-            <div style={{ display: currentView === "modules" ? "block" : "none" }}>
-              <ModulesView />
-            </div>
-            <div style={{ display: currentView === "setup" ? "block" : "none" }}>
-              <AccountSetupView />
-            </div>
-            <div style={{ display: currentView === "send" ? "block" : "none" }}>
-              <SendOpView />
-            </div>
-            <div style={{ display: currentView === "batch-send" ? "block" : "none" }}>
-              <BatchSendView />
-            </div>
-            <div style={{ display: currentView === "paymaster" ? "block" : "none" }}>
-              <PaymasterView />
-            </div>
-            <div style={{ display: currentView === "history" ? "block" : "none" }}>
-              <HistoryView />
-            </div>
-
-            <div style={{ display: currentView === "admin" ? "block" : "none" }}>
-              <AdminView />
-            </div>
-            <div style={{ display: currentView === "chatbot" ? "block" : "none" }}>
-              <ChatbotView />
-            </div>
-          </>
-        )}
+        {renderCurrentView()}
       </main>
       {renderGlobalLoader()}
     </div>

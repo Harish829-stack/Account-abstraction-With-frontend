@@ -200,6 +200,11 @@ async function loadRemoteConfig() {
   return configLoadPromise;
 }
 
+export async function refreshRemoteConfig() {
+  configLoadPromise = null;
+  return loadRemoteConfig();
+}
+
 applyRemoteConfig(readCachedConfig());
 void loadRemoteConfig();
 

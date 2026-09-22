@@ -44,6 +44,11 @@ export const AppProvider = ({ children }) => {
   const [eoaAddress, setEoaAddress] = useState(null);
   const [chainId, setChainId] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  useEffect(() => {
+    const handleConfigUpdated = () => setRefreshTrigger((value) => value + 1);
+    window.addEventListener("aa-config-updated", handleConfigUpdated);
+    return () => window.removeEventListener("aa-config-updated", handleConfigUpdated);
+  }, []);
 
   const expectedChainId = getDefaultChainId();
   const currentChain = getChainConfig(chainId) || getChainConfig(expectedChainId);
@@ -90,6 +95,16 @@ export const AppProvider = ({ children }) => {
     rawValidators: [],
   });
   const [loadingModules, setLoadingModules] = useState(false);
+  const installedModulesRef = useRef(installedModules);
+  useEffect(() => {
+    installedModulesRef.current = installedModules;
+  }, [installedModules]);
+  const moduleRefreshInFlightRef = useRef(null);
+  const lastModuleRefreshAtRef = useRef(0);
+  const refreshAllInFlightRef = useRef(null);
+  const refreshLightInFlightRef = useRef(null);
+  const lastRefreshAllAtRef = useRef(0);
+  const tokenMetaCacheRef = useRef(new Map());
 
   const [paymasterAddress, setPaymasterAddress] = useState(getChainContracts(getDefaultChainId()).paymaster || "");
   useEffect(() => {
@@ -123,6 +138,52 @@ export const AppProvider = ({ children }) => {
 
   const [recentOps, setRecentOps] = useState([]);
   const [loadingOps, setLoadingOps] = useState(false);
+
+  const createReadProvider = async (browserProvider, targetChainId) => {
+    const readRpcUrl = getReadRpcUrl(targetChainId);
+    const chain = getChainConfig(targetChainId);
+    if (!readRpcUrl || !chain) return browserProvider;
+
+    const rpcProvider = new ethers.JsonRpcProvider(
+      readRpcUrl,
+      { chainId: chain.chainId, name: chain.name },
+      { staticNetwork: true, batchMaxCount: 1 }
+    );
+
+    try {
+      await Promise.race([
+        rpcProvider.getBlockNumber(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Read RPC health check timed out")), 2500))
+      ]);
+      return rpcProvider;
+    } catch (error) {
+      console.warn("Configured read RPC unavailable; falling back to wallet provider:", error);
+      rpcProvider.destroy?.();
+      return browserProvider;
+    }
+  };
+
+  const getTokenMetadata = async (tokenAddress, _provider, fallback = { symbol: "USDC", decimals: 6 }) => {
+    if (!tokenAddress || !_provider) return fallback;
+    const key = `${chainIdRef.current || chainId || "unknown"}:${tokenAddress.toLowerCase()}`;
+    const cached = tokenMetaCacheRef.current.get(key);
+    if (cached) return cached;
+
+    try {
+      const token = new ethers.Contract(tokenAddress, ERC20_ABI, _provider);
+      const [symbol, decimals] = await Promise.all([
+        token.symbol(),
+        token.decimals(),
+      ]);
+      const meta = { symbol, decimals: Number(decimals) };
+      tokenMetaCacheRef.current.set(key, meta);
+      return meta;
+    } catch (error) {
+      console.warn("Failed to fetch token metadata, using fallback:", error);
+      tokenMetaCacheRef.current.set(key, fallback);
+      return fallback;
+    }
+  };
 
   const fetchRecentOps = async (saAddress = smartAccountAddress, _provider = provider) => {
     if (!saAddress || !_provider) return;
@@ -277,12 +338,11 @@ export const AppProvider = ({ children }) => {
     });
   };
 
-  const loadEOABalances = async (address, _provider = provider) => {
+  const loadEOABalances = async (address, _provider = provider, { includeOwnership = false } = {}) => {
     if (!address || !_provider) return;
     try {
-      const network = await _provider.getNetwork();
-      const balanceChain = getChainConfig(Number(network.chainId)) || currentChain;
-      const contracts = getChainContracts(balanceChain?.chainId);
+      const activeChainId = chainIdRef.current || chainId || currentChain?.chainId;
+      const contracts = getChainContracts(activeChainId);
 
       const ethBal = await _provider.getBalance(address);
       setEoaETHBalance(ethBal.toString());
@@ -314,7 +374,7 @@ export const AppProvider = ({ children }) => {
 
       // Check Multisig Ownership
       const multisigProxy = contracts.multisigProxy;
-      if (multisigProxy) {
+      if (includeOwnership && multisigProxy) {
         try {
           const multisig = new ethers.Contract(multisigProxy, MultisigABI, _provider);
           const owners = await multisig.getOwners();
@@ -324,7 +384,7 @@ export const AppProvider = ({ children }) => {
           console.warn("Failed to fetch Multisig owners:", e);
           setIsMultisigOwner(false);
         }
-      } else {
+      } else if (includeOwnership) {
         setIsMultisigOwner(false);
       }
     } catch (err) {
@@ -333,12 +393,11 @@ export const AppProvider = ({ children }) => {
   };
 
   // Re-fetch Smart Account details
-  const loadSmartAccountDetails = async (saAddress, _provider = provider) => {
+  const loadSmartAccountDetails = async (saAddress, _provider = provider, { includeContractDetails = true } = {}) => {
     if (!saAddress || !_provider) return;
     try {
-      const network = await _provider.getNetwork();
-      const accountChain = getChainConfig(Number(network.chainId)) || currentChain;
-      const contracts = getChainContracts(accountChain?.chainId);
+      const activeChainId = chainIdRef.current || chainId || currentChain?.chainId;
+      const contracts = getChainContracts(activeChainId);
 
       const balance = await _provider.getBalance(saAddress);
       setSaETHBalance(balance.toString());
@@ -367,6 +426,8 @@ export const AppProvider = ({ children }) => {
       } else {
         setSaEURCBalance("0");
       }
+
+      if (!includeContractDetails) return;
 
       // Check if it exists for contract-specific details
       const code = await _provider.getCode(saAddress);
@@ -397,10 +458,19 @@ export const AppProvider = ({ children }) => {
    * Fetches installed modules via getValidatorsPaginated and updates installedModules state.
    * Call this once on smart account connect and after any installModule / uninstallModule op.
    */
-  const refreshInstalledModules = useCallback(async (saAddress = smartAccountAddress, _provider = provider, _env = null) => {
+  const refreshInstalledModules = useCallback(async (saAddress = smartAccountAddress, _provider = provider, _env = null, options = {}) => {
     if (!saAddress || !_provider) return;
+    const now = Date.now();
+    const cooldownMs = options.force ? 0 : 15000;
+    if (moduleRefreshInFlightRef.current) {
+      return moduleRefreshInFlightRef.current;
+    }
+    if (cooldownMs > 0 && now - lastModuleRefreshAtRef.current < cooldownMs) {
+      return installedModulesRef.current;
+    }
     setLoadingModules(true);
-    try {
+
+    moduleRefreshInFlightRef.current = (async () => {
       const envConfig = _env || {
         SESSION_KEY_VALIDATOR:     SHARED_CONTRACTS.SESSION_KEY_VALIDATOR,
         SOCIAL_RECOVERY_VALIDATOR: SHARED_CONTRACTS.SOCIAL_RECOVERY_VALIDATOR,
@@ -408,9 +478,18 @@ export const AppProvider = ({ children }) => {
       };
       const modules = await getInstalledModules(saAddress, _provider, envConfig);
       setInstalledModules(modules);
+      lastModuleRefreshAtRef.current = Date.now();
+      return modules;
+    })();
+
+    try {
+      return await moduleRefreshInFlightRef.current;
     } catch (e) {
       console.warn("refreshInstalledModules failed; keeping previous module state:", e);
+      lastModuleRefreshAtRef.current = Date.now();
+      return installedModulesRef.current;
     } finally {
+      moduleRefreshInFlightRef.current = null;
       setLoadingModules(false);
     }
   }, [smartAccountAddress, provider]);
@@ -424,7 +503,7 @@ export const AppProvider = ({ children }) => {
       if (detail.chainId && chainId && String(detail.chainId) !== String(chainId)) {
         return;
       }
-      void refreshInstalledModules(smartAccountAddress, provider);
+      void refreshInstalledModules(smartAccountAddress, provider, null, { force: true });
     };
 
     window.addEventListener("aa-session-key-module-installed", refreshForModuleEvent);
@@ -436,35 +515,36 @@ export const AppProvider = ({ children }) => {
   }, [smartAccountAddress, chainId, provider, refreshInstalledModules]);
 
   // Re-fetch Paymaster details
-  const loadPaymasterDetails = async (pmAddress, _provider = provider) => {
+  const loadPaymasterDetails = async (pmAddress, _provider = provider, { includeEntryPointInfo = true } = {}) => {
     if (!pmAddress || !_provider) return;
     try {
       const entryPoint = new ethers.Contract(SHARED_CONTRACTS.ENTRY_POINT, IEntryPointABI, _provider);
       const usdcAddress = getUsdcAddress();
       const tokenContract = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
 
-      try {
-        const info = await entryPoint.getDepositInfo(pmAddress);
-        setPmDeposit(info.deposit.toString());
-        setPmStake(info.stake.toString());
-        setPmUnstakeDelay(info.unstakeDelaySec.toString());
-      } catch {
-        const deposit = await entryPoint.balanceOf(pmAddress);
-        setPmDeposit(deposit.toString());
-        setPmStake("0");
-        setPmUnstakeDelay("0");
+      if (includeEntryPointInfo) {
+        try {
+          const info = await entryPoint.getDepositInfo(pmAddress);
+          setPmDeposit(info.deposit.toString());
+          setPmStake(info.stake.toString());
+          setPmUnstakeDelay(info.unstakeDelaySec.toString());
+        } catch {
+          const deposit = await entryPoint.balanceOf(pmAddress);
+          setPmDeposit(deposit.toString());
+          setPmStake("0");
+          setPmUnstakeDelay("0");
+        }
       }
 
       const ethBal = await _provider.getBalance(pmAddress);
       setPmEthBalance(ethBal.toString());
 
       try {
-        const sym = await tokenContract.symbol();
-        const dec = await tokenContract.decimals();
-        setPmTokenSymbol(sym);
-        setPmTokenDecimals(Number(dec));
+        const meta = await getTokenMetadata(usdcAddress, _provider);
+        setPmTokenSymbol(meta.symbol);
+        setPmTokenDecimals(meta.decimals);
         const tokenBal = await tokenContract.balanceOf(pmAddress);
-        setPmUsdcBalance(ethers.formatUnits(tokenBal, Number(dec)));
+        setPmUsdcBalance(ethers.formatUnits(tokenBal, meta.decimals));
       } catch {
         setPmTokenSymbol("USDC");
         setPmTokenDecimals(6);
@@ -477,33 +557,74 @@ export const AppProvider = ({ children }) => {
   };
 
   // Shared refresh for all views
-  const refreshAllData = async () => {
-    // Run in parallel for speed
-    const refreshes = [];
-    if (eoaAddress) refreshes.push(loadEOABalances(eoaAddress, provider));
-    if (smartAccountAddress) {
-      refreshes.push(loadSmartAccountDetails(smartAccountAddress, provider));
-      refreshes.push(fetchRecentOps(smartAccountAddress, provider));
-      refreshes.push(refreshInstalledModules(smartAccountAddress, provider));
-    }
-    if (paymasterAddress) refreshes.push(loadPaymasterDetails(paymasterAddress, provider));
+  const refreshLightData = async ({ force = false } = {}) => {
+    if (!provider) return;
+    const now = Date.now();
+    if (refreshLightInFlightRef.current) return refreshLightInFlightRef.current;
+    if (!force && now - lastRefreshAllAtRef.current < 30000) return;
 
-    await Promise.all(refreshes);
-    setRefreshTrigger(prev => prev + 1);
+    refreshLightInFlightRef.current = (async () => {
+      const refreshes = [];
+      if (eoaAddress) refreshes.push(loadEOABalances(eoaAddress, provider));
+      if (smartAccountAddress) {
+        refreshes.push(loadSmartAccountDetails(smartAccountAddress, provider, { includeContractDetails: false }));
+      }
+      if (paymasterAddress) {
+        refreshes.push(loadPaymasterDetails(paymasterAddress, provider, { includeEntryPointInfo: false }));
+      }
+
+      await Promise.allSettled(refreshes);
+      lastRefreshAllAtRef.current = Date.now();
+      setRefreshTrigger(prev => prev + 1);
+    })();
+
+    try {
+      await refreshLightInFlightRef.current;
+    } finally {
+      refreshLightInFlightRef.current = null;
+    }
+  };
+
+  const refreshAllData = async ({ force = false } = {}) => {
+    if (!provider) return;
+    const now = Date.now();
+    if (refreshAllInFlightRef.current) return refreshAllInFlightRef.current;
+    if (!force && now - lastRefreshAllAtRef.current < 20000) return;
+
+    refreshAllInFlightRef.current = (async () => {
+      const refreshes = [];
+      if (eoaAddress) refreshes.push(loadEOABalances(eoaAddress, provider, { includeOwnership: true }));
+      if (smartAccountAddress) {
+        refreshes.push(loadSmartAccountDetails(smartAccountAddress, provider, { includeContractDetails: true }));
+        refreshes.push(fetchRecentOps(smartAccountAddress, provider));
+        refreshes.push(refreshInstalledModules(smartAccountAddress, provider, null, { force }));
+      }
+      if (paymasterAddress) refreshes.push(loadPaymasterDetails(paymasterAddress, provider, { includeEntryPointInfo: true }));
+
+      await Promise.allSettled(refreshes);
+      lastRefreshAllAtRef.current = Date.now();
+      setRefreshTrigger(prev => prev + 1);
+    })();
+
+    try {
+      await refreshAllInFlightRef.current;
+    } finally {
+      refreshAllInFlightRef.current = null;
+    }
   };
 
   // Fetch details immediately whenever provider or addresses change
   useEffect(() => {
     if (provider) {
-      refreshAllData();
+      refreshAllData({ force: true });
     }
   }, [provider, eoaAddress, smartAccountAddress, paymasterAddress]);
 
-  // Ref for latest refreshAllData to avoid stale closures in the block listener
-  const refreshAllDataRef = useRef(refreshAllData);
+  // Ref for latest refreshLightData to avoid stale closures in the block listener
+  const refreshLightDataRef = useRef(refreshLightData);
   useEffect(() => {
-    refreshAllDataRef.current = refreshAllData;
-  }, [refreshAllData]);
+    refreshLightDataRef.current = refreshLightData;
+  }, [refreshLightData]);
 
   // Real-time block listener (throttled to avoid RPC spam)
   useEffect(() => {
@@ -511,10 +632,10 @@ export const AppProvider = ({ children }) => {
 
     console.log("[AppContext] Subscribing to block events for real-time updates");
     const onBlock = (blockNum) => {
-      // Throttle to every 5 blocks (~10 seconds on Amoy) to prevent Infura rate limits
-      if (blockNum % 5 === 0) {
-        if (refreshAllDataRef.current) {
-          refreshAllDataRef.current();
+      // Keep this deliberately coarse; receipt/indexer workers now own most status freshness.
+      if (document.visibilityState === "visible" && blockNum % 30 === 0) {
+        if (refreshLightDataRef.current) {
+          refreshLightDataRef.current();
         }
       }
     };
@@ -651,12 +772,7 @@ export const AppProvider = ({ children }) => {
       const network = await browserProvider.getNetwork();
       const currentChainId = Number(network.chainId);
 
-      // Use dedicated RPC for read operations if configured to bypass wallet RPC rate limits.
-      let readProvider = browserProvider;
-      const readRpcUrl = getReadRpcUrl(currentChainId);
-      if (readRpcUrl) {
-        readProvider = new ethers.JsonRpcProvider(readRpcUrl);
-      }
+      const readProvider = await createReadProvider(browserProvider, currentChainId);
 
       setProvider(readProvider);
       setChainId(currentChainId);
@@ -667,7 +783,7 @@ export const AppProvider = ({ children }) => {
       const address = await _signer.getAddress();
       setEoaAddress(address);
 
-      await loadEOABalances(address, browserProvider);
+      await loadEOABalances(address, browserProvider, { includeOwnership: true });
 
       // Stay on home to show the dashboard
 
@@ -771,11 +887,7 @@ export const AppProvider = ({ children }) => {
             const network = await browserProvider.getNetwork();
             const currentChainId = Number(network.chainId);
 
-            let readProvider = browserProvider;
-            const readRpcUrl = getReadRpcUrl(currentChainId);
-            if (readRpcUrl) {
-              readProvider = new ethers.JsonRpcProvider(readRpcUrl);
-            }
+            const readProvider = await createReadProvider(browserProvider, currentChainId);
 
             setProvider(readProvider);
             setChainId(currentChainId);
@@ -786,7 +898,7 @@ export const AppProvider = ({ children }) => {
             const address = await _signer.getAddress();
             setEoaAddress(address);
 
-            await loadEOABalances(address, browserProvider);
+            await loadEOABalances(address, browserProvider, { includeOwnership: true });
           }
         } catch (e) {
           console.error("Auto-connect failed", e);

@@ -534,6 +534,40 @@ Implemented:
 - chain indexer status summary
 - History rows now include compact backend-generated debug details for dropped/reverted/indexed operations
 
+### Phase 8: Operational UX
+
+Status: complete for admin-facing operational controls.
+
+Implemented:
+
+- AdminView now has workspace modes:
+  - Protocol Ops
+  - Operations
+  - Chain Config
+- Operations panel reads `GET /observability/summary`
+- Operations panel shows UserOp counts, agent lifecycle counts, average confirmation latency, chain indexer state, and recent dropped ops
+- Operations panel can manually trigger:
+  - `POST /receipts/poll`
+  - `POST /indexer/poll`
+- History rows retain compact backend-generated debug details
+
+### Phase 9: Admin Config CRUD
+
+Status: complete for dev architecture, intentionally unauthenticated until the deferred auth/security phase.
+
+Implemented:
+
+- Added backend `AdminModule`
+- Added `GET /admin/config`
+- Added `POST /admin/chains`
+- Added `PATCH /admin/chains/:chainId`
+- Added `PATCH /admin/chains/:chainId/contracts`
+- Added `PATCH /admin/shared-contracts`
+- Admin writes invalidate Redis `app_config`
+- AdminView Chain Config panel can edit chain metadata, activate/deactivate chains, update per-chain contracts, and update shared contracts
+- Frontend chain registry can refresh remote config after admin saves
+- App context listens for config updates and re-renders chain-dependent views
+
 ## Recommended Next Step
 
 With receipt reconciliation and agent chain sync in place, the next non-security phase should be:

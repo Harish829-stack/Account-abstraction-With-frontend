@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule as NestConfigModule } from "@nestjs/config";
 import { AccountsModule } from "./accounts/accounts.module";
+import { AdminModule } from "./admin/admin.module";
 import { AgentsModule } from "./agents/agents.module";
 import { AppConfigModule } from "./config/config.module";
 import { HealthModule } from "./health/health.module";
@@ -17,6 +18,7 @@ import { UserOpsModule } from "./user-ops/user-ops.module";
     PrismaModule,
     RedisModule,
     AppConfigModule,
+    AdminModule,
     AccountsModule,
     AgentsModule,
     UserOpsModule,

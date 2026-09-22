@@ -100,3 +100,54 @@ export async function syncPersistedAgents({ smartAccountAddress, chainId, module
     }),
   });
 }
+
+export async function getAdminConfig() {
+  return request("/admin/config");
+}
+
+export async function upsertAdminChain(chain) {
+  return request("/admin/chains", {
+    method: "POST",
+    body: JSON.stringify(chain),
+  });
+}
+
+export async function updateAdminChain(chainId, patch) {
+  return request(`/admin/chains/${chainId}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function updateAdminChainContracts(chainId, contracts) {
+  return request(`/admin/chains/${chainId}/contracts`, {
+    method: "PATCH",
+    body: JSON.stringify({ contracts }),
+  });
+}
+
+export async function updateSharedContracts(contracts) {
+  return request("/admin/shared-contracts", {
+    method: "PATCH",
+    body: JSON.stringify({ contracts }),
+  });
+}
+
+export async function getObservabilitySummary() {
+  return request("/observability/summary");
+}
+
+export async function getDebugUserOps({ status, chainId, limit = 10 } = {}) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (status) params.set("status", status);
+  if (chainId) params.set("chainId", String(chainId));
+  return request(`/observability/user-ops?${params.toString()}`);
+}
+
+export async function pollReceipts() {
+  return request("/receipts/poll", { method: "POST" });
+}
+
+export async function pollIndexer() {
+  return request("/indexer/poll", { method: "POST" });
+}

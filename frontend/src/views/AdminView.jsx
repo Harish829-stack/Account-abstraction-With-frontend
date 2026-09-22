@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
+import { refreshRemoteConfig } from '../config/chains';
+import {
+  getAdminConfig,
+  getDebugUserOps,
+  getObservabilitySummary,
+  pollIndexer,
+  pollReceipts,
+  updateAdminChain,
+  updateAdminChainContracts,
+  updateSharedContracts,
+  upsertAdminChain,
+} from '../utils/backendApi';
 import {
   Shield,
   CheckCircle,
@@ -13,11 +25,76 @@ import {
   WalletCards,
   BadgeCheck,
   Hourglass,
+  RefreshCw,
+  Database,
+  Gauge,
 } from 'lucide-react';
 import { MultisigABI, ERC20PaymasterABI, StakeableABI } from '../utils/abis';
 
+const CONTRACT_FIELDS = ['paymaster', 'usdcToken', 'eurcToken', 'priceFeed', 'multisigProxy'];
+const SHARED_CONTRACT_FIELDS = [
+  'ENTRY_POINT',
+  'FACTORY',
+  'K1_VALIDATOR',
+  'SESSION_KEY_VALIDATOR',
+  'SOCIAL_RECOVERY_VALIDATOR',
+  'WEBAUTHN_VALIDATOR',
+];
+
+const emptyChainForm = {
+  chainId: '',
+  name: '',
+  rpcUrl: '',
+  bundlerUrl: '',
+  explorerUrl: '',
+  explorerApiUrl: '',
+  explorerApiChainId: '',
+  nativeSymbol: 'ETH',
+  nativeName: 'Ether',
+  nativeDecimals: '18',
+  minPriorityFeeWei: '0',
+  minFeeWei: '0',
+  isTestnet: true,
+  isActive: false,
+  viewOnly: true,
+};
+
+const toChainForm = (chain) => ({
+  chainId: String(chain?.chainId || ''),
+  name: chain?.name || '',
+  rpcUrl: chain?.rpcUrl || '',
+  bundlerUrl: chain?.bundlerUrl || '',
+  explorerUrl: chain?.explorerUrl || '',
+  explorerApiUrl: chain?.explorerApiUrl || '',
+  explorerApiChainId: chain?.explorerApiChainId ? String(chain.explorerApiChainId) : '',
+  nativeSymbol: chain?.nativeCurrency?.symbol || 'ETH',
+  nativeName: chain?.nativeCurrency?.name || 'Ether',
+  nativeDecimals: String(chain?.nativeCurrency?.decimals || 18),
+  minPriorityFeeWei: chain?.minPriorityFeeWei || '0',
+  minFeeWei: chain?.minFeeWei || '0',
+  isTestnet: chain?.isTestnet ?? true,
+  isActive: chain?.isActive ?? false,
+  viewOnly: chain?.viewOnly ?? true,
+});
+
+const toContractForm = (contracts = {}, fields = CONTRACT_FIELDS) => (
+  Object.fromEntries(fields.map((key) => [key, contracts[key] || '']))
+);
+
 export default function AdminView() {
   const { eoaAddress, env } = useAppContext();
+
+  const [adminMode, setAdminMode] = useState('protocol');
+  const [opsSummary, setOpsSummary] = useState(null);
+  const [debugOps, setDebugOps] = useState([]);
+  const [opsLoading, setOpsLoading] = useState(false);
+  const [adminConfig, setAdminConfig] = useState(null);
+  const [selectedChainId, setSelectedChainId] = useState('');
+  const [chainForm, setChainForm] = useState(emptyChainForm);
+  const [contractForm, setContractForm] = useState(toContractForm());
+  const [sharedForm, setSharedForm] = useState({});
+  const [configLoading, setConfigLoading] = useState(false);
+  const [adminNotice, setAdminNotice] = useState('');
 
   const [targetType, setTargetType] = useState('paymaster');
   const [action, setAction] = useState('unlockStake');
@@ -68,6 +145,147 @@ export default function AdminView() {
       calculateTxHash();
     }
   }, [action, eoaAddress, targetAddress, MULTISIG_ADDRESS, newImplAddress, nativeValue, tokenAddress, tokenAmount, recipientAddress]);
+
+  const loadOperations = async () => {
+    setOpsLoading(true);
+    try {
+      const [summary, dropped] = await Promise.all([
+        getObservabilitySummary(),
+        getDebugUserOps({ status: 'dropped', limit: 5 }),
+      ]);
+      setOpsSummary(summary);
+      setDebugOps(Array.isArray(dropped) ? dropped : []);
+    } catch (error) {
+      setAdminNotice(`Operations load failed: ${error.message}`);
+    } finally {
+      setOpsLoading(false);
+    }
+  };
+
+  const loadAdminConfig = async () => {
+    setConfigLoading(true);
+    try {
+      const config = await getAdminConfig();
+      setAdminConfig(config);
+      const firstChain = config?.chains?.[0] || null;
+      if (firstChain && !selectedChainId) {
+        setSelectedChainId(String(firstChain.chainId));
+        setChainForm(toChainForm(firstChain));
+        setContractForm(toContractForm(firstChain.contracts));
+      }
+      setSharedForm(toContractForm(config?.sharedContracts || {}, SHARED_CONTRACT_FIELDS));
+    } catch (error) {
+      setAdminNotice(`Config load failed: ${error.message}`);
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (adminMode === 'operations') {
+      void loadOperations();
+    }
+    if (adminMode === 'chains') {
+      void loadAdminConfig();
+    }
+  }, [adminMode]);
+
+  const selectChain = (chainId) => {
+    setSelectedChainId(chainId);
+    if (chainId === 'new') {
+      setChainForm(emptyChainForm);
+      setContractForm(toContractForm());
+      return;
+    }
+    const chain = adminConfig?.chains?.find((item) => String(item.chainId) === String(chainId));
+    setChainForm(toChainForm(chain));
+    setContractForm(toContractForm(chain?.contracts));
+  };
+
+  const buildChainPayload = () => ({
+    chainId: Number(chainForm.chainId),
+    name: chainForm.name.trim(),
+    rpcUrl: chainForm.rpcUrl.trim(),
+    bundlerUrl: chainForm.bundlerUrl.trim(),
+    explorerUrl: chainForm.explorerUrl.trim(),
+    explorerApiUrl: chainForm.explorerApiUrl.trim() || undefined,
+    explorerApiChainId: chainForm.explorerApiChainId ? Number(chainForm.explorerApiChainId) : undefined,
+    nativeSymbol: chainForm.nativeSymbol.trim(),
+    nativeName: chainForm.nativeName.trim(),
+    nativeDecimals: Number(chainForm.nativeDecimals || 18),
+    minPriorityFeeWei: chainForm.minPriorityFeeWei || '0',
+    minFeeWei: chainForm.minFeeWei || '0',
+    isTestnet: Boolean(chainForm.isTestnet),
+    isActive: Boolean(chainForm.isActive),
+    viewOnly: Boolean(chainForm.viewOnly),
+  });
+
+  const refreshConfigAfterSave = async (message) => {
+    await refreshRemoteConfig();
+    window.dispatchEvent(new CustomEvent('aa-config-updated'));
+    await loadAdminConfig();
+    setAdminNotice(message);
+  };
+
+  const saveChain = async () => {
+    try {
+      const payload = buildChainPayload();
+      if (!payload.chainId || !payload.name) {
+        setAdminNotice('Chain ID and name are required.');
+        return;
+      }
+      if (selectedChainId === 'new') {
+        await upsertAdminChain({ ...payload, contracts: contractForm });
+      } else {
+        await updateAdminChain(payload.chainId, payload);
+      }
+      await refreshConfigAfterSave('Chain config saved and app config cache invalidated.');
+    } catch (error) {
+      setAdminNotice(`Chain save failed: ${error.message}`);
+    }
+  };
+
+  const saveChainContracts = async () => {
+    try {
+      if (!chainForm.chainId) {
+        setAdminNotice('Select or create a chain first.');
+        return;
+      }
+      await updateAdminChainContracts(Number(chainForm.chainId), contractForm);
+      await refreshConfigAfterSave('Chain contract addresses saved.');
+    } catch (error) {
+      setAdminNotice(`Contract save failed: ${error.message}`);
+    }
+  };
+
+  const saveShared = async () => {
+    try {
+      await updateSharedContracts(sharedForm);
+      await refreshConfigAfterSave('Shared contract addresses saved.');
+    } catch (error) {
+      setAdminNotice(`Shared contract save failed: ${error.message}`);
+    }
+  };
+
+  const runReceiptPoll = async () => {
+    try {
+      const result = await pollReceipts();
+      setAdminNotice(`Receipt poll scanned ${result?.scanned || 0} pending op(s).`);
+      await loadOperations();
+    } catch (error) {
+      setAdminNotice(`Receipt poll failed: ${error.message}`);
+    }
+  };
+
+  const runIndexerPoll = async () => {
+    try {
+      const result = await pollIndexer();
+      setAdminNotice(`Indexer scanned ${result?.scannedChains || 0} chain(s), indexed ${result?.indexedOps || 0} op(s).`);
+      await loadOperations();
+    } catch (error) {
+      setAdminNotice(`Indexer poll failed: ${error.message}`);
+    }
+  };
 
   const copyToClipboard = async (value) => {
     if (!value) return;
@@ -218,20 +436,49 @@ export default function AdminView() {
     }
   };
 
-  if (!MULTISIG_ADDRESS) {
-    return (
-      <div className="admin-shell">
+  return (
+    <div className="admin-shell animate-fade-in">
+      <section className="admin-card" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="admin-section-title" style={{ margin: 0 }}>
+          <span><Shield size={18} /></span>
+          <h3>Admin Workspace</h3>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {[
+            ['protocol', 'Protocol Ops'],
+            ['operations', 'Operations'],
+            ['chains', 'Chain Config'],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={`admin-btn ${adminMode === id ? 'admin-btn-primary' : 'admin-btn-secondary'}`}
+              onClick={() => setAdminMode(id)}
+              style={{ padding: '0.65rem 0.9rem' }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {adminNotice && (
+        <div className="admin-status-banner">
+          <BadgeCheck size={17} />
+          <span>{adminNotice}</span>
+        </div>
+      )}
+
+      {adminMode === 'protocol' && !MULTISIG_ADDRESS && (
         <div className="admin-card admin-empty-state">
           <Shield size={48} />
           <h2>Multisig Not Configured</h2>
-          <p>Please add <code>VITE_MULTISIG_PROXY</code> to your frontend .env file.</p>
+          <p>Please add the multisig proxy address to the active chain config.</p>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  return (
-    <div className="admin-shell animate-fade-in">
+      {adminMode === 'protocol' && MULTISIG_ADDRESS && (
+        <>
       <section className="admin-hero admin-card">
         <div className="admin-hero-content">
           <div className="admin-title-row">
@@ -435,6 +682,189 @@ export default function AdminView() {
           </div>
         </div>
       </section>
+        </>
+      )}
+
+      {adminMode === 'operations' && (
+        <section className="admin-dashboard-grid">
+          <div className="admin-card admin-payload-card">
+            <div className="admin-section-title">
+              <span><Gauge size={18} /></span>
+              <h3>Platform Metrics</h3>
+            </div>
+            <div className="admin-actions" style={{ marginBottom: 16 }}>
+              <button className="admin-btn admin-btn-secondary" onClick={loadOperations} disabled={opsLoading}>
+                <RefreshCw size={18} /> {opsLoading ? 'Refreshing...' : 'Refresh'}
+              </button>
+              <button className="admin-btn admin-btn-secondary" onClick={runReceiptPoll}>
+                <Clock size={18} /> Poll Receipts
+              </button>
+              <button className="admin-btn admin-btn-secondary" onClick={runIndexerPoll}>
+                <Database size={18} /> Run Indexer
+              </button>
+            </div>
+            <div className="admin-detail-list">
+              <div className="admin-detail-row">
+                <span>Total UserOps</span>
+                <strong>{opsSummary?.userOps?.total ?? '-'}</strong>
+              </div>
+              <div className="admin-detail-row">
+                <span>Average Confirmation</span>
+                <strong>{opsSummary?.userOps?.averageConfirmationSeconds ? `${opsSummary.userOps.averageConfirmationSeconds}s` : '-'}</strong>
+              </div>
+              <div className="admin-code-block">
+                <div><span>UserOps By Status</span></div>
+                <code>{JSON.stringify(opsSummary?.userOps?.byStatus || {}, null, 2)}</code>
+              </div>
+              <div className="admin-code-block">
+                <div><span>Agents By Status</span></div>
+                <code>{JSON.stringify(opsSummary?.agents?.byStatus || {}, null, 2)}</code>
+              </div>
+            </div>
+          </div>
+
+          <div className="admin-card admin-steps-card">
+            <div className="admin-section-title">
+              <span><Database size={18} /></span>
+              <h3>Indexer State</h3>
+            </div>
+            <div className="admin-detail-list">
+              {(opsSummary?.chains || []).map((chain) => (
+                <div className="admin-code-block" key={chain.chainId}>
+                  <div>
+                    <span>{chain.name} ({chain.chainId})</span>
+                  </div>
+                  <code>
+                    {`active: ${chain.isActive}\nlastIndexedBlock: ${chain.lastIndexedBlock || '-'}\nlastSyncAt: ${chain.lastSyncAt || '-'}\nlastSyncError: ${chain.lastSyncError || '-'}`}
+                  </code>
+                </div>
+              ))}
+              {debugOps.length > 0 && (
+                <div className="admin-code-block">
+                  <div><span>Recent Dropped Ops</span></div>
+                  <code>{debugOps.map((op) => `${op.userOpHash} | ${op.label || 'UserOp'} | ${op.updatedAt}`).join('\n')}</code>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {adminMode === 'chains' && (
+        <section className="admin-dashboard-grid">
+          <div className="admin-card admin-payload-card">
+            <div className="admin-section-title">
+              <span><Database size={18} /></span>
+              <h3>Chain Registry</h3>
+            </div>
+            <div className="admin-form-grid">
+              <label className="admin-field admin-select-field">
+                <span>Chain</span>
+                <select value={selectedChainId} onChange={(e) => selectChain(e.target.value)}>
+                  {(adminConfig?.chains || []).map((chain) => (
+                    <option key={chain.chainId} value={chain.chainId}>
+                      {chain.name} ({chain.chainId}) {chain.isActive ? 'active' : 'inactive'}
+                    </option>
+                  ))}
+                  <option value="new">+ New chain</option>
+                </select>
+                <ChevronDown size={18} />
+              </label>
+              {[
+                ['chainId', 'Chain ID'],
+                ['name', 'Name'],
+                ['rpcUrl', 'RPC URL'],
+                ['bundlerUrl', 'Bundler URL'],
+                ['explorerUrl', 'Explorer URL'],
+                ['explorerApiUrl', 'Explorer API URL'],
+                ['explorerApiChainId', 'Explorer API Chain ID'],
+                ['nativeSymbol', 'Native Symbol'],
+                ['nativeName', 'Native Name'],
+                ['nativeDecimals', 'Native Decimals'],
+                ['minPriorityFeeWei', 'Min Priority Fee Wei'],
+                ['minFeeWei', 'Min Fee Wei'],
+              ].map(([key, label]) => (
+                <label className="admin-field" key={key}>
+                  <span>{label}</span>
+                  <input
+                    type={key.toLowerCase().includes('url') ? 'url' : 'text'}
+                    value={chainForm[key]}
+                    onChange={(e) => setChainForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                    disabled={key === 'chainId' && selectedChainId !== 'new'}
+                  />
+                </label>
+              ))}
+              {[
+                ['isActive', 'Active'],
+                ['viewOnly', 'View Only'],
+                ['isTestnet', 'Testnet'],
+              ].map(([key, label]) => (
+                <label className="admin-field admin-select-field" key={key}>
+                  <span>{label}</span>
+                  <select
+                    value={String(chainForm[key])}
+                    onChange={(e) => setChainForm((prev) => ({ ...prev, [key]: e.target.value === 'true' }))}
+                  >
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                  <ChevronDown size={18} />
+                </label>
+              ))}
+            </div>
+            <div className="admin-actions" style={{ marginTop: 16 }}>
+              <button className="admin-btn admin-btn-primary" onClick={saveChain} disabled={configLoading}>
+                <CheckCircle size={18} /> Save Chain
+              </button>
+              <button className="admin-btn admin-btn-secondary" onClick={loadAdminConfig}>
+                <RefreshCw size={18} /> Reload
+              </button>
+            </div>
+          </div>
+
+          <div className="admin-card admin-steps-card">
+            <div className="admin-section-title">
+              <span><Settings size={18} /></span>
+              <h3>Contract Addresses</h3>
+            </div>
+            <div className="admin-detail-list">
+              {CONTRACT_FIELDS.map((key) => (
+                <label className="admin-field" key={key}>
+                  <span>{key}</span>
+                  <input
+                    type="text"
+                    value={contractForm[key] || ''}
+                    onChange={(e) => setContractForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                    placeholder="0x..."
+                  />
+                </label>
+              ))}
+              <button className="admin-btn admin-btn-primary" onClick={saveChainContracts}>
+                <CheckCircle size={18} /> Save Chain Contracts
+              </button>
+
+              <div className="admin-section-title" style={{ marginTop: 24 }}>
+                <span><Shield size={18} /></span>
+                <h3>Shared Contracts</h3>
+              </div>
+              {SHARED_CONTRACT_FIELDS.map((key) => (
+                <label className="admin-field" key={key}>
+                  <span>{key}</span>
+                  <input
+                    type="text"
+                    value={sharedForm[key] || ''}
+                    onChange={(e) => setSharedForm((prev) => ({ ...prev, [key]: e.target.value }))}
+                    placeholder="0x..."
+                  />
+                </label>
+              ))}
+              <button className="admin-btn admin-btn-secondary" onClick={saveShared}>
+                <CheckCircle size={18} /> Save Shared Contracts
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 }
