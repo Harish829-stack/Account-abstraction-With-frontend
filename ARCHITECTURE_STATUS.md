@@ -19,15 +19,25 @@ Nest backend (apps/backend)
   - POST /user-ops
   - GET /user-ops
   - PATCH /user-ops/:hash/status
-  - Prisma + Postgres for chain config, contract config, smart accounts, and UserOps
+  - POST /agents
+  - GET /agents
+  - GET /agents/internal/:smartAccount/:agentAddress
+  - PATCH /agents/:smartAccount/:agentAddress/authorize
+  - PATCH /agents/:smartAccount/:agentAddress/revoke
+  - DELETE /agents/:smartAccount
+  - Prisma + Postgres for chain config, contract config, smart accounts, UserOps, and AI agents/session keys
   - Redis cache for config responses
 
 Chatbot server (chatbot-server)
   - /api/chat
   - /api/agent/status/:smartAccountAddress
   - /api/agent/generate
+  - /api/agent/:smartAccountAddress/:agentAddress/authorize
+  - /api/agent/:smartAccountAddress/:agentAddress/revoke
+  - /api/agent/:smartAccountAddress
   - Still separate from Nest backend
-  - Still uses in-memory agent/session state unless later migrated
+  - Persists agent/session state through the Nest backend when AGENT_STORE_API_URL is configured
+  - Falls back to in-memory agent/session state only when no backend URL is configured
 
 Contracts / deployment scripts
   - Frozen for this refactor phase
@@ -40,7 +50,7 @@ Frontend uses two separate API origins now:
 
 ```env
 VITE_CONFIG_API_URL="http://127.0.0.1:3001"
-VITE_CHATBOT_API_URL="https://your-chatbot-service.example"
+VITE_CHATBOT_API_URL="http://127.0.0.1:3002"
 ```
 
 Backend uses:
@@ -48,6 +58,13 @@ Backend uses:
 ```env
 DATABASE_URL="postgresql://..."
 REDIS_URL="rediss://..."
+```
+
+Chatbot server uses:
+
+```env
+AGENT_STORE_API_URL="http://127.0.0.1:3001"
+CHAIN_ID=11155111
 ```
 
 For Supabase local dev, use the Supabase Session Pooler URL, not the direct `db.<project>.supabase.co:5432` URL unless IPv6/direct connectivity is available.
@@ -64,19 +81,19 @@ Written by `npm run prisma:seed`:
 
 These store active chain config, view-only chain config, RPC URLs, bundler URLs, explorer metadata, gas fee floors, per-chain contract addresses, and shared contract addresses.
 
-Written by normal runtime flows after Phase 2:
+Written by normal runtime flows after Phase 2 and Phase 3:
 
 - `SmartAccount`
 - `UserOperation`
+- `SessionKey`
 
-These store owner EOA, smart account address, chain ID, salt/deployment metadata when available, UserOp hash, label, calldata, pending/confirmed/reverted/dropped status, receipt JSON, tx hash, block number, and confirmation/drop timestamps.
+These store owner EOA, smart account address, chain ID, salt/deployment metadata when available, UserOp hash, label, calldata, pending/confirmed/reverted/dropped status, receipt JSON, tx hash, block number, confirmation/drop timestamps, agent address, agent name, scope, target, selector, max amount/value, validity window, install/revoke hashes, lifecycle status, and the server-side agent signing key for the current dev architecture.
 
 The schema already includes these future tables, but the app does not yet write them in normal runtime flows:
 
 - `AdminUser`
 - `SiweSession`
 - `Guardian`
-- `SessionKey`
 - `MultisigProposal`
 
 ### Redis
@@ -174,6 +191,31 @@ Verified:
 - Frontend lint passes with existing warnings
 - Frontend build passes
 
+### Phase 3: Multi-Agent AI Session Keys
+
+Done:
+
+- Added backend `AgentsModule` backed by the existing `SessionKey` table
+- Extended `SessionKey` with agent metadata, rule details, lifecycle status, install/revoke hashes, timestamps, and server-side signing key storage for the dev architecture
+- Added persistent agent APIs for create, list, internal signer lookup, authorize, revoke one, and revoke all
+- Refactored chatbot server agent routes to use the Nest backend as the agent store when `AGENT_STORE_API_URL` is configured
+- Kept chatbot memory fallback for isolated local demos without the backend
+- Updated React chatbot context for N:1 agents per smart account, active-agent selection, per-agent chat history, persisted status reads, authorization, revoke one, and revoke all
+- Updated Chatbot UI to show all agents, switch active agents, create new agents without wiping existing ones, revoke one agent, and revoke all agents
+- Individual revoke now sends a UserOp calling `SessionKeyValidator.revokeSessionKey(agentAddress)`
+- Revoke all now sends a UserOp calling `uninstallModule(1, SESSION_KEY_VALIDATOR, deInitData)`, then marks all persisted agents revoked
+
+Verified:
+
+- Backend Prisma schema validates
+- Backend Prisma Client generation passes
+- Backend lint passes
+- Backend tests pass
+- Backend build passes
+- Chatbot server syntax check passes
+- Frontend lint passes with existing warnings
+- Frontend build passes
+
 ## Current Runtime Behavior
 
 ### Config Flow
@@ -212,8 +254,12 @@ Current behavior:
 
 - Chatbot server generates agent keys
 - Frontend installs session key on-chain
-- Chatbot server executes agent requests
-- Agent/session state is not yet stored in the new Nest backend database
+- Nest backend persists agent/session-key metadata and lifecycle state in Postgres
+- Chatbot server loads the selected agent by smart account + chain + agent address
+- Chatbot server executes agent requests with the selected persisted signing key
+- Frontend can switch between multiple active agents for one smart account
+- Frontend can revoke one agent on-chain
+- Frontend can revoke all agents by uninstalling the SessionKeyValidator
 
 Recent fix:
 
@@ -222,10 +268,9 @@ Recent fix:
 
 Not done yet:
 
-- persistent agent/session records
 - persisted AI messages
-- persisted agent permissions
-- backend-managed session key lifecycle
+- production-grade key custody or KMS-backed signing
+- SIWE-authenticated agent APIs
 
 ## Pending Phases And Feature List
 
@@ -298,7 +343,9 @@ Status: pending.
 
 ### Phase 3: AI Agent Persistence
 
-Features:
+Status: complete for dev architecture.
+
+Implemented features:
 
 - persist generated agent address
 - persist smart account + chain relation
@@ -320,6 +367,12 @@ Options:
 
 - keep chatbot as a separate Railway service sharing the same database
 - later merge chatbot routes into Nest
+
+Remaining hardening:
+
+- encrypt or KMS-store agent private keys instead of plain DB storage
+- protect `/agents/internal/*` behind service-to-service auth
+- persist AI conversation transcripts if needed
 
 ### Phase 4: Auth And Admin
 

@@ -90,13 +90,27 @@ model SessionKey {
   smartAccountId Int
   smartAccount   SmartAccount @relation(fields: [smartAccountId], references: [id])
   keyAddress     String
+  name           String?
+  scope          String       @default("custom")
+  status         String       @default("pending")
+  privateKey     String?
+  target         String       @default("0x0000000000000000000000000000000000000000")
+  selector       String       @default("0x00000000")
   allowedTargets String[]
   maxValueWei    String
+  maxAmount      String?
   validAfter     Int
   validUntil     Int
   revoked        Boolean      @default(false)
-  txHashInstall  String
+  txHashInstall  String?
+  txHashRevoke   String?
+  revokedAt      DateTime?
+  authorizedAt   DateTime?
   rawPermissions Json
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([smartAccountId, keyAddress])
 }
 
 model UserOperation {

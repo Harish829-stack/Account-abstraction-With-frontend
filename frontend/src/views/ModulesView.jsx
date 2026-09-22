@@ -5,7 +5,7 @@ import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { Shield, CheckCircle, UserPlus, PlayCircle, Settings, ChevronRight, XCircle, Trash2 } from 'lucide-react';
 import { SmartAccountABI, IEntryPointABI, SocialRecoveryValidatorABI, K1ValidatorABI } from '../utils/abis';
-import { estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
+import { estimateUserOperationGas, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import SessionKeyView from './SessionKeyView';
 import WebAuthnView from './WebAuthnView';
 
@@ -263,9 +263,7 @@ export default function ProfileView() {
 
           try {
              const est = await estimateUserOperationGas(userOp, chainId);
-             userOp.callGasLimit = toHex(est.callGasLimit);
-             userOp.verificationGasLimit = toHex(est.verificationGasLimit);
-             userOp.preVerificationGas = toHex(est.preVerificationGas);
+             applyBufferedGasEstimate(userOp, est);
           } catch(err) {
              console.warn("Bundler estimation failed, using fallback limits", err);
              userOp.callGasLimit = toHex(100000);

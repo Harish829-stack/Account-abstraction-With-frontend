@@ -4,7 +4,7 @@ import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { shortenAddress, toHex, getEthPriceInUsd, packUserOp, encodeERC7579Single } from '../utils/helpers';
-import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
+import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import { IEntryPointABI, SmartAccountABI } from '../utils/abis';
 import {
   Zap, ShieldCheck, Layers, Gift, Clock, Network,
@@ -293,9 +293,7 @@ function ConnectedDashboard() {
       // Try to estimate gas WITHOUT paymaster to bypass paymaster simulation errors
       try {
         const est = await estimateUserOperationGas(userOp, chainId);
-        userOp.callGasLimit = toHex(est.callGasLimit);
-        userOp.verificationGasLimit = toHex(est.verificationGasLimit);
-        userOp.preVerificationGas = toHex(est.preVerificationGas);
+        applyBufferedGasEstimate(userOp, est);
       } catch (err) {
         console.warn("Estimation failed, using defaults", err);
       }

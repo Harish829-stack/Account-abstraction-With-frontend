@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const axios = require('axios');
 const { ethers } = require('ethers');
 const { Groq } = require('groq-sdk');
 const {
@@ -17,16 +18,94 @@ const {
 const app = express();
 app.use(cors({
     origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.options('/{*splat}', cors());app.use(express.json());
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
+const agentStoreApiUrl = (process.env.AGENT_STORE_API_URL || process.env.CONFIG_API_URL || '').replace(/\/$/, '');
+const defaultChainId = Number(process.env.CHAIN_ID || process.env.DEFAULT_CHAIN_ID || 11155111);
 
-// In-memory store: smartAccountAddress -> { privateKey, agentAddress, scope, maxAmount }
+// In-memory store: smartAccountAddress -> Array<{ privateKey, agentAddress, name, scope, maxAmount, authorized }>
 const agentConfigs = new Map();
+
+const normalizeAddress = (value) => {
+    if (!value || !ethers.isAddress(value)) return null;
+    return value.toLowerCase();
+};
+
+const publicAgentConfig = (agent) => ({
+    agentAddress: agent.agentAddress || agent.keyAddress,
+    name: agent.name,
+    scope: agent.scope,
+    maxAmount: agent.maxAmount,
+    authorized: agent.authorized !== false,
+    status: agent.status || (agent.revoked ? 'revoked' : (agent.authorized === false ? 'pending' : 'active')),
+    target: agent.target,
+    selector: agent.selector,
+    maxValueWei: agent.maxValueWei,
+    validAfter: agent.validAfter,
+    validUntil: agent.validUntil,
+    revoked: Boolean(agent.revoked),
+    createdAt: agent.createdAt,
+    authorizedAt: agent.authorizedAt || null
+});
+
+const getRequestChainId = (req) => Number(req.query.chainId || req.body?.chainId || defaultChainId);
+
+async function agentStoreRequest(method, path, data) {
+    if (!agentStoreApiUrl) return null;
+    const res = await axios({
+        method,
+        url: `${agentStoreApiUrl}${path}`,
+        data,
+        headers: { 'Content-Type': 'application/json' }
+    });
+    return res.data;
+}
+
+async function listStoredAgents(smartAccountAddress, chainId) {
+    const stored = await agentStoreRequest(
+        'get',
+        `/agents?smartAccount=${smartAccountAddress}&chainId=${chainId}`
+    );
+    if (!stored) return null;
+    return stored;
+}
+
+async function getStoredAgent(smartAccountAddress, chainId, agentAddress) {
+    return agentStoreRequest(
+        'get',
+        `/agents/internal/${smartAccountAddress}/${agentAddress}?chainId=${chainId}`
+    );
+}
+
+const getAgentsForAccount = (smartAccountAddress) => {
+    const accountKey = normalizeAddress(smartAccountAddress);
+    if (!accountKey) return null;
+    return agentConfigs.get(accountKey) || [];
+};
+
+const setAgentsForAccount = (smartAccountAddress, agents) => {
+    const accountKey = normalizeAddress(smartAccountAddress);
+    if (!accountKey) return false;
+    if (agents.length === 0) {
+        agentConfigs.delete(accountKey);
+    } else {
+        agentConfigs.set(accountKey, agents);
+    }
+    return true;
+};
+
+const findAgentConfig = (smartAccountAddress, agentAddress) => {
+    const accountKey = normalizeAddress(smartAccountAddress);
+    const agentKey = normalizeAddress(agentAddress);
+    if (!accountKey || !agentKey) return null;
+    const agents = agentConfigs.get(accountKey) || [];
+    return agents.find((agent) => normalizeAddress(agent.agentAddress) === agentKey) || null;
+};
 
 
 app.post('/health',(req,res)=>{
@@ -34,24 +113,51 @@ app.post('/health',(req,res)=>{
 })
 
 // Generate an agent keypair for a smart account and set its scope
-app.post('/api/agent/generate', (req, res) => {
+app.post('/api/agent/generate', async (req, res) => {
     try {
-        const { smartAccountAddress, scope, maxAmount } = req.body;
+        const { smartAccountAddress, ownerEoa, scope, maxAmount, name } = req.body;
+        const chainId = getRequestChainId(req);
         if (!smartAccountAddress || !scope) {
             return res.status(400).json({ error: 'Missing smartAccountAddress or scope' });
         }
 
+        const accountKey = normalizeAddress(smartAccountAddress);
+        if (!accountKey) {
+            return res.status(400).json({ error: 'Invalid smartAccountAddress' });
+        }
+
         const wallet = ethers.Wallet.createRandom();
-        
-        agentConfigs.set(smartAccountAddress.toLowerCase(), {
+        const existingAgents = agentConfigs.get(accountKey) || [];
+        const agentName = typeof name === 'string' && name.trim()
+            ? name.trim().slice(0, 64)
+            : `Agent ${existingAgents.length + 1}`;
+        const agent = {
             privateKey: wallet.privateKey,
             agentAddress: wallet.address,
+            name: agentName,
             scope, // 'uniswap', 'erc20', or 'custom'
-            maxAmount: maxAmount || '0'
-        });
+            maxAmount: maxAmount || '0',
+            authorized: false,
+            createdAt: new Date().toISOString()
+        };
+        
+        if (agentStoreApiUrl) {
+            await agentStoreRequest('post', '/agents', {
+                smartAccountAddress,
+                ownerEoa,
+                chainId,
+                agentAddress: wallet.address,
+                privateKey: wallet.privateKey,
+                name: agentName,
+                scope,
+                maxAmount: maxAmount || '0'
+            });
+        } else {
+            agentConfigs.set(accountKey, [...existingAgents, agent]);
+        }
 
-        console.log(`[Agent] Configured for ${smartAccountAddress} with scope ${scope}`);
-        res.json({ agentAddress: wallet.address });
+        console.log(`[Agent] Generated ${wallet.address} for ${smartAccountAddress} with scope ${scope}`);
+        res.json(publicAgentConfig(agent));
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: e.message });
@@ -59,25 +165,198 @@ app.post('/api/agent/generate', (req, res) => {
 });
 
 // Check agent status
-app.get('/api/agent/status/:smartAccountAddress', (req, res) => {
-    const config = agentConfigs.get(req.params.smartAccountAddress.toLowerCase());
-    if (config) {
-        res.json({ configured: true, agentAddress: config.agentAddress, scope: config.scope, maxAmount: config.maxAmount });
-    } else {
-        res.json({ configured: false });
+app.get('/api/agent/status/:smartAccountAddress', async (req, res) => {
+    const chainId = getRequestChainId(req);
+    const agents = agentStoreApiUrl
+        ? await listStoredAgents(req.params.smartAccountAddress, chainId)
+        : getAgentsForAccount(req.params.smartAccountAddress);
+    if (!agents) {
+        return res.status(400).json({ error: 'Invalid smartAccountAddress' });
     }
+
+    if (agents.length === 0) {
+        res.json({ configured: false });
+    } else {
+        const publicAgents = agents.map(publicAgentConfig);
+        const firstAuthorized = publicAgents.find((agent) => agent.authorized) || publicAgents[0];
+        res.json({
+            configured: publicAgents.some((agent) => agent.authorized),
+            agents: publicAgents,
+            // Backward-compatible fields for older frontend code while Phase 3 UI migrates.
+            agentAddress: firstAuthorized.agentAddress,
+            scope: firstAuthorized.scope,
+            maxAmount: firstAuthorized.maxAmount
+        });
+    }
+});
+
+app.patch('/api/agent/:smartAccountAddress/:agentAddress/authorize', async (req, res) => {
+    const accountKey = normalizeAddress(req.params.smartAccountAddress);
+    const agentKey = normalizeAddress(req.params.agentAddress);
+    if (!accountKey || !agentKey) {
+        return res.status(400).json({ error: 'Invalid smartAccountAddress or agentAddress' });
+    }
+
+    if (agentStoreApiUrl) {
+        try {
+            const agent = await agentStoreRequest(
+                'patch',
+                `/agents/${req.params.smartAccountAddress}/${req.params.agentAddress}/authorize`,
+                {
+                    chainId: getRequestChainId(req),
+                    target: req.body.target,
+                    selector: req.body.selector,
+                    maxValueWei: req.body.maxValueWei,
+                    validAfter: req.body.validAfter,
+                    validUntil: req.body.validUntil,
+                    txHashInstall: req.body.txHashInstall
+                }
+            );
+            const agents = await listStoredAgents(req.params.smartAccountAddress, getRequestChainId(req));
+            return res.json({ agent, agents });
+        } catch (error) {
+            return res.status(error.response?.status || 500).json(error.response?.data || { error: error.message });
+        }
+    }
+
+    const agents = agentConfigs.get(accountKey) || [];
+    const index = agents.findIndex((agent) => normalizeAddress(agent.agentAddress) === agentKey);
+    if (index === -1) {
+        return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const updatedAgent = {
+        ...agents[index],
+        authorized: true,
+        authorizedAt: new Date().toISOString()
+    };
+    agents[index] = updatedAgent;
+    agentConfigs.set(accountKey, agents);
+    res.json({ agent: publicAgentConfig(updatedAgent), agents: agents.map(publicAgentConfig) });
+});
+
+app.patch('/api/agent/:smartAccountAddress/:agentAddress/revoke', async (req, res) => {
+    const accountKey = normalizeAddress(req.params.smartAccountAddress);
+    const agentKey = normalizeAddress(req.params.agentAddress);
+    if (!accountKey || !agentKey) {
+        return res.status(400).json({ error: 'Invalid smartAccountAddress or agentAddress' });
+    }
+
+    if (agentStoreApiUrl) {
+        try {
+            const agent = await agentStoreRequest(
+                'patch',
+                `/agents/${req.params.smartAccountAddress}/${req.params.agentAddress}/revoke`,
+                {
+                    chainId: getRequestChainId(req),
+                    txHashRevoke: req.body.txHashRevoke
+                }
+            );
+            const agents = await listStoredAgents(req.params.smartAccountAddress, getRequestChainId(req));
+            return res.json({ agent, agents });
+        } catch (error) {
+            return res.status(error.response?.status || 500).json(error.response?.data || { error: error.message });
+        }
+    }
+
+    const agents = agentConfigs.get(accountKey) || [];
+    const index = agents.findIndex((agent) => normalizeAddress(agent.agentAddress) === agentKey);
+    if (index === -1) {
+        return res.status(404).json({ error: 'Agent not found' });
+    }
+    agents[index] = {
+        ...agents[index],
+        privateKey: undefined,
+        authorized: false,
+        revoked: true,
+        status: 'revoked',
+        txHashRevoke: req.body.txHashRevoke,
+        revokedAt: new Date().toISOString()
+    };
+    agentConfigs.set(accountKey, agents);
+    res.json({ agent: publicAgentConfig(agents[index]), agents: agents.map(publicAgentConfig) });
+});
+
+app.delete('/api/agent/:smartAccountAddress/:agentAddress', async (req, res) => {
+    const accountKey = normalizeAddress(req.params.smartAccountAddress);
+    const agentKey = normalizeAddress(req.params.agentAddress);
+    if (!accountKey || !agentKey) {
+        return res.status(400).json({ error: 'Invalid smartAccountAddress or agentAddress' });
+    }
+
+    if (agentStoreApiUrl) {
+        try {
+            const agent = await agentStoreRequest(
+                'patch',
+                `/agents/${req.params.smartAccountAddress}/${req.params.agentAddress}/revoke`,
+                {
+                    chainId: getRequestChainId(req),
+                    txHashRevoke: req.query.txHashRevoke
+                }
+            );
+            const agents = await listStoredAgents(req.params.smartAccountAddress, getRequestChainId(req));
+            return res.json({ removed: true, agent, agents });
+        } catch (error) {
+            return res.status(error.response?.status || 500).json(error.response?.data || { error: error.message });
+        }
+    }
+
+    const agents = agentConfigs.get(accountKey) || [];
+    const remainingAgents = agents.filter((agent) => normalizeAddress(agent.agentAddress) !== agentKey);
+    if (remainingAgents.length === agents.length) {
+        return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    setAgentsForAccount(accountKey, remainingAgents);
+    res.json({ removed: true, agents: remainingAgents.map(publicAgentConfig) });
+});
+
+app.delete('/api/agent/:smartAccountAddress', async (req, res) => {
+    const accountKey = normalizeAddress(req.params.smartAccountAddress);
+    if (!accountKey) {
+        return res.status(400).json({ error: 'Invalid smartAccountAddress' });
+    }
+
+    if (agentStoreApiUrl) {
+        try {
+            const agents = await agentStoreRequest(
+                'delete',
+                `/agents/${req.params.smartAccountAddress}?chainId=${getRequestChainId(req)}${req.query.txHashRevoke ? `&txHashRevoke=${req.query.txHashRevoke}` : ''}`
+            );
+            return res.json({ removed: true, agents });
+        } catch (error) {
+            return res.status(error.response?.status || 500).json(error.response?.data || { error: error.message });
+        }
+    }
+
+    agentConfigs.delete(accountKey);
+    res.json({ removed: true, agents: [] });
 });
 
 // Main chat execution
 app.post('/api/chat', async (req, res) => {
-    const { message, smartAccountAddress, chainId } = req.body;
+    const { message, smartAccountAddress, agentAddress, chainId } = req.body;
     if (!message || !smartAccountAddress) {
         return res.status(400).json({ error: 'Missing message or smartAccountAddress' });
     }
+    if (!agentAddress) {
+        return res.status(400).json({ error: 'Missing agentAddress' });
+    }
 
-    const config = agentConfigs.get(smartAccountAddress.toLowerCase());
+    const config = agentStoreApiUrl
+        ? await getStoredAgent(smartAccountAddress, Number(chainId || defaultChainId), agentAddress).catch((error) => {
+            console.error('[Agent] Failed to load persisted agent:', error.response?.data || error.message);
+            return null;
+        })
+        : findAgentConfig(smartAccountAddress, agentAddress);
     if (!config) {
         return res.status(400).json({ error: 'Agent not configured. Please initialize agent first.' });
+    }
+    if (config.authorized === false || config.status === 'revoked' || config.revoked) {
+        return res.status(400).json({ error: 'Agent is not authorized on-chain yet.' });
+    }
+    if (!config.privateKey) {
+        return res.status(400).json({ error: 'Agent signing key is unavailable. Recreate the agent.' });
     }
 
     try {

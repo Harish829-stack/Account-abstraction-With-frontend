@@ -285,10 +285,10 @@ async function buildAndSendAgentOp(
         try {
             const est = await estimateUserOperationGas(rpcUserOp);
             
-            // Add a 20% margin to all gas limits to prevent execution reverts due to minor state fluctuations
-            let callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
-            let vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
-            let pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
+            // Add an aggressive 50% margin to reduce gas-limit failures from state drift.
+            let callGasWithMargin = (BigInt(est.callGasLimit) * 15n) / 10n;
+            let vgfWithMargin = (BigInt(est.verificationGasLimit) * 15n) / 10n;
+            let pvgWithMargin = (BigInt(est.preVerificationGas) * 15n) / 10n;
 
             // Apply high minimums to prevent "account internally reverts on oog" during sendUserOperation
             if (callGasWithMargin < 500000n) callGasWithMargin = 500000n;

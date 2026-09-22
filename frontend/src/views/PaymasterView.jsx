@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { ERC20PaymasterABI, IEntryPointABI, ERC20_ABI } from '../utils/abis';
 import { shortenAddress, formatNum, toHex, packUserOp, encodeERC7579Single } from '../utils/helpers';
-import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
+import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import { useToast } from '../context/ToastContext';
 import { DollarSign, ShieldAlert, ArrowUpCircle, Lock, CheckCircle, RotateCcw, Info, Settings, X, Plus, AlertTriangle } from 'lucide-react';
 
@@ -222,9 +222,7 @@ export default function PaymasterView() {
 
       try {
         const est = await estimateUserOperationGas(userOp, chainId);
-        userOp.callGasLimit = toHex(est.callGasLimit);
-        userOp.verificationGasLimit = toHex(est.verificationGasLimit);
-        userOp.preVerificationGas = toHex(BigInt(est.preVerificationGas) + 5000n);
+        applyBufferedGasEstimate(userOp, est);
       } catch (err) {
         console.warn("Estimation failed, using defaults", err);
         userOp.callGasLimit = toHex(150000);

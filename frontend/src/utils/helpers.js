@@ -165,10 +165,10 @@ export async function buildAndSendAccountOp(
     try {
         const est = await estimateUserOperationGas(rpcUserOp, chainId);
         
-        // Add a 20% margin to all gas limits to prevent execution reverts due to minor state fluctuations
-        const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
-        const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
-        const pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
+        // Add an aggressive 50% margin to reduce gas-limit failures from state drift.
+        const callGasWithMargin = (BigInt(est.callGasLimit) * 15n) / 10n;
+        const vgfWithMargin = (BigInt(est.verificationGasLimit) * 15n) / 10n;
+        const pvgWithMargin = (BigInt(est.preVerificationGas) * 15n) / 10n;
 
         rpcUserOp.callGasLimit = toHex(callGasWithMargin);
         rpcUserOp.verificationGasLimit = toHex(vgfWithMargin);

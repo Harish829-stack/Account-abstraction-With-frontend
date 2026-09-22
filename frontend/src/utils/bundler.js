@@ -11,6 +11,38 @@ function getBundlerRequestConfig(chainId) {
   return { rpcUrl, entryPoint };
 }
 
+export const USER_OP_GAS_BUFFER_PERCENT = 50n;
+
+function addGasBuffer(value, percent = USER_OP_GAS_BUFFER_PERCENT) {
+  const parsed = BigInt(value || 0);
+  return ((parsed * (100n + percent)) + 99n) / 100n;
+}
+
+function toHex(value) {
+  return "0x" + BigInt(value).toString(16);
+}
+
+export function applyUserOpGasBuffer(est, percent = USER_OP_GAS_BUFFER_PERCENT) {
+  return {
+    ...est,
+    callGasLimit: est.callGasLimit ? addGasBuffer(est.callGasLimit, percent).toString() : est.callGasLimit,
+    verificationGasLimit: est.verificationGasLimit ? addGasBuffer(est.verificationGasLimit, percent).toString() : est.verificationGasLimit,
+    preVerificationGas: est.preVerificationGas ? addGasBuffer(est.preVerificationGas, percent).toString() : est.preVerificationGas,
+    paymasterVerificationGasLimit: est.paymasterVerificationGasLimit ? addGasBuffer(est.paymasterVerificationGasLimit, percent).toString() : est.paymasterVerificationGasLimit,
+    paymasterPostOpGasLimit: est.paymasterPostOpGasLimit ? addGasBuffer(est.paymasterPostOpGasLimit, percent).toString() : est.paymasterPostOpGasLimit,
+  };
+}
+
+export function applyBufferedGasEstimate(userOp, est, percent = USER_OP_GAS_BUFFER_PERCENT) {
+  const buffered = applyUserOpGasBuffer(est, percent);
+  if (buffered.callGasLimit) userOp.callGasLimit = toHex(buffered.callGasLimit);
+  if (buffered.verificationGasLimit) userOp.verificationGasLimit = toHex(buffered.verificationGasLimit);
+  if (buffered.preVerificationGas) userOp.preVerificationGas = toHex(buffered.preVerificationGas);
+  if (buffered.paymasterVerificationGasLimit) userOp.paymasterVerificationGasLimit = toHex(buffered.paymasterVerificationGasLimit);
+  if (buffered.paymasterPostOpGasLimit) userOp.paymasterPostOpGasLimit = toHex(buffered.paymasterPostOpGasLimit);
+  return buffered;
+}
+
 export async function estimateUserOperationGas(userOp, chainId) {
   const { rpcUrl, entryPoint } = getBundlerRequestConfig(chainId);
 
@@ -58,27 +90,7 @@ export async function estimateUserOperationGas(userOp, chainId) {
       }
       throw new Error(msg);
     }
-    // Automatically pad the gas estimates to prevent AA26 errors across all views
-    const est = data.result;
-    if (est) {
-      if (est.callGasLimit) {
-        est.callGasLimit = ((BigInt(est.callGasLimit) * 150n) / 100n).toString();
-      }
-      if (est.verificationGasLimit) {
-        est.verificationGasLimit = ((BigInt(est.verificationGasLimit) * 200n) / 100n).toString();
-      }
-      if (est.preVerificationGas) {
-        est.preVerificationGas = ((BigInt(est.preVerificationGas) * 150n) / 100n + 10000n).toString();
-      }
-      if (est.paymasterVerificationGasLimit) {
-        est.paymasterVerificationGasLimit = ((BigInt(est.paymasterVerificationGasLimit) * 200n) / 100n).toString();
-      }
-      if (est.paymasterPostOpGasLimit) {
-        est.paymasterPostOpGasLimit = ((BigInt(est.paymasterPostOpGasLimit) * 200n) / 100n).toString();
-      }
-    }
-    
-    return est;
+    return data.result;
   } catch (error) {
     if (error.response && error.response.data && error.response.data.error) {
       throw new Error(error.response.data.error.message);

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import { shortenAddress, packUserOp, encodeERC7579Single, toHex, buildAndSendAccountOp, getNonceForValidator, getPrevValidator, getActiveSessionKeysOnChain } from '../utils/helpers';
-import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
+import { shortenAddress, packUserOp, encodeERC7579Single, encodeERC7579Batch, toHex, buildAndSendAccountOp, getNonceForValidator, getPrevValidator, getActiveSessionKeysOnChain } from '../utils/helpers';
+import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees, getUserOpReceipt } from '../utils/bundler';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { Key, PlusCircle, Zap, Settings, ChevronRight, XCircle } from 'lucide-react';
 import { SmartAccountABI, IEntryPointABI, SessionKeyValidatorABI } from '../utils/abis';
+import { revokeAllPersistedAgents, revokePersistedAgent } from '../utils/backendApi';
 
 export default function SessionKeyView() {
   const { smartAccountAddress, signer, provider, env, setGlobalLoading, chainId, refreshTrigger, nativeToken, installedModules, refreshInstalledModules, trackOp } = useAppContext();
@@ -25,6 +26,46 @@ export default function SessionKeyView() {
 
   const [allSessionKeys, setAllSessionKeys] = useState([]);
   const [querying, setQuerying] = useState(false);
+
+  useEffect(() => {
+    if (!smartAccountAddress || !validatorAddr || !isSkInstalled) {
+      setAllSessionKeys([]);
+    }
+  }, [smartAccountAddress, validatorAddr, isSkInstalled, chainId]);
+
+  useEffect(() => {
+    const matchesCurrentAccount = (detail = {}) => {
+      if (!smartAccountAddress) return false;
+      if (detail.smartAccountAddress && detail.smartAccountAddress.toLowerCase() !== smartAccountAddress.toLowerCase()) {
+        return false;
+      }
+      if (detail.chainId && chainId && String(detail.chainId) !== String(chainId)) {
+        return false;
+      }
+      return true;
+    };
+
+    const handleModuleRevoked = (event) => {
+      if (!matchesCurrentAccount(event.detail)) return;
+      localStorage.removeItem("session_burner_key");
+      localStorage.removeItem("session_burner_keys_map");
+      setBurnerKey("");
+      setAllSessionKeys([]);
+    };
+
+    const handleAgentRevoked = (event) => {
+      const detail = event.detail || {};
+      if (!matchesCurrentAccount(detail) || !detail.agentAddress) return;
+      setAllSessionKeys((prev) => prev.filter((key) => key.address.toLowerCase() !== detail.agentAddress.toLowerCase()));
+    };
+
+    window.addEventListener("aa-session-key-module-revoked", handleModuleRevoked);
+    window.addEventListener("aa-session-key-agent-revoked", handleAgentRevoked);
+    return () => {
+      window.removeEventListener("aa-session-key-module-revoked", handleModuleRevoked);
+      window.removeEventListener("aa-session-key-agent-revoked", handleAgentRevoked);
+    };
+  }, [smartAccountAddress, chainId]);
 
   // Form State
   const [burnerKey, setBurnerKey] = useState("");
@@ -133,6 +174,12 @@ export default function SessionKeyView() {
       if (!smartAccountAddress || !provider || !validatorAddr) return;
       setQuerying(true);
       try {
+          const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
+          const moduleActuallyInstalled = await account.isModuleInstalled(1, validatorAddr, "0x");
+          if (!moduleActuallyInstalled) {
+              setAllSessionKeys([]);
+              return;
+          }
           const activeKeys = await getActiveSessionKeysOnChain(validatorAddr, smartAccountAddress, provider);
           setAllSessionKeys(activeKeys);
       } catch (err) {
@@ -141,6 +188,17 @@ export default function SessionKeyView() {
       } finally {
           setQuerying(false);
       }
+  };
+
+  const waitForUserOpReceipt = async (opHash) => {
+      let receipt = null;
+      let retries = 45;
+      while (!receipt && retries > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          receipt = await getUserOpReceipt(opHash, chainId);
+          retries--;
+      }
+      return receipt;
   };
 
   const handleRevokeSpecificKey = async (keyAddress) => {
@@ -163,6 +221,17 @@ export default function SessionKeyView() {
                  setBurnerKey("");
              }
           }
+          await revokePersistedAgent({
+              smartAccountAddress,
+              agentAddress: keyAddress,
+              chainId,
+              txHashRevoke: opHash
+          }).catch((error) => {
+              console.warn("Failed to mark matching AI agent revoked:", error);
+          });
+          window.dispatchEvent(new CustomEvent("aa-session-key-agent-revoked", {
+              detail: { smartAccountAddress, chainId, agentAddress: keyAddress, txHashRevoke: opHash }
+          }));
           await queryAllSessionKeys();
       } catch (err) {
           console.error(err);
@@ -174,22 +243,52 @@ export default function SessionKeyView() {
 
   const handleRevokeOrUninstall = async () => {
       if (!smartAccountAddress || !signer || !validatorAddr) return;
-      setGlobalLoading(true, "Revoking Session Key...");
+      setGlobalLoading(true, "Revoking all session keys and uninstalling module...");
       try {
+          const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
+          const activeKeys = await getActiveSessionKeysOnChain(validatorAddr, smartAccountAddress, provider);
           const prev = await getPrevValidator(smartAccountAddress, validatorAddr, provider);
           const disableData = "0x";
           const deInitData = ethers.AbiCoder.defaultAbiCoder().encode(["address", "bytes"], [prev, disableData]);
           
           const accountIface = new ethers.Interface(SmartAccountABI);
-          const callData = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, deInitData]);
+          const uninstallCallData = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, deInitData]);
+
+          const revokeCallDatas = activeKeys.map((key) => (
+              skValidator.interface.encodeFunctionData("revokeSessionKey", [key.address])
+          ));
+          const callData = revokeCallDatas.length > 0
+              ? encodeERC7579Batch(
+                  [...revokeCallDatas.map(() => validatorAddr), smartAccountAddress],
+                  [...revokeCallDatas.map(() => 0n), 0n],
+                  [...revokeCallDatas, uninstallCallData]
+              )
+              : uninstallCallData;
 
           const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
           trackOp(opHash, 'Uninstall Session Key Module', { calldata: callData });
-          
-          toast.success(`Module Uninstalled & Session Key Revoked! OpHash: ${shortenAddress(opHash)}`);
+
+          const receipt = await waitForUserOpReceipt(opHash);
+          if (!receipt?.success) {
+              throw new Error("Session key cleanup/uninstall failed or timed out.");
+          }
+
+          toast.success(`Module Uninstalled & Session Keys Revoked! OpHash: ${shortenAddress(opHash)}`);
           
           localStorage.removeItem("session_burner_key");
+          localStorage.removeItem("session_burner_keys_map");
           setBurnerKey("");
+          setAllSessionKeys([]);
+          await revokeAllPersistedAgents({
+              smartAccountAddress,
+              chainId,
+              txHashRevoke: opHash
+          }).catch((error) => {
+              console.warn("Failed to mark AI agents revoked after module uninstall:", error);
+          });
+          window.dispatchEvent(new CustomEvent("aa-session-key-module-revoked", {
+              detail: { smartAccountAddress, chainId, txHashRevoke: opHash }
+          }));
           // Refresh the global module status in context
           await refreshInstalledModules();
       } catch (err) {
@@ -240,6 +339,7 @@ export default function SessionKeyView() {
       const moduleActuallyInstalled = await account.isModuleInstalled(1, validatorAddr, "0x");
 
       if (!moduleActuallyInstalled) {
+          setAllSessionKeys([]);
           // Install module with the key data
           const initData = ethers.AbiCoder.defaultAbiCoder().encode(
               ["tuple(address,address,bytes4,uint256,uint48,uint48,uint256)[]"],
@@ -250,8 +350,15 @@ export default function SessionKeyView() {
           
           const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
           trackOp(opHash, 'Install Session Key Module', { calldata: callData });
+          const receipt = await waitForUserOpReceipt(opHash);
+          if (!receipt?.success) {
+              throw new Error("Session key module install failed or timed out.");
+          }
           toast.success(`Module Installed & Session Key Added! OpHash: ${shortenAddress(opHash)}...`);
           await refreshInstalledModules();
+          window.dispatchEvent(new CustomEvent("aa-session-key-module-installed", {
+              detail: { smartAccountAddress, chainId, txHashInstall: opHash }
+          }));
       } else {
           // Module already installed on-chain — send addSessionKey directly via UserOp
           const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);

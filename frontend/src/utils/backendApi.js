@@ -70,3 +70,18 @@ export async function getAccountHistory({ smartAccountAddress, chainId, limit = 
   const params = new URLSearchParams({ chainId: String(chainId), limit: String(limit) });
   return request(`/accounts/${smartAccountAddress}/history?${params.toString()}`);
 }
+
+export async function revokePersistedAgent({ smartAccountAddress, agentAddress, chainId, txHashRevoke }) {
+  return request(`/agents/${smartAccountAddress}/${agentAddress}/revoke`, {
+    method: "PATCH",
+    body: JSON.stringify({ chainId, txHashRevoke }),
+  });
+}
+
+export async function revokeAllPersistedAgents({ smartAccountAddress, chainId, txHashRevoke }) {
+  const params = new URLSearchParams({ chainId: String(chainId) });
+  if (txHashRevoke) params.set("txHashRevoke", txHashRevoke);
+  return request(`/agents/${smartAccountAddress}?${params.toString()}`, {
+    method: "DELETE",
+  });
+}

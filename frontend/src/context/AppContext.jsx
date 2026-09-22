@@ -415,6 +415,26 @@ export const AppProvider = ({ children }) => {
     }
   }, [smartAccountAddress, provider]);
 
+  useEffect(() => {
+    const refreshForModuleEvent = (event) => {
+      const detail = event.detail || {};
+      if (detail.smartAccountAddress && smartAccountAddress && detail.smartAccountAddress.toLowerCase() !== smartAccountAddress.toLowerCase()) {
+        return;
+      }
+      if (detail.chainId && chainId && String(detail.chainId) !== String(chainId)) {
+        return;
+      }
+      void refreshInstalledModules(smartAccountAddress, provider);
+    };
+
+    window.addEventListener("aa-session-key-module-installed", refreshForModuleEvent);
+    window.addEventListener("aa-session-key-module-revoked", refreshForModuleEvent);
+    return () => {
+      window.removeEventListener("aa-session-key-module-installed", refreshForModuleEvent);
+      window.removeEventListener("aa-session-key-module-revoked", refreshForModuleEvent);
+    };
+  }, [smartAccountAddress, chainId, provider, refreshInstalledModules]);
+
   // Re-fetch Paymaster details
   const loadPaymasterDetails = async (pmAddress, _provider = provider) => {
     if (!pmAddress || !_provider) return;
