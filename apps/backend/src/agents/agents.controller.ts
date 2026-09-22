@@ -54,6 +54,19 @@ export class AgentsController {
     );
   }
 
+  @Post(":smartAccount/sync")
+  async syncAgents(
+    @Param("smartAccount") smartAccount: string,
+    @Body() body: Record<string, unknown>
+  ): Promise<AgentResponse[]> {
+    return this.agentsService.syncAgents({
+      smartAccountAddress: parseAddress(smartAccount, "smartAccount"),
+      chainId: parseChainId(body.chainId),
+      moduleInstalled: parseBoolean(body.moduleInstalled, "moduleInstalled"),
+      activeAgentAddresses: parseAddressArray(body.activeAgentAddresses, "activeAgentAddresses")
+    });
+  }
+
   @Patch(":smartAccount/:agentAddress/authorize")
   async authorizeAgent(
     @Param("smartAccount") smartAccount: string,
@@ -108,4 +121,16 @@ function parseSelector(value: unknown): string | undefined {
     throw new BadRequestException("selector must be 4-byte hex data");
   }
   return parsed;
+}
+
+function parseBoolean(value: unknown, field: string): boolean {
+  if (typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new BadRequestException(`${field} must be a boolean`);
+}
+
+function parseAddressArray(value: unknown, field: string): string[] {
+  if (!Array.isArray(value)) throw new BadRequestException(`${field} must be an array`);
+  return value.map((item, index) => parseAddress(item, `${field}[${index}]`));
 }

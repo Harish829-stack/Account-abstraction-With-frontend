@@ -4,6 +4,7 @@ import { AccountsModule } from "./accounts/accounts.module";
 import { AgentsModule } from "./agents/agents.module";
 import { AppConfigModule } from "./config/config.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { ReceiptsModule } from "./receipts/receipts.module";
 import { RedisModule } from "./redis/redis.module";
 import { UserOpsModule } from "./user-ops/user-ops.module";
 
@@ -15,7 +16,8 @@ import { UserOpsModule } from "./user-ops/user-ops.module";
     AppConfigModule,
     AccountsModule,
     AgentsModule,
-    UserOpsModule
+    UserOpsModule,
+    ReceiptsModule
   ]
 })
 export class AppModule {}

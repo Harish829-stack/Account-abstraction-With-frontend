@@ -36,22 +36,34 @@ const normalizeAddress = (value) => {
     return value.toLowerCase();
 };
 
-const publicAgentConfig = (agent) => ({
-    agentAddress: agent.agentAddress || agent.keyAddress,
-    name: agent.name,
-    scope: agent.scope,
-    maxAmount: agent.maxAmount,
-    authorized: agent.authorized !== false,
-    status: agent.status || (agent.revoked ? 'revoked' : (agent.authorized === false ? 'pending' : 'active')),
-    target: agent.target,
-    selector: agent.selector,
-    maxValueWei: agent.maxValueWei,
-    validAfter: agent.validAfter,
-    validUntil: agent.validUntil,
-    revoked: Boolean(agent.revoked),
-    createdAt: agent.createdAt,
-    authorizedAt: agent.authorizedAt || null
-});
+const getAgentRuntimeStatus = (agent) => {
+    if (agent.revoked || agent.status === 'revoked') return 'revoked';
+    if (Number(agent.validUntil || 0) > 0 && Number(agent.validUntil) < Math.floor(Date.now() / 1000)) {
+        return 'expired';
+    }
+    if (agent.status) return agent.status;
+    return agent.authorized === false ? 'pending' : 'active';
+};
+
+const publicAgentConfig = (agent) => {
+    const status = getAgentRuntimeStatus(agent);
+    return {
+        agentAddress: agent.agentAddress || agent.keyAddress,
+        name: agent.name,
+        scope: agent.scope,
+        maxAmount: agent.maxAmount,
+        authorized: status === 'active',
+        status,
+        target: agent.target,
+        selector: agent.selector,
+        maxValueWei: agent.maxValueWei,
+        validAfter: agent.validAfter,
+        validUntil: agent.validUntil,
+        revoked: status === 'revoked' || Boolean(agent.revoked),
+        createdAt: agent.createdAt,
+        authorizedAt: agent.authorizedAt || null
+    };
+};
 
 const getRequestChainId = (req) => Number(req.query.chainId || req.body?.chainId || defaultChainId);
 
@@ -333,6 +345,77 @@ app.delete('/api/agent/:smartAccountAddress', async (req, res) => {
     res.json({ removed: true, agents: [] });
 });
 
+app.post('/api/agent/sync/:smartAccountAddress', async (req, res) => {
+    const accountKey = normalizeAddress(req.params.smartAccountAddress);
+    if (!accountKey) {
+        return res.status(400).json({ error: 'Invalid smartAccountAddress' });
+    }
+
+    const activeAgentAddresses = Array.isArray(req.body.activeAgentAddresses)
+        ? req.body.activeAgentAddresses
+        : [];
+    const activeSet = new Set(activeAgentAddresses.map(normalizeAddress).filter(Boolean));
+    const moduleInstalled = Boolean(req.body.moduleInstalled);
+
+    if (agentStoreApiUrl) {
+        try {
+            const agents = await agentStoreRequest(
+                'post',
+                `/agents/${req.params.smartAccountAddress}/sync`,
+                {
+                    chainId: getRequestChainId(req),
+                    moduleInstalled,
+                    activeAgentAddresses
+                }
+            );
+            return res.json({ agents });
+        } catch (error) {
+            return res.status(error.response?.status || 500).json(error.response?.data || { error: error.message });
+        }
+    }
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const agents = (agentConfigs.get(accountKey) || []).map((agent) => {
+        const agentKey = normalizeAddress(agent.agentAddress);
+        const isActiveOnChain = agentKey && activeSet.has(agentKey);
+        const isExpired = Number(agent.validUntil || 0) > 0 && Number(agent.validUntil) < nowSeconds;
+
+        if (!moduleInstalled || (!isActiveOnChain && getAgentRuntimeStatus(agent) === 'active')) {
+            return {
+                ...agent,
+                privateKey: undefined,
+                authorized: false,
+                revoked: true,
+                status: 'revoked',
+                revokedAt: agent.revokedAt || new Date().toISOString()
+            };
+        }
+
+        if (isExpired) {
+            return {
+                ...agent,
+                privateKey: undefined,
+                authorized: false,
+                status: 'expired'
+            };
+        }
+
+        if (isActiveOnChain && getAgentRuntimeStatus(agent) !== 'active') {
+            return {
+                ...agent,
+                authorized: true,
+                revoked: false,
+                status: 'active',
+                authorizedAt: agent.authorizedAt || new Date().toISOString()
+            };
+        }
+
+        return agent;
+    });
+    setAgentsForAccount(accountKey, agents);
+    res.json({ agents: agents.map(publicAgentConfig) });
+});
+
 // Main chat execution
 app.post('/api/chat', async (req, res) => {
     const { message, smartAccountAddress, agentAddress, chainId } = req.body;
@@ -352,8 +435,15 @@ app.post('/api/chat', async (req, res) => {
     if (!config) {
         return res.status(400).json({ error: 'Agent not configured. Please initialize agent first.' });
     }
-    if (config.authorized === false || config.status === 'revoked' || config.revoked) {
+    const runtimeStatus = getAgentRuntimeStatus(config);
+    if (config.authorized === false || runtimeStatus === 'pending') {
         return res.status(400).json({ error: 'Agent is not authorized on-chain yet.' });
+    }
+    if (runtimeStatus === 'revoked') {
+        return res.status(400).json({ error: 'Agent has been revoked. Create or select an active agent.' });
+    }
+    if (runtimeStatus === 'expired') {
+        return res.status(400).json({ error: 'Agent access has expired. Create a new agent.' });
     }
     if (!config.privateKey) {
         return res.status(400).json({ error: 'Agent signing key is unavailable. Recreate the agent.' });

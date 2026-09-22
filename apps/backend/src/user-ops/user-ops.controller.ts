@@ -46,6 +46,11 @@ export class UserOpsController {
     );
   }
 
+  @Get(":hash")
+  async getUserOperation(@Param("hash") hash: string): Promise<UserOperationResponse> {
+    return this.userOpsService.getUserOperation(parseBytes32(hash, "hash"));
+  }
+
   @Patch(":hash/status")
   async updateStatus(
     @Param("hash") hash: string,

@@ -6,8 +6,8 @@ import { getUserOpReceipt } from "../utils/bundler";
 import { getInstalledModules } from "../utils/helpers";
 import {
   getAccountHistory,
+  getUserOperation,
   saveUserOperation,
-  updateUserOperationStatus,
   upsertSmartAccount,
 } from "../utils/backendApi";
 import {
@@ -536,26 +536,35 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     // Increase poll interval to 12s to prevent 429 Too Many Requests on Infura free tier
     const POLL_INTERVAL_MS = 12000;
-    const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+    const TIMEOUT_MS = 20 * 60 * 1000; // Backend worker owns final stale marking.
 
     const markConfirmed = (opHash, txHash, label) => {
       setTrackedOps(prev => prev.map(o =>
         o.opHash === opHash ? { ...o, status: 'confirmed' } : o
       ));
       addPendingUserOp(opHash, txHash);
-      void updateUserOperationStatus(opHash, {
-        status: "confirmed",
-        txHash,
-        confirmedAt: new Date().toISOString(),
-      }).catch((error) => {
-        console.warn("Failed to persist UserOp confirmation:", error);
-      });
       toast.withAction(
         `"${label}" confirmed on-chain!`,
         'View in History →',
         () => setCurrentViewRef.current && setCurrentViewRef.current('history')
       );
       refreshAllData();
+    };
+
+    const markReverted = (opHash, txHash, label) => {
+      setTrackedOps(prev => prev.map(o =>
+        o.opHash === opHash ? { ...o, status: 'reverted' } : o
+      ));
+      addPendingUserOp(opHash, txHash);
+      toast.error(`"${label}" reverted on-chain.`);
+      refreshAllData();
+    };
+
+    const markDropped = (opHash, label) => {
+      setTrackedOps(prev => prev.map(o =>
+        o.opHash === opHash ? { ...o, status: 'dropped' } : o
+      ));
+      toast.error(`"${label}" may have been dropped by the bundler. Check JiffyScan with hash: ${opHash.slice(0, 10)}...`);
     };
 
     const interval = setInterval(async () => {
@@ -565,18 +574,27 @@ export const AppProvider = ({ children }) => {
       for (const op of pendingOps) {
         const age = Date.now() - op.submittedAt;
 
+        try {
+          const backendOp = await getUserOperation(op.opHash);
+          if (backendOp?.status === "confirmed") {
+            markConfirmed(op.opHash, backendOp.txHash, op.label);
+            continue;
+          }
+          if (backendOp?.status === "reverted") {
+            markReverted(op.opHash, backendOp.txHash, op.label);
+            continue;
+          }
+          if (backendOp?.status === "dropped") {
+            markDropped(op.opHash, op.label);
+            continue;
+          }
+        } catch (backendErr) {
+          console.warn(`[Tracker] Backend status unavailable for ${op.opHash}:`, backendErr);
+        }
+
         // Timeout: drop after 5 minutes
         if (age > TIMEOUT_MS) {
-          setTrackedOps(prev => prev.map(o =>
-            o.opHash === op.opHash ? { ...o, status: 'dropped' } : o
-          ));
-          void updateUserOperationStatus(op.opHash, {
-            status: "dropped",
-            droppedAt: new Date().toISOString(),
-          }).catch((error) => {
-            console.warn("Failed to persist dropped UserOp:", error);
-          });
-          toast.error(`"${op.label}" may have been dropped by the bundler. Check JiffyScan with hash: ${op.opHash.slice(0, 10)}...`);
+          markDropped(op.opHash, op.label);
           continue;
         }
 

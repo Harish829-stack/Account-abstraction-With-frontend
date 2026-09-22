@@ -113,6 +113,64 @@ export class AgentsRepository {
     });
   }
 
+  async reconcileAgentsWithChain(
+    smartAccountId: number,
+    moduleInstalled: boolean,
+    activeAgentAddresses: string[]
+  ) {
+    const now = new Date();
+    const nowSeconds = Math.floor(now.getTime() / 1000);
+    const activeSet = new Set(activeAgentAddresses.map((address) => address.toLowerCase()));
+
+    return this.prisma.$transaction(async (tx) => {
+      const agents = await tx.sessionKey.findMany({ where: { smartAccountId } });
+
+      for (const agent of agents) {
+        const isObservedActive = activeSet.has(agent.keyAddress.toLowerCase());
+        const isExpired = agent.validUntil > 0 && agent.validUntil < nowSeconds;
+
+        if (!moduleInstalled || (!isObservedActive && agent.status === "active" && !agent.revoked)) {
+          await tx.sessionKey.update({
+            where: { id: agent.id },
+            data: {
+              status: "revoked",
+              revoked: true,
+              privateKey: null,
+              revokedAt: agent.revokedAt || now
+            }
+          });
+          continue;
+        }
+
+        if (isExpired && !agent.revoked) {
+          await tx.sessionKey.update({
+            where: { id: agent.id },
+            data: {
+              status: "expired",
+              privateKey: null
+            }
+          });
+          continue;
+        }
+
+        if (isObservedActive && !agent.revoked && agent.status !== "active") {
+          await tx.sessionKey.update({
+            where: { id: agent.id },
+            data: {
+              status: "active",
+              authorizedAt: agent.authorizedAt || now
+            }
+          });
+        }
+      }
+
+      return tx.sessionKey.findMany({
+        where: { smartAccountId },
+        orderBy: [{ createdAt: "desc" }]
+      });
+    });
+  }
+
   listAgents(smartAccountId: number) {
     return this.prisma.sessionKey.findMany({
       where: { smartAccountId },

@@ -5,6 +5,7 @@ import { ethers } from 'ethers';
 import { SessionKeyValidatorABI, SmartAccountABI } from '../utils/abis';
 import { buildAndSendAccountOp, encodeERC7579Single, encodeERC7579Batch, getActiveSessionKeysOnChain, getPrevValidator } from '../utils/helpers';
 import { estimateUserOperationGas, sendUserOperation, getUserOpReceipt, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
+import { syncPersistedAgents } from '../utils/backendApi';
 import "./agent-ui.css";
 
 /* ---------- icons ---------- */
@@ -264,6 +265,8 @@ function AgentWorkspace({
   sendMessage,
   isChatLoading,
   onNewAgent,
+  onSyncAgents,
+  isSyncing,
   onDeleteAgent,
   isDeleting,
   onRevokeAll,
@@ -298,6 +301,15 @@ function AgentWorkspace({
           <span className="pill">{scope.name.toUpperCase()}</span>
           <span className="pill">Max: {maxAmount}</span>
           <span className="pill">Expires: {activeAgent?.validUntil ? formatExpiry(activeAgent.validUntil) : "Pending"}</span>
+          <button
+            className="pill pill--action"
+            type="button"
+            disabled={isSyncing}
+            onClick={onSyncAgents}
+            title="Sync saved agents with active on-chain session keys"
+          >
+            {isSyncing ? "Syncing..." : "Sync Agents"}
+          </button>
           <button className="pill pill--action" type="button" onClick={onNewAgent} title="Create another agent">+ New Agent</button>
           <button
             className="pill pill--danger"
@@ -335,7 +347,7 @@ function AgentWorkspace({
             >
               <span className="agentChip__name">{agent.name || "Agent"}</span>
               <span className="agentChip__meta">
-                {agentScope.name} · {agent.agentAddress.slice(0, 6)}...{agent.agentAddress.slice(-4)}
+                {agentScope.name} · {agent.status || "pending"} · {agent.agentAddress.slice(0, 6)}...{agent.agentAddress.slice(-4)}
               </span>
             </button>
           );
@@ -400,9 +412,14 @@ function AgentWorkspace({
           placeholder="Ask the agent to do something..."
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          disabled={!activeAgentAddress}
+          disabled={!activeAgentAddress || activeAgent?.authorized === false || activeAgent?.status === "revoked" || activeAgent?.status === "expired"}
         />
-        <button className="composer__send" type="submit" aria-label="Send" disabled={!value.trim() || isChatLoading}>
+        <button
+          className="composer__send"
+          type="submit"
+          aria-label="Send"
+          disabled={!value.trim() || isChatLoading || activeAgent?.authorized === false || activeAgent?.status === "revoked" || activeAgent?.status === "expired"}
+        >
           <SendIcon />
         </button>
       </form>
@@ -425,6 +442,7 @@ export default function ChatbotView() {
         authorizeAgent,
         deleteAgent,
         clearAgents,
+        refreshAgents,
         isChatLoading
     } = useChatbotContext();
     const { smartAccountAddress, provider, signer, eoaAddress, env, chainId, installedModules, loadingModules, refreshInstalledModules, trackOp } = useAppContext();
@@ -436,6 +454,7 @@ export default function ChatbotView() {
     const [isInstalling, setIsInstalling] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [isRevokingAll, setIsRevokingAll] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
     const [generatedAgentAddress, setGeneratedAgentAddress] = useState('');
     const [generatedAgent, setGeneratedAgent] = useState(null);
     const [config, setConfig] = useState({
@@ -543,6 +562,40 @@ export default function ChatbotView() {
             retries--;
         }
         return receipt;
+    };
+
+    const handleSyncAgents = async () => {
+        if (!smartAccountAddress || !provider) return;
+        setIsSyncing(true);
+        try {
+            const validatorAddr = env.SESSION_KEY_VALIDATOR;
+            if (!validatorAddr) throw new Error("SessionKeyValidator address missing from chain config.");
+
+            const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
+            const moduleInstalled = await account.isModuleInstalled(1, validatorAddr, "0x");
+            const activeKeys = moduleInstalled
+                ? await getActiveSessionKeysOnChain(validatorAddr, smartAccountAddress, provider)
+                : [];
+
+            await syncPersistedAgents({
+                smartAccountAddress,
+                chainId,
+                moduleInstalled,
+                activeAgentAddresses: activeKeys.map((key) => key.address)
+            });
+            await refreshAgents();
+            await refreshInstalledModules();
+
+            if (!moduleInstalled) {
+                window.dispatchEvent(new CustomEvent("aa-session-key-module-revoked", {
+                    detail: { smartAccountAddress, chainId }
+                }));
+            }
+        } catch (e) {
+            alert("Failed to sync agents: " + (e.response?.data?.error || e.message));
+        } finally {
+            setIsSyncing(false);
+        }
     };
 
     const handleInstall = async () => {
@@ -838,6 +891,8 @@ export default function ChatbotView() {
                                 sendMessage={sendMessage}
                                 isChatLoading={isChatLoading}
                                 onNewAgent={handleNewAgent}
+                                onSyncAgents={handleSyncAgents}
+                                isSyncing={isSyncing}
                                 onDeleteAgent={handleDeleteAgent}
                                 isDeleting={isDeleting}
                                 onRevokeAll={handleRevokeAllAgents}

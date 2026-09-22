@@ -84,6 +84,13 @@ export class UserOpsRepository {
     });
   }
 
+  findUserOperation(hash: string) {
+    return this.prisma.userOperation.findUnique({
+      where: { hash },
+      include: { smartAccount: true }
+    });
+  }
+
   private toJson(value: unknown): Prisma.InputJsonValue | undefined {
     return value === undefined ? undefined : (value as Prisma.InputJsonValue);
   }

@@ -58,6 +58,11 @@ Backend uses:
 ```env
 DATABASE_URL="postgresql://..."
 REDIS_URL="rediss://..."
+USEROP_RECEIPT_WORKER_ENABLED=true
+USEROP_RECEIPT_POLL_INTERVAL_MS=15000
+USEROP_RECEIPT_BATCH_SIZE=25
+USEROP_RECEIPT_STALE_MINUTES=20
+USEROP_RECEIPT_FALLBACK_BLOCKS=150
 ```
 
 Chatbot server uses:
@@ -330,7 +335,6 @@ Features:
 - poll bundler `eth_getUserOperationReceipt`
 - fallback to EntryPoint `UserOperationEvent`
 - mark pending ops confirmed/reverted/dropped
-- retry with backoff
 - stale pending-op sweep
 - chain-aware processing
 
@@ -339,7 +343,20 @@ Benefits:
 - frontend no longer owns receipt polling as the source of truth
 - lower RPC pressure from every browser tab
 
-Status: pending.
+Status: complete.
+
+Implemented:
+
+- Added `ReceiptsModule`
+- Added background worker controlled by `USEROP_RECEIPT_WORKER_ENABLED`
+- Polls pending `UserOperation` rows from Postgres in bounded batches
+- Uses bundler `eth_getUserOperationReceipt`
+- Falls back to bounded EntryPoint `UserOperationEvent` log lookup through chain RPC
+- Marks UserOps `confirmed`, `reverted`, or `dropped`
+- Stores tx hash, confirmed block, receipt JSON, and timestamps
+- Added manual `POST /receipts/poll` endpoint for local testing
+- Frontend tracker now reads backend status before doing local receipt checks
+- Frontend no longer writes final receipt status as the authority
 
 ### Phase 3: AI Agent Persistence
 
@@ -373,6 +390,22 @@ Remaining hardening:
 - encrypt or KMS-store agent private keys instead of plain DB storage
 - protect `/agents/internal/*` behind service-to-service auth
 - persist AI conversation transcripts if needed
+
+### Phase 5: Agent Chain Sync
+
+Status: complete for dev architecture.
+
+Implemented:
+
+- Added `POST /agents/:smartAccount/sync`
+- Frontend AI Agent view can read current `isModuleInstalled` and `getActiveSessionKeys`
+- Backend reconciles saved agents with observed on-chain active keys
+- Marks active DB agents revoked when the module is uninstalled
+- Marks active DB agents revoked when they disappear from on-chain active keys
+- Marks expired agents as `expired` and clears their signing key
+- Keeps generated-but-not-yet-authorized pending agents pending
+- Chatbot server refuses to sign for pending, revoked, expired, or keyless agents
+- AI Agent UI has a `Sync Agents` action and shows each agent lifecycle status
 
 ### Phase 4: Auth And Admin
 
@@ -457,19 +490,18 @@ Features:
 
 ## Recommended Next Step
 
-Implement Phase 2C:
+With receipt reconciliation and agent chain sync in place, the next non-security phase should be:
 
 ```text
-UserOperation receipt worker + pending-op sweep + chain-aware receipt reconciliation
+Operational UX hardening
 ```
 
-This moves the source of truth for UserOp status out of browser tabs and into the backend:
+Focus:
 
-- poll bundler receipts from the backend
-- fallback to EntryPoint `UserOperationEvent`
-- mark confirmed/reverted/dropped in Postgres
-- avoid duplicate polling across multiple frontend sessions
-- prepare the way for production monitoring and retry tooling
+- better UserOp failure details in History
+- inline agent sync/revoke toasts instead of alerts
+- empty/error states for expired agents
+- optional admin config UI for chain rows and contract addresses
 
 ## Known Risks / Notes
 

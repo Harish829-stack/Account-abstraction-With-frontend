@@ -6,7 +6,8 @@ import type {
   AuthorizeAgentInput,
   CreateAgentInput,
   InternalAgentResponse,
-  RevokeAgentInput
+  RevokeAgentInput,
+  SyncAgentsInput
 } from "./agents.types";
 
 @Injectable()
@@ -45,6 +46,16 @@ export class AgentsService {
     return agents.map((agent) => this.serialize(agent));
   }
 
+  async syncAgents(input: SyncAgentsInput): Promise<AgentResponse[]> {
+    const account = await this.requireAccount(input.smartAccountAddress, input.chainId);
+    const agents = await this.agentsRepository.reconcileAgentsWithChain(
+      account.id,
+      input.moduleInstalled,
+      input.activeAgentAddresses
+    );
+    return agents.map((agent) => this.serialize(agent));
+  }
+
   async getInternalAgent(
     smartAccountAddress: string,
     chainId: number,
@@ -75,7 +86,9 @@ export class AgentsService {
   }
 
   private serialize(agent: SessionKey, includePrivateKey = false): InternalAgentResponse {
-    const status = agent.revoked ? "revoked" : agent.status;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const expired = !agent.revoked && agent.validUntil > 0 && agent.validUntil < nowSeconds;
+    const status = agent.revoked ? "revoked" : expired ? "expired" : agent.status;
     return {
       agentAddress: agent.keyAddress,
       name: agent.name || undefined,

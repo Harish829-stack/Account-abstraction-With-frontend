@@ -1,4 +1,4 @@
-export type AgentStatus = "pending" | "active" | "revoked";
+export type AgentStatus = "pending" | "active" | "revoked" | "expired";
 
 export interface CreateAgentInput {
   smartAccountAddress: string;
@@ -34,6 +34,13 @@ export interface RevokeAgentInput {
   chainId: number;
   agentAddress: string;
   txHashRevoke?: string;
+}
+
+export interface SyncAgentsInput {
+  smartAccountAddress: string;
+  chainId: number;
+  moduleInstalled: boolean;
+  activeAgentAddresses: string[];
 }
 
 export interface AgentResponse {

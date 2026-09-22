@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from "react";
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
 import axios from "axios";
 import { useAppContext } from "./AppContext";
 import { getDefaultChainId } from "../config/chains";
@@ -95,48 +95,51 @@ export const ChatbotProvider = ({ children }) => {
         setActiveAgentAddress(nextAgent.agentAddress);
     };
 
+    const refreshAgents = useCallback(async () => {
+        if (!smartAccountAddress) {
+            setAgents([]);
+            setActiveAgentAddress("");
+            setMessagesByAgent({});
+            return [];
+        }
+        try {
+            const activeChainId = chainId ? chainId.toString() : String(getDefaultChainId());
+            const res = await axios.get(`${CHATBOT_API_URL}/api/agent/status/${smartAccountAddress}?chainId=${activeChainId}`);
+            const nextAgents = Array.isArray(res.data.agents)
+                ? res.data.agents
+                : res.data.configured
+                    ? [{
+                        agentAddress: res.data.agentAddress,
+                        scope: res.data.scope,
+                        maxAmount: res.data.maxAmount,
+                        authorized: true
+                    }]
+                    : [];
+
+            setAgents(nextAgents);
+            if (nextAgents.length > 0) {
+                setActiveAgentAddress((current) => {
+                    const stillExists = nextAgents.some((agent) => normalizeAddress(agent.agentAddress) === normalizeAddress(current));
+                    if (stillExists) return current;
+                    const firstAuthorized = nextAgents.find((agent) => agent.authorized !== false && !agent.revoked && agent.status !== "expired");
+                    return (firstAuthorized || nextAgents[0]).agentAddress;
+                });
+            } else {
+                setActiveAgentAddress("");
+            }
+            return nextAgents;
+        } catch (e) {
+            console.error("Failed to check agent status:", e);
+            setAgents([]);
+            setActiveAgentAddress("");
+            return [];
+        }
+    }, [smartAccountAddress, chainId]);
+
     // Load agent status on mount or when account changes
     useEffect(() => {
-        const checkStatus = async () => {
-            if (!smartAccountAddress) {
-                setAgents([]);
-                setActiveAgentAddress("");
-                setMessagesByAgent({});
-                return;
-            }
-            try {
-                const activeChainId = chainId ? chainId.toString() : String(getDefaultChainId());
-                const res = await axios.get(`${CHATBOT_API_URL}/api/agent/status/${smartAccountAddress}?chainId=${activeChainId}`);
-                const nextAgents = Array.isArray(res.data.agents)
-                    ? res.data.agents
-                    : res.data.configured
-                        ? [{
-                            agentAddress: res.data.agentAddress,
-                            scope: res.data.scope,
-                            maxAmount: res.data.maxAmount,
-                            authorized: true
-                        }]
-                        : [];
-
-                setAgents(nextAgents);
-                if (nextAgents.length > 0) {
-                    setActiveAgentAddress((current) => {
-                        const stillExists = nextAgents.some((agent) => normalizeAddress(agent.agentAddress) === normalizeAddress(current));
-                        if (stillExists) return current;
-                        const firstAuthorized = nextAgents.find((agent) => agent.authorized !== false);
-                        return (firstAuthorized || nextAgents[0]).agentAddress;
-                    });
-                } else {
-                    setActiveAgentAddress("");
-                }
-            } catch (e) {
-                console.error("Failed to check agent status:", e);
-                setAgents([]);
-                setActiveAgentAddress("");
-            }
-        };
-        checkStatus();
-    }, [smartAccountAddress, chainId]);
+        void refreshAgents();
+    }, [refreshAgents]);
 
     const generateAgent = async (scope, maxAmount, name = "") => {
         try {
@@ -233,6 +236,19 @@ export const ChatbotProvider = ({ children }) => {
             return;
         }
 
+        const agentCanChat = Boolean(activeAgent)
+            && activeAgent.authorized !== false
+            && activeAgent?.status !== "revoked"
+            && activeAgent?.status !== "expired"
+            && !activeAgent?.revoked;
+        if (!agentCanChat) {
+            setAgentMessages(activeAgentAddress, (prev) => [
+                ...prev,
+                { role: "agent", content: "This agent is not active on-chain. Sync agents or create a new one before sending a message." }
+            ]);
+            return;
+        }
+
         const userMsg = { role: "user", content: messageText };
         setAgentMessages(activeAgentAddress, (prev) => [...prev, userMsg]);
         setIsChatLoading(true);
@@ -299,6 +315,7 @@ export const ChatbotProvider = ({ children }) => {
             authorizeAgent,
             deleteAgent,
             clearAgents,
+            refreshAgents,
             isChatLoading,
             setIsAgentConfigured: () => {}, // Backward-compatible no-op while ChatbotView migrates.
             setAgentStatus: setAgentStatusCompat

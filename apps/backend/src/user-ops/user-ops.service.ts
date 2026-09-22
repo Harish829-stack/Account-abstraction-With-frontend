@@ -48,6 +48,12 @@ export class UserOpsService {
     return this.serializeUserOperation(op);
   }
 
+  async getUserOperation(hash: string): Promise<UserOperationResponse> {
+    const op = await this.userOpsRepository.findUserOperation(hash);
+    if (!op) throw new NotFoundException("UserOperation not found");
+    return this.serializeUserOperation(op);
+  }
+
   async listUserOperations(
     smartAccountAddress: string,
     chainId: number,

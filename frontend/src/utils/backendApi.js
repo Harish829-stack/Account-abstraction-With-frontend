@@ -66,6 +66,10 @@ export async function updateUserOperationStatus(hash, { status, txHash, confirme
   });
 }
 
+export async function getUserOperation(hash) {
+  return request(`/user-ops/${hash}`);
+}
+
 export async function getAccountHistory({ smartAccountAddress, chainId, limit = 10 }) {
   const params = new URLSearchParams({ chainId: String(chainId), limit: String(limit) });
   return request(`/accounts/${smartAccountAddress}/history?${params.toString()}`);
@@ -83,5 +87,16 @@ export async function revokeAllPersistedAgents({ smartAccountAddress, chainId, t
   if (txHashRevoke) params.set("txHashRevoke", txHashRevoke);
   return request(`/agents/${smartAccountAddress}?${params.toString()}`, {
     method: "DELETE",
+  });
+}
+
+export async function syncPersistedAgents({ smartAccountAddress, chainId, moduleInstalled, activeAgentAddresses }) {
+  return request(`/agents/${smartAccountAddress}/sync`, {
+    method: "POST",
+    body: JSON.stringify({
+      chainId,
+      moduleInstalled,
+      activeAgentAddresses,
+    }),
   });
 }
