@@ -94,8 +94,8 @@ export default function Navbar() {
           <div className="wallet-nav-items">
             <NavItem viewId="home" icon={<LayoutDashboard size={18} />} label="Dashboard" />
             <NavItem viewId="setup" icon={<Settings size={18} />} label="Account Setup" />
-            <NavItem viewId="paymaster" icon={<DollarSign size={18} />} label="Paymaster" />
-            <NavItem viewId="modules" icon={<Blocks size={18} />} label="Modules" />
+            <NavItem viewId="paymaster" icon={<DollarSign size={18} />} label="Paymaster" disabled={!smartAccountAddress} />
+            <NavItem viewId="modules" icon={<Blocks size={18} />} label="Modules" disabled={!smartAccountAddress} />
             <NavItem viewId="send" icon={<Send size={18} />} label="Send Ops" disabled={!smartAccountAddress} />
             <NavItem viewId="batch-send" icon={<Send size={18} />} label="Batch Ops" disabled={!smartAccountAddress} />
             <NavItem viewId="chatbot" icon={<Bot size={18} />} label="AI Agent" disabled={!smartAccountAddress} />

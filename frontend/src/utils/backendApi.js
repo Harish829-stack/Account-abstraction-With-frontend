@@ -75,6 +75,11 @@ export async function getAccountHistory({ smartAccountAddress, chainId, limit = 
   return request(`/accounts/${smartAccountAddress}/history?${params.toString()}`);
 }
 
+export async function getDashboardSummary({ smartAccountAddress, chainId }) {
+  const params = new URLSearchParams({ chainId: String(chainId) });
+  return request(`/dashboard/${smartAccountAddress}?${params.toString()}`);
+}
+
 export async function revokePersistedAgent({ smartAccountAddress, agentAddress, chainId, txHashRevoke }) {
   return request(`/agents/${smartAccountAddress}/${agentAddress}/revoke`, {
     method: "PATCH",
