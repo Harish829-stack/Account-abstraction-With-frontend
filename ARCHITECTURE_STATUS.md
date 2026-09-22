@@ -25,6 +25,7 @@ Nest backend (apps/backend)
   - PATCH /agents/:smartAccount/:agentAddress/authorize
   - PATCH /agents/:smartAccount/:agentAddress/revoke
   - DELETE /agents/:smartAccount
+  - GET /dashboard/:smartAccountAddress?chainId=
   - Prisma + Postgres for chain config, contract config, smart accounts, UserOps, and AI agents/session keys
   - Redis cache for config responses
 
@@ -568,20 +569,34 @@ Implemented:
 - Frontend chain registry can refresh remote config after admin saves
 - App context listens for config updates and re-renders chain-dependent views
 
+### Phase 10: Product Dashboard Readiness
+
+Status: complete for the current productization pass.
+
+Implemented:
+
+- Added backend `DashboardModule`
+- Added `GET /dashboard/:smartAccountAddress?chainId=`
+- Dashboard summary joins smart account persistence, chain config, UserOp counts, recent UserOps, agent lifecycle counts, active agents, and indexer cursor state
+- Endpoint returns a product-readiness checklist and score for the connected account
+- Frontend Home dashboard now loads this single backend summary instead of inferring product state from multiple scattered reads
+- Home dashboard shows readiness, confirmed/pending UserOps, active/expiring agents, chain/indexer state, checklist items, and recent backend-tracked operations
+- The summary API returns an empty known-account state instead of 404, so first-run demos still render cleanly
+
 ## Recommended Next Step
 
-With receipt reconciliation and agent chain sync in place, the next non-security phase should be:
+With the product dashboard summary in place, the next non-security phase should be:
 
 ```text
-Operational UX hardening
+Product demo packaging
 ```
 
 Focus:
 
-- better UserOp failure details in History
-- inline agent sync/revoke toasts instead of alerts
-- empty/error states for expired agents
-- optional admin config UI for chain rows and contract addresses
+- scripted demo accounts and seeded sample data
+- a polished first-run onboarding path for empty accounts
+- role-based demo/admin navigation once auth is reintroduced
+- public product landing page only after the app experience is stable
 
 ## Known Risks / Notes
 
@@ -589,5 +604,5 @@ Focus:
 - Supabase direct database URLs may fail locally if IPv6 is unavailable. Use the Supabase Session Pooler for local dev.
 - Upstash Redis URLs must start with `rediss://`, not `rrediss://`.
 - Phase 2 changed the Prisma schema. Run `npx prisma db push` against the dev database before testing the new backend history endpoints.
-- The chatbot server still needs persistence; otherwise agent state can disappear on process restart.
+- The chatbot server uses backend persistence when `AGENT_STORE_API_URL` is configured; without it, agent state falls back to process memory.
 - Contracts and AA invariants have not been changed and should remain frozen unless a dedicated review phase is started.
