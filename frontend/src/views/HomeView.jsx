@@ -6,6 +6,7 @@ import { useToast } from '../context/ToastContext';
 import { shortenAddress, toHex, getEthPriceInUsd, packUserOp, encodeERC7579Single } from '../utils/helpers';
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import { IEntryPointABI, SmartAccountABI } from '../utils/abis';
+import { getDashboardSummary } from '../utils/backendApi';
 import {
   Zap, ShieldCheck, Layers, Gift, Clock, Network,
   CheckCircle2, XCircle, ArrowRight, ArrowUpRight,
@@ -43,6 +44,23 @@ const formatCurrencyCompact = (val) => {
     maximumFractionDigits: 2,
     minimumFractionDigits: val < 1000000 ? 2 : 0
   }).format(val);
+};
+
+const formatStatusLabel = (value = '') => {
+  if (!value) return 'Unknown';
+  return value.charAt(0).toUpperCase() + value.slice(1);
+};
+
+const formatRelativeDashboardTime = (isoValue) => {
+  if (!isoValue) return 'No activity yet';
+  const diffMs = Date.now() - new Date(isoValue).getTime();
+  if (!Number.isFinite(diffMs)) return 'Recently updated';
+  const minutes = Math.max(0, Math.floor(diffMs / 60000));
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 };
 
 // ─── Premium SVG Donut Chart ──────────────────────────────────────────────────
@@ -111,11 +129,13 @@ function ConnectedDashboard() {
     smartAccountAddress, saETHBalance, saUSDCBalance, saEURCBalance, saEntryPointDeposit, saOwner,
     paymasterAddress,
     setCurrentView, refreshAllData, signer, provider, env, chainId, nativeToken, isAmoy,
-    trackOp, setGlobalLoading, setSetupStep
+    trackOp, setGlobalLoading, setSetupStep, refreshTrigger
   } = useAppContext();
   const toast = useToast();
   const [refreshing, setRefreshing] = useState(false);
   const [pmAllowance, setPmAllowance] = useState('0');
+  const [dashboardSummary, setDashboardSummary] = useState(null);
+  const [loadingDashboardSummary, setLoadingDashboardSummary] = useState(false);
 
   const fetchPmAllowance = async () => {
     if (!signer || !env.USDC_TOKEN || !smartAccountAddress || !paymasterAddress) return;
@@ -131,6 +151,33 @@ function ConnectedDashboard() {
   useEffect(() => {
     fetchPmAllowance();
   }, [smartAccountAddress, paymasterAddress, provider]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDashboardSummary = async () => {
+      if (!smartAccountAddress || !chainId) {
+        setDashboardSummary(null);
+        return;
+      }
+
+      setLoadingDashboardSummary(true);
+      try {
+        const summary = await getDashboardSummary({ smartAccountAddress, chainId });
+        if (!cancelled) setDashboardSummary(summary);
+      } catch (err) {
+        console.warn("Failed to load dashboard summary:", err);
+        if (!cancelled) setDashboardSummary(null);
+      } finally {
+        if (!cancelled) setLoadingDashboardSummary(false);
+      }
+    };
+
+    loadDashboardSummary();
+    return () => {
+      cancelled = true;
+    };
+  }, [smartAccountAddress, chainId, refreshTrigger]);
 
 
   // Swap state
@@ -218,6 +265,12 @@ function ConnectedDashboard() {
     { label: 'Paymaster Approved', done: Number(pmAllowance) > 0 },
   ];
   const checklistPct = Math.round((checklist.filter(c => c.done).length / checklist.length) * 100);
+  const readiness = dashboardSummary?.productReadiness;
+  const readinessScore = readiness?.score ?? checklistPct;
+  const backendConfirmedOps = dashboardSummary?.userOps?.byStatus?.confirmed || 0;
+  const backendPendingOps = dashboardSummary?.userOps?.byStatus?.pending || 0;
+  const backendActiveAgents = dashboardSummary?.agents?.active || 0;
+  const backendExpiringAgents = dashboardSummary?.agents?.expiringSoon || 0;
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -353,6 +406,94 @@ function ConnectedDashboard() {
           Refresh
         </button>
       </div>
+
+      {(dashboardSummary || loadingDashboardSummary) && (
+        <div className="glass-card flex flex-col gap-4" style={{ padding:'1rem' }}>
+          <div className="flex items-center justify-between gap-3" style={{ flexWrap:'wrap' }}>
+            <div className="flex items-center gap-2">
+              <div style={{ width:34, height:34, borderRadius:9, background:'rgba(22, 163, 74,0.1)', display:'grid', placeItems:'center', color:'var(--primary)', flexShrink:0 }}>
+                <Activity size={17} />
+              </div>
+              <div>
+                <h3 style={{ fontSize:'1rem', margin:0, fontWeight:800 }}>Product Readiness</h3>
+                <p className="text-xs text-muted" style={{ marginTop:2 }}>
+                  {dashboardSummary?.chain?.name || (isAmoy ? 'Amoy' : 'Sepolia')} account state from backend persistence
+                </p>
+              </div>
+            </div>
+            <span style={{
+              padding:'4px 10px',
+              borderRadius:99,
+              fontSize:'0.68rem',
+              fontWeight:800,
+              background: readinessScore >= 80 ? 'rgba(22, 163, 74,0.1)' : 'rgba(234, 179, 8,0.12)',
+              color: readinessScore >= 80 ? '#16a34a' : '#a16207',
+              border: readinessScore >= 80 ? '1px solid rgba(22, 163, 74,0.22)' : '1px solid rgba(234, 179, 8,0.24)'
+            }}>
+              {loadingDashboardSummary ? 'Refreshing' : `${readinessScore}% Ready`}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="portfolio-alloc-card" style={{ minHeight:88 }}>
+              <div className="flex items-center gap-2 text-xs text-muted"><Check size={14} /> Readiness</div>
+              <div style={{ fontSize:'1.6rem', fontWeight:900, color:'#141827', marginTop:8 }}>{readinessScore}%</div>
+              <div className="progress-track" style={{ marginTop:8 }}>
+                <div className="progress-fill" style={{ width:`${readinessScore}%` }} />
+              </div>
+            </div>
+            <div className="portfolio-alloc-card" style={{ minHeight:88 }}>
+              <div className="flex items-center gap-2 text-xs text-muted"><Clock size={14} /> UserOps</div>
+              <div style={{ fontSize:'1.4rem', fontWeight:900, color:'#141827', marginTop:8 }}>{backendConfirmedOps}</div>
+              <div style={{ fontSize:'0.72rem', color:'var(--text-muted)', marginTop:4 }}>{backendPendingOps} pending, {dashboardSummary?.userOps?.total || 0} total</div>
+            </div>
+            <div className="portfolio-alloc-card" style={{ minHeight:88 }}>
+              <div className="flex items-center gap-2 text-xs text-muted"><Users size={14} /> AI Agents</div>
+              <div style={{ fontSize:'1.4rem', fontWeight:900, color:'#141827', marginTop:8 }}>{backendActiveAgents}</div>
+              <div style={{ fontSize:'0.72rem', color:'var(--text-muted)', marginTop:4 }}>{backendExpiringAgents} expiring soon, {dashboardSummary?.agents?.total || 0} saved</div>
+            </div>
+            <div className="portfolio-alloc-card" style={{ minHeight:88 }}>
+              <div className="flex items-center gap-2 text-xs text-muted"><Network size={14} /> Chain Ops</div>
+              <div style={{ fontSize:'1rem', fontWeight:800, color:'#141827', marginTop:8 }}>
+                {dashboardSummary?.chain?.isActive ? 'Active' : 'Needs config'}
+              </div>
+              <div style={{ fontSize:'0.72rem', color:'var(--text-muted)', marginTop:4 }}>
+                Index {dashboardSummary?.chain?.lastIndexedBlock || 'not started'}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              {(readiness?.checklist || []).map((item) => (
+                <div key={item.key} style={{ display:'flex', alignItems:'center', gap:8, fontSize:'0.78rem' }}>
+                  <span className={item.complete ? 'setup-done-pill' : 'setup-pending-pill'} style={{ minWidth:64, textAlign:'center' }}>
+                    {item.complete ? 'Ready' : 'Todo'}
+                  </span>
+                  <span style={{ color:'#141827', fontWeight:600 }}>{item.label}</span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              {(dashboardSummary?.userOps?.recent || []).slice(0, 3).map((op) => (
+                <div key={op.userOpHash} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, padding:'0.55rem 0.65rem', border:'1px solid rgba(17,17,16,0.08)', borderRadius:8 }}>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontSize:'0.78rem', fontWeight:700, color:'#141827', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{op.label || 'UserOperation'}</div>
+                    <div className="text-xs text-muted">{formatRelativeDashboardTime(op.updatedAt)}</div>
+                  </div>
+                  <span className={op.status === 'confirmed' ? 'setup-done-pill' : 'setup-pending-pill'}>
+                    {formatStatusLabel(op.status)}
+                  </span>
+                </div>
+              ))}
+              {(!dashboardSummary?.userOps?.recent || dashboardSummary.userOps.recent.length === 0) && (
+                <div style={{ fontSize:'0.78rem', color:'var(--text-muted)', padding:'0.55rem 0' }}>No backend-tracked operations yet.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Wallet Cards ─────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
