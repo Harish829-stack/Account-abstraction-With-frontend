@@ -1,16 +1,12 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import type { Chain, SmartAccount, UserOperation } from "@prisma/client";
+import { jsonRpcCall, toRpcQuantity } from "../common/json-rpc";
 import { ReceiptsRepository } from "./receipts.repository";
 import type { ReceiptPollSummary, UserOperationReceiptResult } from "./receipts.types";
 
 const USER_OPERATION_EVENT_TOPIC = "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f";
 
 type PendingUserOperation = UserOperation & { smartAccount: SmartAccount; chain: Chain };
-
-interface JsonRpcResponse<T> {
-  result?: T;
-  error?: { message?: string };
-}
 
 interface RpcLog {
   transactionHash: string;
@@ -104,7 +100,7 @@ export class ReceiptsService implements OnModuleInit, OnModuleDestroy {
 
   private async getBundlerReceipt(op: PendingUserOperation): Promise<UserOperationReceiptResult | null> {
     if (!op.chain.bundlerUrl) return null;
-    return this.rpcCall<UserOperationReceiptResult | null>(op.chain.bundlerUrl, "eth_getUserOperationReceipt", [op.hash]);
+    return jsonRpcCall<UserOperationReceiptResult | null>(op.chain.bundlerUrl, "eth_getUserOperationReceipt", [op.hash]);
   }
 
   private async getEntryPointLogReceipt(op: PendingUserOperation): Promise<UserOperationReceiptResult | null> {
@@ -113,15 +109,15 @@ export class ReceiptsService implements OnModuleInit, OnModuleDestroy {
     const entryPoint = await this.getEntryPointAddress();
     if (!entryPoint) return null;
 
-    const latestHex = await this.rpcCall<string>(op.chain.rpcUrl, "eth_blockNumber", []);
+    const latestHex = await jsonRpcCall<string>(op.chain.rpcUrl, "eth_blockNumber", []);
     if (!latestHex) return null;
 
     const latestBlock = Number(BigInt(latestHex));
     const fromBlock = Math.max(0, latestBlock - this.fallbackBlocks);
-    const logs = await this.rpcCall<RpcLog[]>(op.chain.rpcUrl, "eth_getLogs", [{
+    const logs = await jsonRpcCall<RpcLog[]>(op.chain.rpcUrl, "eth_getLogs", [{
       address: entryPoint,
-      fromBlock: this.toQuantity(fromBlock),
-      toBlock: this.toQuantity(latestBlock),
+      fromBlock: toRpcQuantity(fromBlock),
+      toBlock: toRpcQuantity(latestBlock),
       topics: [USER_OPERATION_EVENT_TOPIC, op.hash]
     }]);
 
@@ -163,30 +159,6 @@ export class ReceiptsService implements OnModuleInit, OnModuleDestroy {
     const successWord = normalized.slice(64, 128);
     if (!successWord) return true;
     return BigInt(`0x${successWord}`) !== 0n;
-  }
-
-  private async rpcCall<T>(url: string, method: string, params: unknown[]): Promise<T | null> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12_000);
-
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
-        signal: controller.signal
-      });
-      if (!response.ok) throw new Error(`${method} HTTP ${response.status}`);
-      const payload = (await response.json()) as JsonRpcResponse<T>;
-      if (payload.error) throw new Error(payload.error.message || `${method} RPC error`);
-      return payload.result ?? null;
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
-  private toQuantity(value: number): string {
-    return `0x${value.toString(16)}`;
   }
 
   private readPositiveEnv(name: string, fallback: number): number {

@@ -30,7 +30,9 @@ export class AccountsService {
       txHash: op.txHash || undefined,
       status: this.toDisplayStatus(op.status),
       label: op.label || undefined,
-      timestamp: op.confirmedAt?.getTime() || op.droppedAt?.getTime() || op.createdAt.getTime()
+      timestamp: op.confirmedAt?.getTime() || op.droppedAt?.getTime() || op.createdAt.getTime(),
+      details: this.toHistoryDetails(op.status, op.receipt),
+      updatedAt: op.updatedAt.toISOString()
     }));
   }
 
@@ -69,5 +71,17 @@ export class AccountsService {
       default:
         return "Pending";
     }
+  }
+
+  private toHistoryDetails(status: string, receipt: unknown): string | undefined {
+    if (status === "dropped") return "No receipt was found before the backend stale-op window elapsed.";
+    if (!receipt || typeof receipt !== "object") return undefined;
+
+    const payload = receipt as Record<string, unknown>;
+    if (typeof payload.reason === "string") return payload.reason;
+    if (typeof payload.error === "string") return payload.error;
+    if (typeof payload.source === "string") return `Indexed via ${payload.source}.`;
+    if (status === "reverted") return "The EntryPoint reported this UserOperation as reverted.";
+    return undefined;
   }
 }

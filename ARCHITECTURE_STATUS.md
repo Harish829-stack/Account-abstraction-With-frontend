@@ -58,11 +58,19 @@ Backend uses:
 ```env
 DATABASE_URL="postgresql://..."
 REDIS_URL="rediss://..."
+CORS_ORIGINS="http://127.0.0.1:5173,http://localhost:5173"
+RATE_LIMIT_MAX=0
+RATE_LIMIT_WINDOW_MS=60000
 USEROP_RECEIPT_WORKER_ENABLED=true
 USEROP_RECEIPT_POLL_INTERVAL_MS=15000
 USEROP_RECEIPT_BATCH_SIZE=25
 USEROP_RECEIPT_STALE_MINUTES=20
 USEROP_RECEIPT_FALLBACK_BLOCKS=150
+USEROP_INDEXER_ENABLED=true
+USEROP_INDEXER_POLL_INTERVAL_MS=30000
+USEROP_INDEXER_CONFIRMATIONS=2
+USEROP_INDEXER_BLOCK_RANGE=150
+USEROP_INDEXER_START_LOOKBACK_BLOCKS=300
 ```
 
 Chatbot server uses:
@@ -70,6 +78,10 @@ Chatbot server uses:
 ```env
 AGENT_STORE_API_URL="http://127.0.0.1:3001"
 CHAIN_ID=11155111
+CHATBOT_CORS_ORIGINS="http://127.0.0.1:5173,http://localhost:5173"
+JSON_BODY_LIMIT="1mb"
+RATE_LIMIT_MAX=0
+RATE_LIMIT_WINDOW_MS=60000
 ```
 
 For Supabase local dev, use the Supabase Session Pooler URL, not the direct `db.<project>.supabase.co:5432` URL unless IPv6/direct connectivity is available.
@@ -84,7 +96,7 @@ Written by `npm run prisma:seed`:
 - `ChainContract`
 - `SharedContract`
 
-These store active chain config, view-only chain config, RPC URLs, bundler URLs, explorer metadata, gas fee floors, per-chain contract addresses, and shared contract addresses.
+These store active chain config, view-only chain config, RPC URLs, bundler URLs, explorer metadata, gas fee floors, per-chain contract addresses, shared contract addresses, and per-chain indexer cursor/error metadata.
 
 Written by normal runtime flows after Phase 2 and Phase 3:
 
@@ -452,6 +464,8 @@ Health checks:
 
 ### Phase 6: Production Hardening
 
+Status: complete for dev/non-custody architecture, excluding auth/key-custody security work by request.
+
 Features:
 
 - DTO validation
@@ -466,6 +480,19 @@ Features:
 - Redis connectivity check
 - config freshness check
 
+Implemented:
+
+- `GET /health`
+- `GET /health/ready`
+- DB/Redis/config readiness checks
+- backend request logging with method/path/status/duration
+- backend `CORS_ORIGINS`
+- backend optional in-memory `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS`
+- chatbot `GET /health`
+- chatbot `CHATBOT_CORS_ORIGINS`
+- chatbot `JSON_BODY_LIMIT`
+- chatbot optional in-memory `RATE_LIMIT_MAX` / `RATE_LIMIT_WINDOW_MS`
+
 Deployment:
 
 - Railway `config-api` service from `apps/backend`
@@ -475,6 +502,8 @@ Deployment:
   - `VITE_CHATBOT_API_URL`
 
 ### Phase 7: Indexing And Observability
+
+Status: complete for known-account UserOp indexing and basic platform observability.
 
 Features:
 
@@ -487,6 +516,23 @@ Features:
 - paymaster failure metrics
 - AI-agent execution metrics
 - retry/debug tooling for dropped ops
+
+Implemented:
+
+- `IndexerModule`
+- background known-account EntryPoint `UserOperationEvent` scanner
+- bounded per-chain block ranges
+- configurable confirmation depth
+- `Chain.lastIndexedBlock`, `lastSyncAt`, and `lastSyncError` updates
+- `POST /indexer/poll` for manual local indexing
+- `ObservabilityModule`
+- `GET /observability/summary`
+- `GET /observability/user-ops?status=&chainId=&limit=`
+- UserOp status counts
+- agent lifecycle status counts
+- average confirmation latency from persisted operations
+- chain indexer status summary
+- History rows now include compact backend-generated debug details for dropped/reverted/indexed operations
 
 ## Recommended Next Step
 

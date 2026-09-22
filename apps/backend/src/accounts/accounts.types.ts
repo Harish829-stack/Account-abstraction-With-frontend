@@ -20,4 +20,6 @@ export interface UserOperationHistoryItem {
   status: "Pending" | "Success" | "Reverted" | "Dropped";
   label?: string;
   timestamp?: number;
+  details?: string;
+  updatedAt?: string;
 }

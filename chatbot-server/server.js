@@ -16,12 +16,42 @@ const {
 } = require('./userOpBuilder');
 
 const app = express();
+const parseCorsOrigins = () => {
+    const raw = process.env.CHATBOT_CORS_ORIGINS || process.env.CORS_ORIGINS || '';
+    const origins = raw.split(',').map((origin) => origin.trim()).filter(Boolean);
+    return origins.length > 0 ? origins : '*';
+};
+
+const createRateLimiter = () => {
+    const maxRequests = Number(process.env.RATE_LIMIT_MAX || 0);
+    if (!Number.isFinite(maxRequests) || maxRequests <= 0) return null;
+    const windowMs = Number(process.env.RATE_LIMIT_WINDOW_MS || 60000);
+    const hits = new Map();
+    return (req, res, next) => {
+        const now = Date.now();
+        const key = req.ip || req.socket.remoteAddress || 'unknown';
+        const current = hits.get(key);
+        const bucket = current && current.resetAt > now
+            ? current
+            : { count: 0, resetAt: now + windowMs };
+        bucket.count += 1;
+        hits.set(key, bucket);
+        if (bucket.count > maxRequests) {
+            return res.status(429).json({ error: 'Too many requests' });
+        }
+        next();
+    };
+};
+
 app.use(cors({
-    origin: '*',
+    origin: parseCorsOrigins(),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.options('/{*splat}', cors());app.use(express.json());
+app.options('/{*splat}', cors());
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
+const rateLimiter = createRateLimiter();
+if (rateLimiter) app.use(rateLimiter);
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
@@ -120,9 +150,18 @@ const findAgentConfig = (smartAccountAddress, agentAddress) => {
 };
 
 
-app.post('/health',(req,res)=>{
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        service: 'aa-smart-wallet-chatbot',
+        timestamp: new Date().toISOString(),
+        uptimeSeconds: Math.floor(process.uptime())
+    });
+});
+
+app.post('/health', (req, res) => {
     res.send('OK');
-})
+});
 
 // Generate an agent keypair for a smart account and set its scope
 app.post('/api/agent/generate', async (req, res) => {
