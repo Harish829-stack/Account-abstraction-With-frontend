@@ -4,6 +4,7 @@ import { AccountsModule } from "./accounts/accounts.module";
 import { AdminModule } from "./admin/admin.module";
 import { AgentsModule } from "./agents/agents.module";
 import { AppConfigModule } from "./config/config.module";
+import { DashboardModule } from "./dashboard/dashboard.module";
 import { HealthModule } from "./health/health.module";
 import { IndexerModule } from "./indexer/indexer.module";
 import { ObservabilityModule } from "./observability/observability.module";
@@ -22,6 +23,7 @@ import { UserOpsModule } from "./user-ops/user-ops.module";
     AccountsModule,
     AgentsModule,
     UserOpsModule,
+    DashboardModule,
     ReceiptsModule,
     HealthModule,
     IndexerModule,
