@@ -316,7 +316,7 @@ export default function ProfileView() {
 
 
   return (
-    <div className="flex flex-col gap-6 max-w-4xl mx-auto pb-12 animate-fade-in">
+    <div className="flex flex-col gap-6 w-full max-w-[1720px] mx-auto h-[calc(100vh-140px)] overflow-y-auto pb-10 px-4 pt-6 animate-fade-in">
         
         {/* Main Entry Button */}
         {!showRecovery && (

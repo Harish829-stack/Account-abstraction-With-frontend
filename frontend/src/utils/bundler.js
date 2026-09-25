@@ -11,7 +11,7 @@ function getBundlerRequestConfig(chainId) {
   return { rpcUrl, entryPoint };
 }
 
-export const USER_OP_GAS_BUFFER_PERCENT = 50n;
+export const USER_OP_GAS_BUFFER_PERCENT = 10n;
 
 function addGasBuffer(value, percent = USER_OP_GAS_BUFFER_PERCENT) {
   const parsed = BigInt(value || 0);
@@ -35,12 +35,28 @@ export function applyUserOpGasBuffer(est, percent = USER_OP_GAS_BUFFER_PERCENT) 
 
 export function applyBufferedGasEstimate(userOp, est, percent = USER_OP_GAS_BUFFER_PERCENT) {
   const buffered = applyUserOpGasBuffer(est, percent);
-  if (buffered.callGasLimit) userOp.callGasLimit = toHex(buffered.callGasLimit);
-  if (buffered.verificationGasLimit) userOp.verificationGasLimit = toHex(buffered.verificationGasLimit);
-  if (buffered.preVerificationGas) userOp.preVerificationGas = toHex(buffered.preVerificationGas);
+  
+  let callGasLimit = BigInt(buffered.callGasLimit || 0);
+  let verificationGasLimit = BigInt(buffered.verificationGasLimit || 0);
+  let preVerificationGas = BigInt(buffered.preVerificationGas || 0);
+
+  if (callGasLimit < 50000n) callGasLimit = 50000n;
+  if (verificationGasLimit < 150000n) verificationGasLimit = 150000n;
+  if (preVerificationGas < 50000n) preVerificationGas = 50000n;
+
+  userOp.callGasLimit = toHex(callGasLimit);
+  userOp.verificationGasLimit = toHex(verificationGasLimit);
+  userOp.preVerificationGas = toHex(preVerificationGas);
+  
   if (buffered.paymasterVerificationGasLimit) userOp.paymasterVerificationGasLimit = toHex(buffered.paymasterVerificationGasLimit);
   if (buffered.paymasterPostOpGasLimit) userOp.paymasterPostOpGasLimit = toHex(buffered.paymasterPostOpGasLimit);
-  return buffered;
+  
+  return {
+    ...buffered,
+    callGasLimit: callGasLimit.toString(),
+    verificationGasLimit: verificationGasLimit.toString(),
+    preVerificationGas: preVerificationGas.toString()
+  };
 }
 
 export async function estimateUserOperationGas(userOp, chainId) {
@@ -193,9 +209,9 @@ export async function getDynamicGasFees(provider, chainId) {
       if (maxFeePerGas < chainFeeFloor) maxFeePerGas = chainFeeFloor;
     }
 
-    // Add a 100% buffer (2x) on testnet to guarantee it never gets stuck pending and times out
-    maxPriorityFeePerGas = maxPriorityFeePerGas * 2n;
-    maxFeePerGas = maxFeePerGas * 2n;
+    // Add a 10% buffer to guarantee it doesn't get stuck pending, as requested
+    maxPriorityFeePerGas = (maxPriorityFeePerGas * 11n) / 10n;
+    maxFeePerGas = (maxFeePerGas * 11n) / 10n;
     
   } catch (e) {
     console.warn("Dynamic gas fetch failed completely, using fallbacks:", e);

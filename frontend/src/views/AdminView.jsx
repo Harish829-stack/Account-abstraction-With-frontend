@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { MultisigABI, ERC20PaymasterABI, StakeableABI } from '../utils/abis';
 
-const CONTRACT_FIELDS = ['paymaster', 'usdcToken', 'eurcToken', 'priceFeed', 'multisigProxy'];
+const CONTRACT_FIELDS = ['paymaster', 'usdcToken', 'priceFeed', 'multisigProxy'];
 const SHARED_CONTRACT_FIELDS = [
   'ENTRY_POINT',
   'FACTORY',

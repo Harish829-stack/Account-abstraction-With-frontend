@@ -7,7 +7,7 @@ import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '
 import { toHex, getEthPriceInUsd, packUserOp, encodeERC7579Single } from '../utils/helpers';
 import { Send, Settings, CheckCircle2, RotateCcw, ExternalLink } from 'lucide-react';
 
-const UNISWAP_ROUTER = '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E';
+const UNISWAP_ROUTER = '0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F';
 const WETH_SEPOLIA = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
 
 export default function SendOpView() {
@@ -36,12 +36,7 @@ export default function SendOpView() {
   const [usePaymaster, setUsePaymaster] = useState(false);
   const [selectedGasToken, setSelectedGasToken] = useState(env?.USDC_TOKEN || '');
 
-  const trackedTokens = isAmoy 
-    ? [{ symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 }]
-    : [
-        { symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 },
-        { symbol: 'EURC', address: env?.EURC_TOKEN, decimals: 6 }
-      ].filter((token) => token.address);
+  const trackedTokens = [{ symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 }].filter(t => t.address);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -280,7 +275,7 @@ export default function SendOpView() {
   }
 
   return (
-    <div className="flex flex-col gap-6 max-w-2xl mx-auto">
+    <div className="flex flex-col gap-6 w-full max-w-[1720px] mx-auto h-[calc(100vh-140px)] overflow-y-auto pb-10 px-4 pt-6">
       <div className="glass-card flex flex-col gap-5">
 
         {/* ── Form ──────────────────────────────────── */}

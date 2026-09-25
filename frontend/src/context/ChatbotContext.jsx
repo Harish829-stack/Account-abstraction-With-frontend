@@ -105,7 +105,7 @@ export const ChatbotProvider = ({ children }) => {
         try {
             const activeChainId = chainId ? chainId.toString() : String(getDefaultChainId());
             const res = await axios.get(`${CHATBOT_API_URL}/api/agent/status/${smartAccountAddress}?chainId=${activeChainId}`);
-            const nextAgents = Array.isArray(res.data.agents)
+            const allAgents = Array.isArray(res.data.agents)
                 ? res.data.agents
                 : res.data.configured
                     ? [{
@@ -115,6 +115,11 @@ export const ChatbotProvider = ({ children }) => {
                         authorized: true
                     }]
                     : [];
+
+            // Only show agents that are active — filter out revoked/expired noise
+            const nextAgents = allAgents.filter(
+                (a) => a.authorized !== false && a.status !== 'revoked' && a.status !== 'expired' && !a.revoked
+            );
 
             setAgents(nextAgents);
             if (nextAgents.length > 0) {
@@ -176,9 +181,8 @@ export const ChatbotProvider = ({ children }) => {
             } else {
                 upsertAgent({ ...agent, authorized: true }, true);
             }
-            if (Array.isArray(res.data.agents)) {
-                setAgents(res.data.agents);
-            }
+            // Ensure we have the absolute latest state from the backend
+            await refreshAgents();
         } catch (e) {
             console.error("Failed to mark agent authorized:", e);
             throw e;
@@ -193,20 +197,8 @@ export const ChatbotProvider = ({ children }) => {
                 chainId: chainId ? chainId.toString() : String(getDefaultChainId()),
                 txHashRevoke
             });
-            const nextAgents = Array.isArray(res.data.agents)
-                ? res.data.agents
-                : agents.filter((agent) => normalizeAddress(agent.agentAddress) !== key);
-            setAgents(nextAgents);
-            setMessagesByAgent((prev) => {
-                const next = { ...prev };
-                delete next[key];
-                return next;
-            });
-            setActiveAgentAddress((current) => {
-                if (normalizeAddress(current) !== key) return current;
-                const firstAuthorized = nextAgents.find((agent) => agent.authorized !== false);
-                return (firstAuthorized || nextAgents[0])?.agentAddress || "";
-            });
+            // Completely refresh agents from the backend to guarantee accurate state
+            await refreshAgents();
         } catch (e) {
             console.error("Failed to delete agent:", e);
             throw e;

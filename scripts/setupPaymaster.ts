@@ -6,7 +6,7 @@ async function main() {
   const [owner] = await ethers.getSigners();
 
 
-  const PAYMASTER_ADDRESS ="0x7d045fA2F7DE36fB537852442bb2693D2a6b5Aa3"
+  const PAYMASTER_ADDRESS = process.env.PAYMASTER || process.env.MULTITOKEN_PAYMASTER;
 
   console.log(`Setting up Paymaster at ${PAYMASTER_ADDRESS}`);
   console.log(`Using account: ${owner.address}`);

@@ -1,0 +1,577 @@
+/* ============================================================
+   financial-agent-ui.css — Financial Intelligence Agent view styles
+   Matches the platform's light design system from index.css & agent-ui.css
+
+   Palette:
+     --bg-base:    #F5F3EE
+     --surface:    #FFFFFF
+     --primary:    #22c55e
+     --accent:     #6366f1 (indigo — financial feel)
+     --text-main:  #111110
+     --text-muted: #9CA3AF
+     --border:     #E4E0D8
+     --warning:    #f59e0b
+     --danger:     #ef4444
+   ============================================================ */
+
+/* ─── Layout ──────────────────────────────────────────────────────────────── */
+.fa-stage {
+  width: 100%;
+  font-family: 'Inter', system-ui, sans-serif;
+  color: #111110;
+}
+
+.fa-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .fa-grid { grid-template-columns: 1fr; }
+}
+
+/* ─── Panel (glass card) ─────────────────────────────────────────────────── */
+.fa-panel {
+  background: #FFFFFF;
+  border: 1px solid #E4E0D8;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+}
+
+.fa-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #E4E0D8;
+  background: linear-gradient(135deg, #f8f7f4 0%, #ffffff 100%);
+}
+
+.fa-panel__icon {
+  width: 36px; height: 36px;
+  display: grid; place-items: center;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.fa-panel__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #111110;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.fa-panel__sub {
+  font-size: 12px;
+  color: #9CA3AF;
+  margin: 2px 0 0;
+}
+
+.fa-panel__body {
+  padding: 0;
+}
+
+/* ─── Chat area ──────────────────────────────────────────────────────────── */
+.fa-chat {
+  display: flex;
+  flex-direction: column;
+  height: 560px;
+}
+
+.fa-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: #E4E0D8 transparent;
+}
+
+.fa-messages::-webkit-scrollbar { width: 4px; }
+.fa-messages::-webkit-scrollbar-thumb { background: #E4E0D8; border-radius: 4px; }
+
+/* ─── Message bubbles ────────────────────────────────────────────────────── */
+.fa-msg {
+  display: flex;
+  gap: 10px;
+  animation: fa-slideUp 0.2s ease;
+}
+
+.fa-msg--user { flex-direction: row-reverse; }
+
+@keyframes fa-slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fa-msg__avatar {
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.fa-msg--agent .fa-msg__avatar {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+}
+
+.fa-msg--user .fa-msg__avatar {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #fff;
+}
+
+.fa-msg__bubble {
+  max-width: 78%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.fa-msg--agent .fa-msg__bubble {
+  background: #F5F3EE;
+  border: 1px solid #E4E0D8;
+  border-top-left-radius: 4px;
+  color: #111110;
+}
+
+.fa-msg--user .fa-msg__bubble {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border-top-right-radius: 4px;
+}
+
+.fa-msg__time {
+  font-size: 10px;
+  color: #9CA3AF;
+  margin-top: 4px;
+}
+
+.fa-msg--user .fa-msg__time { text-align: right; }
+
+/* ─── Thinking indicator ─────────────────────────────────────────────────── */
+.fa-thinking {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.fa-thinking__dots {
+  display: flex;
+  gap: 4px;
+  padding: 10px 14px;
+  background: #F5F3EE;
+  border: 1px solid #E4E0D8;
+  border-radius: 14px;
+  border-top-left-radius: 4px;
+}
+
+.fa-thinking__dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #6366f1;
+  animation: fa-bounce 1.2s ease-in-out infinite;
+}
+
+.fa-thinking__dot:nth-child(2) { animation-delay: 0.2s; }
+.fa-thinking__dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes fa-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30%            { transform: translateY(-5px); opacity: 1; }
+}
+
+/* ─── Chat input bar ─────────────────────────────────────────────────────── */
+.fa-input-bar {
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid #E4E0D8;
+  background: #fafaf9;
+}
+
+.fa-input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid #E4E0D8;
+  border-radius: 10px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: #111110;
+  outline: none;
+  resize: none;
+  line-height: 1.5;
+  transition: border-color 0.15s;
+}
+
+.fa-input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.08); }
+.fa-input::placeholder { color: #9CA3AF; }
+
+.fa-send-btn {
+  width: 40px; height: 40px;
+  display: grid; place-items: center;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.15s, opacity 0.15s;
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+
+.fa-send-btn:hover:not(:disabled) { transform: scale(1.05); }
+.fa-send-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* ─── Suggestions ────────────────────────────────────────────────────────── */
+.fa-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 12px 20px;
+  border-top: 1px solid #E4E0D8;
+  background: #fafaf9;
+}
+
+.fa-suggestion-btn {
+  padding: 5px 12px;
+  border: 1px solid #E4E0D8;
+  border-radius: 20px;
+  background: #fff;
+  font-size: 12px;
+  color: #374151;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.fa-suggestion-btn:hover {
+  border-color: #6366f1;
+  background: rgba(99,102,241,0.04);
+  color: #6366f1;
+}
+
+/* ─── Right sidebar panels ───────────────────────────────────────────────── */
+.fa-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ─── Portfolio card ─────────────────────────────────────────────────────── */
+.fa-portfolio {
+  padding: 16px 20px;
+}
+
+.fa-portfolio__total {
+  font-size: 26px;
+  font-weight: 800;
+  color: #111110;
+  margin: 4px 0 12px;
+  letter-spacing: -0.5px;
+}
+
+.fa-portfolio__assets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fa-asset-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #F5F3EE;
+  border-radius: 10px;
+  border: 1px solid #E4E0D8;
+}
+
+.fa-asset-row__icon {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.fa-asset-row--eth .fa-asset-row__icon { background: #dbeafe; color: #1d4ed8; }
+.fa-asset-row--usdc .fa-asset-row__icon { background: #dcfce7; color: #15803d; }
+.fa-asset-row--native .fa-asset-row__icon { background: #ede9fe; color: #7c3aed; }
+
+.fa-asset-row__info { flex: 1; min-width: 0; }
+.fa-asset-row__sym { font-size: 13px; font-weight: 700; color: #111110; }
+.fa-asset-row__bal { font-size: 11px; color: #9CA3AF; }
+
+.fa-asset-row__right { text-align: right; }
+.fa-asset-row__usd { font-size: 13px; font-weight: 700; color: #111110; }
+.fa-asset-row__alloc { font-size: 11px; color: #6366f1; font-weight: 600; }
+
+.fa-alloc-bar {
+  width: 100%;
+  height: 4px;
+  background: #E4E0D8;
+  border-radius: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.fa-alloc-bar__fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #22c55e);
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+
+/* ─── Price chips ────────────────────────────────────────────────────────── */
+.fa-prices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 20px;
+}
+
+.fa-price-chip {
+  flex: 1;
+  min-width: 80px;
+  padding: 8px 10px;
+  background: #F5F3EE;
+  border: 1px solid #E4E0D8;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.fa-price-chip__label { font-size: 10px; color: #9CA3AF; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.fa-price-chip__value { font-size: 14px; font-weight: 800; color: #111110; margin-top: 2px; }
+.fa-price-chip__stale { font-size: 10px; color: #f59e0b; margin-top: 2px; }
+
+/* ─── Aave card ──────────────────────────────────────────────────────────── */
+.fa-aave {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fa-aave__apy {
+  font-size: 28px;
+  font-weight: 800;
+  color: #22c55e;
+  letter-spacing: -0.5px;
+}
+
+.fa-aave__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12.5px;
+}
+
+.fa-aave__row-label { color: #9CA3AF; }
+.fa-aave__row-val   { font-weight: 600; color: #374151; }
+
+.fa-risk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.fa-risk-badge--LOW    { background: #dcfce7; color: #15803d; }
+.fa-risk-badge--MEDIUM { background: #fef9c3; color: #854d0e; }
+.fa-risk-badge--HIGH   { background: #fee2e2; color: #b91c1c; }
+.fa-risk-badge--UNKNOWN{ background: #f3f4f6; color: #6b7280; }
+
+/* ─── Proposal card ──────────────────────────────────────────────────────── */
+.fa-proposal {
+  margin: 0 20px 20px;
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(99,102,241,0.04) 0%, rgba(139,92,246,0.04) 100%);
+  border: 1.5px solid rgba(99,102,241,0.25);
+  border-radius: 14px;
+}
+
+.fa-proposal__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111110;
+  margin: 0 0 8px;
+}
+
+.fa-proposal__action {
+  font-size: 18px;
+  font-weight: 800;
+  color: #6366f1;
+  margin: 0 0 10px;
+}
+
+.fa-proposal__row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.fa-proposal__row-label { color: #9CA3AF; }
+.fa-proposal__row-val   { font-weight: 600; color: #374151; }
+
+.fa-proposal__expires {
+  font-size: 11px;
+  color: #f59e0b;
+  margin-top: 8px;
+}
+
+.fa-proposal__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.fa-btn-confirm {
+  flex: 1;
+  padding: 10px;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #fff;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.15s, opacity 0.15s;
+}
+
+.fa-btn-confirm:hover:not(:disabled) { transform: scale(1.02); }
+.fa-btn-confirm:disabled { opacity: 0.5; cursor: default; }
+
+.fa-btn-reject {
+  padding: 10px 16px;
+  background: #fff;
+  color: #ef4444;
+  border: 1.5px solid #ef4444;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.fa-btn-reject:hover { background: #fee2e2; }
+
+/* ─── Info bar (tool calls, status) ─────────────────────────────────────── */
+.fa-info-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 20px;
+  background: rgba(99,102,241,0.04);
+  border-top: 1px solid rgba(99,102,241,0.12);
+  font-size: 11px;
+  color: #6366f1;
+  font-weight: 500;
+}
+
+.fa-tool-badge {
+  padding: 2px 7px;
+  background: rgba(99,102,241,0.1);
+  border-radius: 10px;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+/* ─── Empty state ────────────────────────────────────────────────────────── */
+.fa-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+  text-align: center;
+  color: #9CA3AF;
+}
+
+.fa-empty__icon {
+  width: 52px; height: 52px;
+  display: grid; place-items: center;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.08));
+  font-size: 24px;
+  margin-bottom: 4px;
+}
+
+.fa-empty__title  { font-size: 14px; font-weight: 700; color: #374151; }
+.fa-empty__sub    { font-size: 12.5px; max-width: 240px; line-height: 1.5; }
+
+/* ─── Load btn ───────────────────────────────────────────────────────────── */
+.fa-load-btn {
+  width: 100%;
+  padding: 9px;
+  background: #F5F3EE;
+  border: 1px solid #E4E0D8;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #374151;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.fa-load-btn:hover:not(:disabled) { background: #ede9fe; color: #6366f1; border-color: #6366f1; }
+.fa-load-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ─── Section label ──────────────────────────────────────────────────────── */
+.fa-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #9CA3AF;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 10px 20px 4px;
+}
+
+/* ─── Spinner (inline) ───────────────────────────────────────────────────── */
+.fa-spin {
+  display: inline-block;
+  animation: fa-rotate 0.8s linear infinite;
+}
+
+@keyframes fa-rotate { to { transform: rotate(360deg); } }
+
+/* ─── Status pill ────────────────────────────────────────────────────────── */
+.fa-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.fa-status--pending  { background: #fef9c3; color: #854d0e; }
+.fa-status--confirmed{ background: #dcfce7; color: #15803d; }
+.fa-status--failed   { background: #fee2e2; color: #b91c1c; }
+.fa-status--expired  { background: #f3f4f6; color: #6b7280; }

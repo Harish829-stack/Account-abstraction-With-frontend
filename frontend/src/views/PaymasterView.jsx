@@ -1,169 +1,44 @@
 import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
-import { ERC20PaymasterABI, IEntryPointABI, ERC20_ABI } from '../utils/abis';
-import { shortenAddress, formatNum, toHex, packUserOp, encodeERC7579Single } from '../utils/helpers';
+import { IEntryPointABI, ERC20_ABI } from '../utils/abis';
+import { shortenAddress, toHex, packUserOp, encodeERC7579Single } from '../utils/helpers';
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import { useToast } from '../context/ToastContext';
-import { DollarSign, ShieldAlert, ArrowUpCircle, Lock, CheckCircle, RotateCcw, Info, Settings, X, Plus, AlertTriangle } from 'lucide-react';
-
+import { DollarSign } from 'lucide-react';
 
 export default function PaymasterView() {
   const { 
-    provider, signer, eoaAddress, smartAccountAddress, paymasterAddress, refreshAllData, env,
-    pmETHBalance, pmDeposit, pmStake, pmTokenSymbol, pmTokenDecimals, loadPaymasterDetails,
-    saETHBalance, saUSDCBalance, saEntryPointDeposit,
-    trackOp, setCurrentView, setGlobalLoading, refreshTrigger, chainId, nativeToken, isAmoy
+    provider, signer, smartAccountAddress, paymasterAddress, env,
+    saETHBalance, saEntryPointDeposit,
+    trackOp, setCurrentView, setGlobalLoading, chainId, nativeToken, refreshTrigger
   } = useAppContext();
   const toast = useToast();
 
-  // Admin State
-  const [pmOwner, setPmOwner] = useState('');
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  
-  // Admin Action States
-  const [adminDepositAmount, setAdminDepositAmount] = useState('');
-  const [adminStakeAmount, setAdminStakeAmount] = useState('');
-  const [adminEthAddress, setAdminEthAddress] = useState('');
-  const [adminWithdrawEthAmount, setAdminWithdrawEthAmount] = useState('');
-  const [adminTokenAddress, setAdminTokenAddress] = useState('');
-  const [adminTokenAmount, setAdminTokenAmount] = useState('');
-  const [adminUnstakeDelay, setAdminUnstakeDelay] = useState('86400');
-  
-  // Admin Add Token States
-  const [adminNewToken, setAdminNewToken] = useState(env.USDC_TOKEN || '');
-  const [adminNewTokenFeed, setAdminNewTokenFeed] = useState(env.PRICE_FEED || '');
-  const [adminNewTokenMinPrice, setAdminNewTokenMinPrice] = useState('95000000'); // $0.95 with 8 decimals (Chainlink standard)
-
-  // Approve State
   const [approveAmount, setApproveAmount] = useState('10');
   const [approving, setApproving] = useState(false);
+  const [currentAllowance, setCurrentAllowance] = useState('0.00');
 
-  const [selectedApproveToken, setSelectedApproveToken] = useState(env.USDC_TOKEN || '');
-  const [tokenAllowances, setTokenAllowances] = useState({});
-  const [pmTokenBalances, setPmTokenBalances] = useState({});
-
-  const trackedTokens = isAmoy 
-    ? [{ symbol: 'USDC', address: env.USDC_TOKEN, decimals: 6 }]
-    : [
-        { symbol: 'USDC', address: env.USDC_TOKEN, decimals: 6 },
-        { symbol: 'EURC', address: env.EURC_TOKEN, decimals: 6 }
-      ].filter((token) => token.address);
-
-  const fetchTokenData = async () => {
-    if (!signer || !smartAccountAddress || !paymasterAddress) return;
-    const allowances = {};
-    const pmBalances = {};
-    for (const t of trackedTokens) {
-      if (!t.address) continue;
+  useEffect(() => {
+    let active = true;
+    const fetchAllowance = async () => {
+      if (!provider || !smartAccountAddress || !paymasterAddress || !env.USDC_TOKEN) return;
       try {
-        const erc20 = new ethers.Contract(t.address, [
-          "function allowance(address owner, address spender) view returns (uint256)",
-          "function balanceOf(address account) view returns (uint256)"
-        ], provider);
-        const allowance = await erc20.allowance(smartAccountAddress, paymasterAddress);
-        allowances[t.symbol] = ethers.formatUnits(allowance, t.decimals || 6);
-
-        const pmBal = await erc20.balanceOf(paymasterAddress);
-        pmBalances[t.symbol] = ethers.formatUnits(pmBal, t.decimals || 6);
-      } catch {
-        allowances[t.symbol] = "0.0";
-        pmBalances[t.symbol] = "0.0";
+        const usdc = new ethers.Contract(env.USDC_TOKEN, ["function allowance(address, address) view returns (uint256)"], provider);
+        const allowance = await usdc.allowance(smartAccountAddress, paymasterAddress);
+        if (active) setCurrentAllowance(ethers.formatUnits(allowance, 6));
+      } catch (err) {
+        console.warn("Failed to fetch USDC allowance:", err);
       }
-    }
-    setTokenAllowances(allowances);
-    setPmTokenBalances(pmBalances);
-  };
-
-  const fetchPmOwner = async () => {
-    if (!provider || !paymasterAddress) return;
-    try {
-      const pmContract = new ethers.Contract(paymasterAddress, ERC20PaymasterABI, provider);
-      const owner = await pmContract.owner();
-      setPmOwner(owner);
-    } catch (err) {
-      console.error("Error fetching pm owner:", err);
-    }
-  };
-
-  useEffect(() => {
-    fetchTokenData();
-    fetchPmOwner();
-  }, [smartAccountAddress, paymasterAddress, provider, refreshTrigger]);
-
-  useEffect(() => {
-    if (paymasterAddress && provider) {
-      loadPaymasterDetails(paymasterAddress, provider);
-    }
-  }, [paymasterAddress, provider]);
-
-  const executePmAction = async (actionFn, actionName) => {
-    if (!signer || !paymasterAddress) return;
-    setGlobalLoading(true, `Processing ${actionName}...`);
-    try {
-       const pmContract = new ethers.Contract(paymasterAddress, ERC20PaymasterABI, signer);
-       const tx = await actionFn(pmContract);
-       await tx.wait();
-       await refreshAllData();
-       toast.success(`${actionName} completed successfully!`);
-    } catch (err) {
-       if (err.code === 4001) toast.error("Transaction rejected by user");
-       else toast.error(err.reason || err.message || `${actionName} failed`);
-    } finally {
-       setGlobalLoading(false);
-     }
-  };
-
-  // --- Admin Handlers ---
-  const handleAdminDeposit = async () => {
-    if (!adminDepositAmount) return;
-    await executePmAction(async (pm) => {
-        const data = pm.interface.encodeFunctionData("deposit");
-        return signer.sendTransaction({
-            to: paymasterAddress,
-            data: data,
-            value: ethers.parseEther(adminDepositAmount)
-        });
-    }, `Deposit ${nativeToken} to EntryPoint`);
-  };
-
-  const handleAdminStake = async () => {
-    if (!adminStakeAmount || !adminUnstakeDelay) return;
-    await executePmAction(async (pm) => {
-        const data = pm.interface.encodeFunctionData("addStake", [adminUnstakeDelay]);
-        return signer.sendTransaction({
-            to: paymasterAddress,
-            data: data,
-            value: ethers.parseEther(adminStakeAmount)
-        });
-    }, "Stake ETH to EntryPoint");
-  };
-
-  const handleAdminWithdrawETH = async () => {
-    if (!adminWithdrawEthAmount || !adminEthAddress) return;
-    await executePmAction(async (pm) => pm.withdrawTo(adminEthAddress.trim(), ethers.parseEther(adminWithdrawEthAmount.trim())), "Withdraw ETH from EntryPoint");
-  };
-
-  const handleAdminWithdrawToken = async () => {
-    if (!adminTokenAmount || !adminTokenAddress || !adminEthAddress) return;
-    await executePmAction(async (pm) => {
-        const tokenAddr = adminTokenAddress.trim();
-        const toAddr = adminEthAddress.trim();
-        const decimals = await (new ethers.Contract(tokenAddr, ERC20_ABI, provider)).decimals();
-        return pm.withdrawToken(tokenAddr, toAddr, ethers.parseUnits(adminTokenAmount.trim(), Number(decimals)));
-    }, "Withdraw Token from Paymaster");
-  };
-
-  const handleAdminAddToken = async () => {
-    if (!adminNewToken || !adminNewTokenFeed || !adminNewTokenMinPrice) return;
-    await executePmAction(async (pm) => pm.addToken(adminNewToken, adminNewTokenFeed, BigInt(adminNewTokenMinPrice)), "Add Token Support");
-  };
+    };
+    fetchAllowance();
+    return () => { active = false; };
+  }, [provider, smartAccountAddress, paymasterAddress, env.USDC_TOKEN, refreshTrigger]);
 
   const handleApprovePaymaster = async () => {
-    const targetToken = selectedApproveToken || env.USDC_TOKEN;
-    console.log("[Approve-V3] Starting approval flow via Smart Account...");
+    const targetToken = env.USDC_TOKEN;
     if (!smartAccountAddress || !approveAmount || !signer || !paymasterAddress || !targetToken) {
-      toast.error("Missing inputs: Smart Account, Paymaster, or Token address.");
+      toast.error("Missing inputs: Smart Account, Paymaster, or USDC Token address.");
       return;
     }
     setApproving(true);
@@ -171,16 +46,13 @@ export default function PaymasterView() {
     try {
       const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider, chainId);
 
-      // EntryPoint gas prefund (maxCost) validation check
-      const totalGasLimit = 150000n + 150000n + 50000n; // callGasLimit + verificationGasLimit + preVerificationGas
+      const totalGasLimit = 150000n + 150000n + 50000n;
       const requiredPrefundWei = totalGasLimit * maxFeePerGas;
       const requiredPrefundEth = parseFloat(ethers.formatEther(requiredPrefundWei));
 
       const saBalanceEth = parseFloat(ethers.formatEther(saETHBalance || "0"));
       const saDepositEth = parseFloat(ethers.formatEther(saEntryPointDeposit || "0"));
       const totalAvailableEth = saBalanceEth + saDepositEth;
-
-      console.log(`[Prefund-Check] Required max prefund: ${requiredPrefundEth.toFixed(5)} ETH. Available: ${totalAvailableEth.toFixed(5)} ETH.`);
 
       if (totalAvailableEth < requiredPrefundEth) {
         toast.error(
@@ -191,8 +63,7 @@ export default function PaymasterView() {
         return;
       }
 
-      const targetDecimals = trackedTokens.find(t => t.address.toLowerCase() === targetToken.toLowerCase())?.decimals || pmTokenDecimals || 6;
-      const parsedAmount = ethers.parseUnits(approveAmount, targetDecimals);
+      const parsedAmount = ethers.parseUnits(approveAmount, 6); // USDC uses 6 decimals
       
       const erc20 = new ethers.Interface(ERC20_ABI);
       const inner = erc20.encodeFunctionData("approve", [paymasterAddress, parsedAmount]);
@@ -213,7 +84,7 @@ export default function PaymasterView() {
         preVerificationGas: "0x0",
         maxFeePerGas: toHex(maxFeePerGas),
         maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
-        paymaster: "0x", // SA pays gas in ETH for its own approval
+        paymaster: "0x",
         paymasterVerificationGasLimit: "0x",
         paymasterPostOpGasLimit: "0x",
         paymasterData: "0x",
@@ -233,11 +104,10 @@ export default function PaymasterView() {
       const hash = await entryPoint.getUserOpHash(packUserOp(userOp));
       userOp.signature = await signer.signMessage(ethers.getBytes(hash));
 
-      toast.info("Sending UserOp to approve Paymaster...");
+      toast.info("Sending UserOp to approve Gas Sponsorship...");
       const opHash = await sendUserOperation(userOp, chainId);
 
-      // Fire and forget — global tracker handles confirmation in background
-      trackOp(opHash, 'USDC Approval to Paymaster', { calldata: userOp.callData });
+      trackOp(opHash, 'USDC Gas Sponsorship Approval', { calldata: userOp.callData });
       toast.withAction(
         'UserOp submitted to bundler!',
         'View in History →',
@@ -246,245 +116,49 @@ export default function PaymasterView() {
       );
     } catch (err) {
       if (err.code === 4001) toast.error("Transaction rejected by user");
-      else toast.error(err.reason || err.message || "Failed to approve Paymaster");
+      else toast.error(err.reason || err.message || "Failed to approve Gas Sponsorship");
     } finally {
       setApproving(false);
       setGlobalLoading(false);
     }
   };
 
-  const completedSteps = [];
-  if (paymasterAddress) completedSteps.push(1);
-  // Approval is hard to check without custom hook, but we can assume if they have a balance or moved manually
-  if (pmDeposit !== "0" || pmStake !== "0") completedSteps.push(3);
-
   return (
-    <div className="flex flex-col gap-6 max-w-4xl mx-auto pb-10">
-      
-      {/* Details Section (Shown under navbar if connected) */}
-      <div className="flex flex-col gap-4">
-        {/* Smart Account Banner for context */}
-        {smartAccountAddress && (
-          <div className="glass-card flex justify-between items-center py-3 bg-secondary/5 border-secondary/20">
-             <div className="flex items-center gap-3">
-               <ShieldAlert className="text-secondary" size={20} />
-               <div>
-                  <h4 className="text-sm font-bold m-0 leading-tight">Linked Smart Account</h4>
-                  <span className="text-xs text-muted font-mono">{smartAccountAddress}</span>
-               </div>
-             </div>
-             <div className="flex gap-6">
-               <div className="text-right">
-                  <div className={`text-[10px] text-muted uppercase tracking-wider`}>SA {nativeToken}</div>
-                  <div className="text-xs font-bold text-gradient-primary">{formatNum(saETHBalance, 18)} <span className="font-normal text-muted">{nativeToken}</span></div>
-               </div>
-               <div className="text-right">
-                  <div className="text-[10px] text-muted uppercase tracking-wider">SA {pmTokenSymbol}</div>
-                  <div className="text-xs font-bold text-gradient-secondary">{formatNum(saUSDCBalance, 6)} <span className="font-normal text-muted">{pmTokenSymbol}</span></div>
-               </div>
-             </div>
-          </div>
-        )}
-
-        {paymasterAddress && (
-          <div className="glass-card border border-primary/30 shadow-[0_0_40px_rgba(22, 163, 74,0.18)] relative overflow-hidden mb-2">
-            <div className="absolute top-0 left-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl -ml-20 -mt-20 pointer-events-none"></div>
-            <div className="flex justify-between items-center bg-primary/10 p-4 rounded-xl border border-primary/20 mb-4 z-10 relative">
-              <div className="flex items-center gap-3">
-                <DollarSign className="text-primary" size={28} />
-                <div>
-                   <h3 className="text-xl font-bold m-0 leading-tight text-gradient">Paymaster Details Dashboard</h3>
-                   <span className="text-sm text-primary/80 font-mono tracking-wide">Active: {shortenAddress(paymasterAddress)}</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                {((pmOwner && eoaAddress && pmOwner.toLowerCase() === eoaAddress.toLowerCase()) || isAmoy) && (
-                   <button 
-                     className="btn btn-secondary flex items-center gap-2 py-1.5 px-3"
-                     onClick={() => setShowAdminModal(true)}
-                   >
-                     <Settings size={16} /> Admin
-                   </button>
-                )}
-                <button 
-                  className="p-2 rounded-full bg-white/5 border border-white/10 shadow-sm hover:bg-white/10 hover:border-white/20 transition-all text-muted hover:text-white"
-                  onClick={refreshAllData}
-                  title="Refresh Paymaster data"
-                >
-                  <RotateCcw size={18} />
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 z-10 relative">
-              <div className="glass-stat-card group">
-                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">EP Deposit</span>
-                <span className="font-bold text-xl text-gradient-primary">{formatNum(pmDeposit, 18)}</span>
-              </div>
-              <div className="glass-stat-card group">
-                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">EP Stake</span>
-                <span className="font-bold text-xl text-gradient-primary">{formatNum(pmStake, 18)}</span>
-              </div>
-              <div className="glass-stat-card group">
-                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">PM {nativeToken}</span>
-                <span className="font-bold text-xl text-gradient-primary">{formatNum(pmETHBalance, 18)}</span>
-              </div>
-              {trackedTokens?.map(t => {
-                const pmBal = pmTokenBalances[t.symbol] || "0.0";
-                const approvedAmt = tokenAllowances[t.symbol] || "0.0";
-                return (
-                  <div key={t.address} className="glass-stat-card group">
-                    <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">PM {t.symbol} / Approved</span>
-                    <span className="font-bold text-xl text-gradient-secondary truncate">{formatNum(pmBal, 0)} / <span className="text-sm font-normal text-white">{approvedAmt}</span></span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-      {/* Paymaster Approval Flow */}
-      <div className="glass-card max-w-2xl mx-auto animate-fade-in border-secondary/30">
-        <h3 className="mb-2 flex items-center gap-2 text-secondary"><CheckCircle size={28} /> Approve Paymaster</h3>
-        <div className="bg-secondary/5 border border-secondary/10 p-4 rounded-lg mb-6">
-           <p className="info-callout text-sm text-muted mb-0">
-             <Info className="flex-shrink-0 text-secondary" />
-             <span>
-                <b>Why approval?</b> The Paymaster needs permission to take tokens from your wallet to pay for your Smart Account's transaction gas. 
-                This enables "gasless" transactions where you pay in tokens instead of {nativeToken}.
-             </span>
+    <div className="flex flex-col gap-6 w-full max-w-[1720px] mx-auto h-[calc(100vh-140px)] overflow-y-auto pb-10 px-4 pt-6">
+      <div className="glass-card w-full max-w-[1720px] mx-auto animate-fade-in border-stone-300 shadow-md">
+        <h3 className="mb-2 flex items-center gap-2 text-secondary text-2xl font-bold"><DollarSign size={28} /> Gas Sponsorship</h3>
+        <div className="bg-secondary/5 border border-secondary/10 p-5 rounded-lg mb-6">
+           <p className="text-sm text-muted mb-0 leading-relaxed">
+             Enable <b>Gas Sponsorship</b> to pay for transaction fees using <b>USDC</b> instead of native {nativeToken}. 
+             You simply need to grant an allowance to the Paymaster contract, which will automatically deduct the required USDC for your gasless transactions.
            </p>
         </div>
         
-        <div className="flex flex-col gap-4 p-4 border border-black/5 bg-white/5 rounded-xl shadow-sm">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="text-sm text-muted mb-2 block font-semibold">Asset</label>
-              <select 
-                className="input-field w-full py-2 text-base font-semibold" 
-                value={selectedApproveToken} 
-                onChange={e=>setSelectedApproveToken(e.target.value)}
-              >
-                {trackedTokens?.map(t => (
-                  <option key={t.address} value={t.address}>{t.symbol}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex-1">
-              <label className="text-sm text-muted mb-2 block font-semibold">Amount</label>
+        <div className="flex flex-col gap-4 p-6 border border-white/5 bg-white/5 rounded-xl shadow-sm">
+          <div className="flex justify-between items-center bg-secondary/10 px-4 py-3 rounded-lg border border-secondary/20 mb-2">
+             <span className="text-sm font-semibold text-secondary/90">Remaining Sponsored Gas</span>
+             <span className="text-lg font-bold text-gradient-secondary">{Number(currentAllowance).toFixed(2)} USDC</span>
+          </div>
+
+          <div>
+            <label className="text-sm text-muted mb-2 block font-semibold">Update USDC Allowance</label>
+            <div className="relative">
               <input 
                 type="number" 
-                className="input-field w-full py-2 text-base font-bold" 
-                placeholder="0.00" 
+                className="input-field w-full py-3 pl-4 pr-16 text-lg font-bold" 
+                placeholder="10.00" 
                 value={approveAmount} 
                 onChange={e=>setApproveAmount(e.target.value)} 
               />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 font-bold text-muted">USDC</span>
             </div>
+            <p className="text-xs text-muted mt-3">This is the maximum amount of USDC the Paymaster can use to sponsor your transaction fees over time.</p>
           </div>
-          <button className={`btn btn-primary w-full mt-2 ${approving ? 'opacity-50 cursor-not-allowed' : ''}`} onClick={handleApprovePaymaster} disabled={approving || !approveAmount}>
-            {approving ? "Approving..." : "Approve from Smart Account"}
+          <button className={`btn btn-primary w-full mt-2 py-3 text-base font-bold ${approving ? 'opacity-50 cursor-not-allowed' : ''}`} onClick={handleApprovePaymaster} disabled={approving || !approveAmount}>
+            {approving ? "Approving USDC..." : "Approve Gas Sponsorship"}
           </button>
         </div>
       </div>
-
-      {showAdminModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="glass-card max-w-2xl w-full max-h-[90vh] overflow-y-auto border-secondary/30 relative shadow-2xl">
-            <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/10">
-              <h2 className="text-xl font-bold flex items-center gap-2 text-gradient-secondary">
-                <Settings size={24} className="text-secondary" /> Paymaster Admin Controls
-              </h2>
-              <button onClick={() => setShowAdminModal(false)} className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-muted transition-colors">
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-8">
-              {/* Stake & Deposit */}
-              <section>
-                <h3 className="text-sm font-semibold uppercase tracking-widest text-muted mb-3 flex items-center gap-2"><Lock size={16}/> EntryPoint {nativeToken}</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="p-4 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-3">
-                    <label className="text-xs text-muted mb-[-4px]">Deposit Amount</label>
-                    <input type="number" className="input-field py-2 text-sm" placeholder={`0.01 ${nativeToken}`} value={adminDepositAmount} onChange={e=>setAdminDepositAmount(e.target.value)} />
-                    <button className="btn btn-secondary w-full text-sm py-2 mt-1" onClick={handleAdminDeposit} disabled={!adminDepositAmount}>Deposit {nativeToken}</button>
-                  </div>
-                  <div className="p-4 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-3">
-                    <div className="flex gap-2">
-                      <div className="flex-1">
-                        <label className="text-xs text-muted mb-[-4px]">Stake Amount</label>
-                        <input type="number" className="input-field py-2 text-sm w-full" placeholder={`0.01 ${nativeToken}`} value={adminStakeAmount} onChange={e=>setAdminStakeAmount(e.target.value)} />
-                      </div>
-                      <div className="flex-1">
-                        <label className="text-xs text-muted mb-[-4px]">Unstake Delay (Sec)</label>
-                        <input type="number" className="input-field py-2 text-sm w-full" placeholder="86400" value={adminUnstakeDelay} onChange={e=>setAdminUnstakeDelay(e.target.value)} />
-                      </div>
-                    </div>
-                    <button className="btn btn-secondary w-full text-sm py-2 mt-1" onClick={handleAdminStake} disabled={!adminStakeAmount || !adminUnstakeDelay}>Stake {nativeToken}</button>
-                  </div>
-                </div>
-              </section>
-
-              {/* Withdrawals */}
-              <section>
-                <h3 className="text-sm font-semibold uppercase tracking-widest text-muted mb-3 flex items-center gap-2"><ArrowUpCircle size={16}/> Withdrawals</h3>
-                <div className="p-4 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-4">
-                  <div className="flex gap-4">
-                     <div className="flex-1">
-                        <label className="text-xs text-muted mb-1 block">Recipient Address</label>
-                        <input type="text" className="input-field py-2 text-sm font-mono" placeholder="0x..." value={adminEthAddress} onChange={e=>setAdminEthAddress(e.target.value)} />
-                     </div>
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-4 items-end">
-                     <div className="flex-1 w-full">
-                        <label className="text-xs text-muted mb-1 block">{nativeToken} Amount to Withdraw (From EntryPoint)</label>
-                        <div className="flex gap-2">
-                          <input type="number" className="input-field py-2 text-sm w-1/3" placeholder="0.01" value={adminWithdrawEthAmount} onChange={e=>setAdminWithdrawEthAmount(e.target.value)} />
-                          <button className="btn btn-secondary py-2 px-4 whitespace-nowrap text-sm flex-1" onClick={handleAdminWithdrawETH} disabled={!adminWithdrawEthAmount || !adminEthAddress}>Withdraw {nativeToken}</button>
-                        </div>
-                     </div>
-                     <div className="flex-1 w-full">
-                        <label className="text-xs text-muted mb-1 block">ERC20 Token & Amount to Withdraw</label>
-                        <div className="flex gap-2">
-                          <input type="text" className="input-field py-2 text-sm font-mono w-1/2" placeholder="Token 0x..." value={adminTokenAddress} onChange={e=>setAdminTokenAddress(e.target.value)} />
-                          <input type="number" className="input-field py-2 text-sm w-1/4" placeholder="Amt" value={adminTokenAmount} onChange={e=>setAdminTokenAmount(e.target.value)} />
-                          <button className="btn btn-secondary py-2 px-3 text-sm flex-1" onClick={handleAdminWithdrawToken} disabled={!adminTokenAddress || !adminTokenAmount || !adminEthAddress}>Withdraw Token</button>
-                        </div>
-                     </div>
-                  </div>
-                </div>
-              </section>
-
-              {/* Add Token Support */}
-              <section>
-                <h3 className="text-sm font-semibold uppercase tracking-widest text-muted mb-3 flex items-center gap-2"><Plus size={16}/> Add Payment Token</h3>
-                <div className="p-4 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-4">
-                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-xs text-muted mb-1 block">Token Address</label>
-                        <input type="text" className="input-field py-2 text-sm font-mono" placeholder="0x..." value={adminNewToken} onChange={e=>setAdminNewToken(e.target.value)} />
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted mb-1 block">Chainlink USD Feed</label>
-                        <input type="text" className="input-field py-2 text-sm font-mono" placeholder="0x..." value={adminNewTokenFeed} onChange={e=>setAdminNewTokenFeed(e.target.value)} />
-                      </div>
-                   </div>
-                   <div>
-                      <label className="text-xs text-muted mb-1 block">Min Token Price (in feed decimals, e.g. 95000000 for $0.95 w/ 8 decimals — Chainlink standard)</label>
-                      <input type="number" className="input-field py-2 text-sm" placeholder="95000000" value={adminNewTokenMinPrice} onChange={e=>setAdminNewTokenMinPrice(e.target.value)} />
-                   </div>
-                   <button className="btn btn-secondary w-full text-sm py-2 mt-2" onClick={handleAdminAddToken} disabled={!adminNewToken || !adminNewTokenFeed || !adminNewTokenMinPrice}>Add Token Configuration</button>
-                   <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-md mt-2 flex gap-3 text-orange-200/80 text-xs items-start">
-                      <AlertTriangle size={16} className="text-orange-400 flex-shrink-0 mt-0.5" />
-                      <p>Token must have a valid Chainlink feed. Decimals will be fetched automatically from the token and feed contracts.</p>
-                   </div>
-                </div>
-              </section>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
-
 }

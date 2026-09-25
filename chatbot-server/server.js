@@ -465,6 +465,26 @@ app.post('/api/chat', async (req, res) => {
         return res.status(400).json({ error: 'Missing agentAddress' });
     }
 
+    let rpcUrl = process.env.SEPOLIA_RPC_URL;
+    let bundlerUrl = process.env.BUNDLER_URL;
+    let activeChainInfo = null;
+    
+    if (agentStoreApiUrl && chainId) {
+        try {
+            const configRes = await axios.get(`${agentStoreApiUrl}/config`);
+            const chainInfo = configRes.data.chains.find(c => c.chainId === Number(chainId));
+            if (chainInfo) {
+                rpcUrl = chainInfo.rpcUrl;
+                bundlerUrl = chainInfo.bundlerUrl;
+                activeChainInfo = chainInfo;
+            }
+        } catch (e) {
+            console.warn("Failed to fetch chain config, falling back to Sepolia defaults", e.message);
+        }
+    }
+    const chainProvider = new ethers.JsonRpcProvider(rpcUrl);
+
+
     const config = agentStoreApiUrl
         ? await getStoredAgent(smartAccountAddress, Number(chainId || defaultChainId), agentAddress).catch((error) => {
             console.error('[Agent] Failed to load persisted agent:', error.response?.data || error.message);
@@ -523,7 +543,7 @@ app.post('/api/chat', async (req, res) => {
                     parameters: {
                         type: 'object',
                         properties: {
-                            tokenAddress: { type: 'string', description: 'Address of ERC20 token to transfer. Must use 0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238 for USDC on Sepolia.' },
+                            tokenAddress: { type: 'string', description: 'Address of ERC20 token to transfer. Must use 0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E for USDC on Sepolia/Arbitrum.' },
                             recipient: { type: 'string', description: 'Address of the recipient' },
                             amount: { type: 'string', description: 'Amount of tokens in human-readable format (e.g., "0.00005" or "1.5")' },
                             repeat: { type: 'string', description: 'Number of times to repeat this operation independently (e.g., "1")' }
@@ -532,21 +552,20 @@ app.post('/api/chat', async (req, res) => {
                     }
                 }
             });
-        } else if (config.scope === 'custom') {
+        } else if (config.scope === 'native') {
             tools.push({
                 type: 'function',
                 function: {
-                    name: 'call_contract',
-                    description: 'Call a generic smart contract',
+                    name: 'transfer_eth',
+                    description: 'Transfer native ETH to a recipient address',
                     parameters: {
                         type: 'object',
                         properties: {
-                            target: { type: 'string', description: 'Contract address to call' },
-                            calldata: { type: 'string', description: 'Hex-encoded calldata' },
-                            value: { type: 'string', description: 'Native ETH value to send (in Wei)' },
+                            recipient_address: { type: 'string', description: 'The recipient wallet address (0x...)' },
+                            amount_eth: { type: 'string', description: 'Amount of ETH to send in human-readable format (e.g., "0.001")' },
                             repeat: { type: 'string', description: 'Number of times to repeat this operation independently (e.g., "1")' }
                         },
-                        required: ['target', 'calldata', 'value']
+                        required: ['recipient_address', 'amount_eth']
                     }
                 }
             });
@@ -627,6 +646,25 @@ app.post('/api/chat', async (req, res) => {
                 return res.json({ reply: `Rejected: Amount exceeds max allowed (${config.maxAmount}).`, ops: [] });
             }
 
+        } else if (toolCall.function.name === 'transfer_eth') {
+            if (!ethers.isAddress(args.recipient_address)) {
+                return res.json({ reply: `Invalid recipient address: ${args.recipient_address}`, ops: [] });
+            }
+            let amountInWei;
+            try {
+                amountInWei = ethers.parseEther(args.amount_eth.toString());
+            } catch (e) {
+                return res.json({ reply: `Error parsing amount. Please use a valid number like "0.001".`, ops: [] });
+            }
+            // Off-chain limit check against agent's max allowed value
+            if (amountInWei > BigInt(ethers.parseEther(config.maxAmount || '0'))) {
+                return res.json({ reply: `Rejected: Amount ${args.amount_eth} ETH exceeds max allowed (${config.maxAmount} ETH).`, ops: [] });
+            }
+            // Native ETH transfer: target = recipient, value = amount, callData = 0x
+            target = args.recipient_address;
+            innerCallData = '0x';
+            value = amountInWei;
+
         } else if (toolCall.function.name === 'call_contract') {
             target = args.target;
             innerCallData = args.calldata;
@@ -646,7 +684,7 @@ app.post('/api/chat', async (req, res) => {
         const entryPoint = new ethers.Contract(
             process.env.ENTRY_POINT,
             ['function getNonce(address sender, uint192 key) view returns (uint256)'],
-            provider
+            chainProvider
         );
         
         let baseNonce;
@@ -664,27 +702,34 @@ app.post('/api/chat', async (req, res) => {
             const currentNonce = baseNonce + BigInt(i);
             
             try {
+                console.log(`Sending UserOp using chainId: ${chainId}, rpcUrl: ${chainProvider._getConnection().url}, bundlerUrl: ${bundlerUrl}`);
                 const opHash = await buildAndSendAgentOp(
                     agentWallet,
-                    provider,
+                    chainProvider,
                     smartAccountAddress,
                     callData,
                     process.env.ENTRY_POINT,
                     process.env.SESSION_KEY_VALIDATOR,
-                    currentNonce
+                    currentNonce,
+                    bundlerUrl
                 );
                 
+                // Wait for the UserOp to be completely mined before sending the next one
+                console.log(`Waiting for UserOp ${opHash} to be mined...`);
+                const receipt = await waitForUserOp(opHash, 90000, bundlerUrl);
+                console.log(`UserOp ${opHash} mined successfully!`);
+                
+                let txUrl = `https://jiffyscan.xyz/userOpHash/${opHash}`;
+                if (receipt && receipt.receipt && receipt.receipt.transactionHash) {
+                    const explorerUrl = activeChainInfo?.explorerUrl || 'https://sepolia.etherscan.io';
+                    txUrl = `${explorerUrl}/tx/${receipt.receipt.transactionHash}`;
+                }
+
                 opsResults.push({
                     iteration: i + 1,
                     opHash: opHash,
-                    txUrl: `https://jiffyscan.xyz/userOpHash/${opHash}?network=sepolia`
+                    txUrl: txUrl
                 });
-                
-                // Wait for the UserOp to be completely mined before sending the next one
-                // This prevents "AA25 invalid account nonce" errors from the bundler during estimation
-                console.log(`Waiting for UserOp ${opHash} to be mined...`);
-                await waitForUserOp(opHash);
-                console.log(`UserOp ${opHash} mined successfully!`);
                 
             } catch (err) {
                 console.error(`Error on iteration ${i}:`, err);

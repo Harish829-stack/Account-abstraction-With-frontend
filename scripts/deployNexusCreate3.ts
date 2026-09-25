@@ -5,7 +5,7 @@ async function main() {
   const { ethers } = await hre.network.connect();
   const [deployer] = await ethers.getSigners();
   const ENTRY_POINT = "0x0000000071727De22E5E9d8BAf0edAc6f37da032";
-  const CREATE3_FACTORY_ADDRESS = "0xb31fd259D799Fa4AdAdc64726B75E6195D635C59";
+  const CREATE3_FACTORY_ADDRESS = process.env.CREATE3_FACTORY || "0xb31fd259D799Fa4AdAdc64726B75E6195D635C59";
 
   console.log("Deploying Nexus via CREATE3 deterministically with account:", deployer.address);
 
@@ -24,7 +24,7 @@ async function main() {
       const creationCode = tx.data;
       
       console.log(`Deploying ${contractName} to ${expectedAddress}...`);
-      const deployTx = await create3Factory.deploy(salt, creationCode);
+      const deployTx = await create3Factory.deploy(salt, creationCode, { gasLimit: 8000000 });
       await deployTx.wait();
       console.log(`${contractName} deployed successfully!`);
     } else {

@@ -74,6 +74,10 @@ model SmartAccount {
   guardians   Guardian[]
   userOps     UserOperation[]
 
+  // Financial agent relations
+  financialProposals TransactionProposal[]
+  financialSnapshots FinancialSnapshot[]
+
   @@unique([chainId, address])
 }
 
@@ -140,4 +144,67 @@ model MultisigProposal {
   signatures     Json
   status         String
   createdAt      DateTime @default(now())
+}
+
+// ─── NEW: Financial Agent Models ──────────────────────────────────────────────
+
+/// Transaction proposal lifecycle:
+/// AWAITING_CONFIRMATION → CONFIRMED | CANCELLED | EXPIRED
+/// CONFIRMED → REVALIDATING → SIMULATING → EXECUTING → SUBMITTED → CONFIRMED_ONCHAIN | FAILED
+model TransactionProposal {
+  id                  String   @id @default(cuid())
+
+  userId              String
+  smartAccountAddress String
+  agentAddress        String
+  chainId             Int
+
+  action              String
+  calls               Json
+  displayedSummary    Json
+  financialContext    Json
+
+  status              String   @default("AWAITING_CONFIRMATION")
+  expiresAt           DateTime
+  createdAt           DateTime @default(now())
+  confirmedAt         DateTime?
+  executedAt          DateTime?
+
+  userOpHash          String?
+  transactionHash     String?
+
+  smartAccount        SmartAccount        @relation(fields: [smartAccountAddress, chainId], references: [address, chainId])
+  auditLogs           FinancialAuditLog[]
+
+  @@index([userId, status])
+  @@index([smartAccountAddress, chainId])
+}
+
+/// Portfolio snapshots (optional, stored on demand)
+model FinancialSnapshot {
+  id                  String   @id @default(cuid())
+  userId              String
+  smartAccountAddress String
+  chainId             Int
+  portfolioJson       Json
+  createdAt           DateTime @default(now())
+
+  smartAccount        SmartAccount @relation(fields: [smartAccountAddress, chainId], references: [address, chainId])
+
+  @@index([userId, chainId])
+}
+
+/// Immutable financial audit log
+model FinancialAuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  proposalId String?
+  eventType  String
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  proposal   TransactionProposal? @relation(fields: [proposalId], references: [id])
+
+  @@index([userId, eventType])
+  @@index([proposalId])
 }

@@ -35,7 +35,7 @@ export const CHAIN_CONFIG_SEED: SerializedChainConfig[] = [
       paymaster: env.PAYMASTER || "",
       usdcToken: env.USDC_TOKEN || "",
       eurcToken: "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4",
-      priceFeed: env.PRICE_FEED || "",
+      priceFeed: env.SEPOLIA_PRICE_FEED || "0x694AA1769357215DE4FAC081bf1f309aDC325306",
       multisigProxy: env.MULTISIG_PROXY || ""
     }
   },
@@ -107,6 +107,27 @@ export const CHAIN_CONFIG_SEED: SerializedChainConfig[] = [
     minPriorityFeeWei: "1500000000",
     minFeeWei: "5000000000",
     contracts: {}
+  },
+  {
+    chainId: 421614,
+    name: "Arbitrum Sepolia",
+    isTestnet: true,
+    isActive: true,
+    viewOnly: false,
+    rpcUrl: env.PUBLIC_ARBITRUM_SEPOLIA_RPC_URL || "https://sepolia-rollup.arbitrum.io/rpc",
+    bundlerUrl: env.PUBLIC_ARBITRUM_SEPOLIA_BUNDLER_URL || "",
+    explorerUrl: "https://sepolia.arbiscan.io",
+    explorerApiUrl: "https://api-sepolia.arbiscan.io/api",
+    explorerApiChainId: 421614,
+    nativeCurrency: { name: "Arbitrum Sepolia Ether", symbol: "ETH", decimals: 18 },
+    minPriorityFeeWei: "150000000",
+    minFeeWei: "500000000",
+    contracts: {
+      paymaster: env.PAYMASTER || "",
+      usdcToken: env.USDC_TOKEN || "",
+      priceFeed: env.ARBITRUM_SEPOLIA_PRICE_FEED || "0xd30e2101a97dcbAeBCBC04F14C3f624E67A35165",
+      multisigProxy: env.MULTISIG_PROXY || ""
+    }
   }
 ];
 

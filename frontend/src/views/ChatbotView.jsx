@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
+import axios from 'axios';
 import { useChatbotContext } from '../context/ChatbotContext';
 import { useAppContext } from '../context/AppContext';
 import { ethers } from 'ethers';
 import { SessionKeyValidatorABI, SmartAccountABI } from '../utils/abis';
 import { buildAndSendAccountOp, encodeERC7579Single, encodeERC7579Batch, getActiveSessionKeysOnChain, getPrevValidator } from '../utils/helpers';
 import { estimateUserOperationGas, sendUserOperation, getUserOpReceipt, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
-import { syncPersistedAgents } from '../utils/backendApi';
 import "./agent-ui.css";
 
 /* ---------- icons ---------- */
@@ -88,17 +88,15 @@ const CardHeader = ({ title, subtitle }) => (
   </div>
 );
 
-/* ---------- scope definitions ---------- */
 const SCOPES = [
+  { id: "native",  emoji: "⚡", name: "Native Transfer", desc: "ETH transfers", suggestions: ['Send 0.001 ETH to 0x1234...', 'Send 0.01 ETH to my friend 3 times'] },
   { id: "uniswap", emoji: "🦄", name: "Uniswap V3", desc: "Swaps on Sepolia", suggestions: ['Swap 0.001 ETH for USDC', 'Swap 0.001 ETH for USDC 3 times'] },
-  { id: "erc20",   emoji: "💸", name: "ERC-20",     desc: "USDC transfers", suggestions: ['Send 0.5 USDC to 0x1234...', 'Send 1 USDC to my friend 3 times'] },
-  { id: "custom",  emoji: "⚙️", name: "Custom",     desc: "Contract + selector", suggestions: ['Call the target contract'] },
+  { id: "erc20",   emoji: "💸", name: "ERC-20",     desc: "USDC transfers", suggestions: ['Send 0.5 USDC to 0x1234...', 'Send 1 USDC to my friend 3 times'] }
 ];
 
 const TABS = [
-  { id: "setup",     label: "Configure", step: 1 },
-  { id: "authorize", label: "Authorize", step: 2 },
-  { id: "workspace", label: "Workspace", step: 3 },
+  { id: "setup",     label: "Create Assistant", step: 1 },
+  { id: "workspace", label: "Workspace", step: 2 },
 ];
 
 const DEFAULT_AGENT_VALIDITY_DAYS = "30";
@@ -117,35 +115,33 @@ const formatExpiry = (validUntil) => {
   return new Date(timestamp * 1000).toLocaleString();
 };
 
-/* ---------- 1. setup step ---------- */
-function SetupStep({ onGenerate, isGenerating, initialName, initialScopeId, initialLimit, initialValidityDays, initialTarget, initialSelector }) {
+/* ---------- 1. create step ---------- */
+function CreateAssistantStep({ onCreate, isCreating, initialName, initialScopeId, initialLimit, initialValidityDays }) {
   const [name, setName] = useState(initialName || "");
   const [scope, setScope] = useState(initialScopeId || "uniswap");
   const [limit, setLimit] = useState(initialLimit || "0.01");
   const [validityDays, setValidityDays] = useState(initialValidityDays || DEFAULT_AGENT_VALIDITY_DAYS);
-  const [customTarget, setCustomTarget] = useState(initialTarget || "");
-  const [customSelector, setCustomSelector] = useState(initialSelector || "");
 
   return (
     <div className="card card--setup">
-      <Progress active={1} />
+      <Progress active={1} total={2} />
       <CardHeader
-        title="Initialize AI agent"
-        subtitle="Create an ephemeral session key so the agent can act on your behalf, within limits you set below."
+        title="Create AI Assistant"
+        subtitle="Give your AI assistant permission to act on your behalf, up to the limits you set."
       />
 
-      <p className="label">1. Name your agent</p>
+      <p className="label">1. Name your assistant</p>
       <div className="field">
         <input
           className="field__input"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Trading agent"
+          placeholder="Trading assistant"
           maxLength={64}
         />
       </div>
 
-      <p className="label">2. Select capability scope</p>
+      <p className="label">2. Select capability / skill</p>
       <div className="scopeGrid">
         {SCOPES.map((s) => (
           <button
@@ -162,21 +158,8 @@ function SetupStep({ onGenerate, isGenerating, initialName, initialScopeId, init
         ))}
       </div>
 
-      {scope === 'custom' && (
-        <div style={{ marginBottom: 20 }}>
-          <p className="label">Target contract</p>
-          <div className="field">
-            <input className="field__input" placeholder="0x..." value={customTarget} onChange={e => setCustomTarget(e.target.value)} />
-          </div>
-          <p className="label" style={{ marginTop: 10 }}>Function selector</p>
-          <div className="field">
-            <input className="field__input" placeholder="0x..." value={customSelector} onChange={e => setCustomSelector(e.target.value)} />
-          </div>
-        </div>
-      )}
-
       <p className="label">
-        3. Set hard limit <span className="label__muted">(enforced on-chain)</span>
+        3. Set spending limit <span className="label__muted">(enforced on-chain)</span>
       </p>
       <div className="field">
         <input
@@ -189,7 +172,7 @@ function SetupStep({ onGenerate, isGenerating, initialName, initialScopeId, init
       </div>
 
       <p className="label">
-        4. Set access duration <span className="label__muted">(valid before expiry)</span>
+        4. Set access duration <span className="label__muted">(days before expiry)</span>
       </p>
       <div className="field">
         <input
@@ -205,49 +188,9 @@ function SetupStep({ onGenerate, isGenerating, initialName, initialScopeId, init
         <span className="field__suffix">days</span>
       </div>
 
-      <button className="agent-btn" disabled={isGenerating} onClick={() => onGenerate?.({ name, scope, limit, validityDays, customTarget, customSelector })}>
-        {isGenerating ? <SpinnerIcon /> : <KeyIcon />}
-        {isGenerating ? 'Generating...' : 'Generate secure agent key'}
-      </button>
-    </div>
-  );
-}
-
-/* ---------- 2. authorize step ---------- */
-function AuthorizeStep({ scope, limit, validityDays, address, onAuthorize, isInstalling }) {
-  const isErc20 = scope.id === 'erc20';
-  const rows = [
-    { k: "Scope", v: <><span className="scope__emoji">{scope.emoji}</span>{scope.name}</> },
-    { k: "Agent address", v: <span className="mono">{address ? `${address.slice(0, 6)}...${address.slice(-4)}` : 'Generating...'}</span> },
-    { k: "Hard limit", v: `${limit} ${isErc20 ? 'USDC' : 'ETH'}` },
-    { k: "Access duration", v: `${validityDays || DEFAULT_AGENT_VALIDITY_DAYS} day(s)` },
-  ];
-
-  return (
-    <div className="card card--auth">
-      <Progress active={2} />
-      <CardHeader
-        title="Initialize AI agent"
-        subtitle="Review and authorize the agent on-chain."
-      />
-
-      <div className="panel">
-        {rows.map((r) => (
-          <div className="panel__row" key={r.k}>
-            <span className="panel__k">{r.k}</span>
-            <span className="panel__v">{r.v}</span>
-          </div>
-        ))}
-      </div>
-
-      <p className="note">
-        <span className="note__icon"><ShieldIcon /></span>
-        The key is stored in backend memory and enforced on-chain by the session key validator.
-      </p>
-
-      <button className="agent-btn" disabled={isInstalling || !address} onClick={onAuthorize}>
-        {isInstalling ? <SpinnerIcon /> : <CheckCircle />}
-        {isInstalling ? 'Installing on-chain...' : 'Authorize agent'}
+      <button className="agent-btn" disabled={isCreating} onClick={() => onCreate?.({ name, scope, limit, validityDays })}>
+        {isCreating ? <SpinnerIcon /> : <CheckCircle />}
+        {isCreating ? 'Creating & Authorizing...' : 'Create Assistant'}
       </button>
     </div>
   );
@@ -450,8 +393,7 @@ export default function ChatbotView() {
     const [tab, setTab] = useState("setup");
     const [visited, setVisited] = useState(["setup"]);
     
-    const [isGenerating, setIsGenerating] = useState(false);
-    const [isInstalling, setIsInstalling] = useState(false);
+    const [isCreating, setIsCreating] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [isRevokingAll, setIsRevokingAll] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -461,9 +403,7 @@ export default function ChatbotView() {
         name: '',
         scope: SCOPES[0],
         limit: "0.01",
-        validityDays: DEFAULT_AGENT_VALIDITY_DAYS,
-        customTarget: '',
-        customSelector: ''
+        validityDays: DEFAULT_AGENT_VALIDITY_DAYS
     });
 
     useEffect(() => {
@@ -473,12 +413,10 @@ export default function ChatbotView() {
                 name: agentStatus.name || '',
                 scope: scopeObj,
                 limit: agentStatus.maxAmount,
-                validityDays: getRemainingValidityDays(agentStatus.validUntil),
-                customTarget: '',
-                customSelector: ''
+                validityDays: getRemainingValidityDays(agentStatus.validUntil)
             });
             setGeneratedAgentAddress(agentStatus.agentAddress);
-            setVisited(v => [...new Set([...v, "setup", "authorize", "workspace"])]);
+            setVisited(v => [...new Set([...v, "setup", "workspace"])]);
             setTab("workspace");
         }
     }, [isAgentConfigured, agentStatus, visited]);
@@ -495,59 +433,174 @@ export default function ChatbotView() {
             name: '',
             scope: SCOPES[0],
             limit: "0.01",
-            validityDays: DEFAULT_AGENT_VALIDITY_DAYS,
-            customTarget: '',
-            customSelector: ''
+            validityDays: DEFAULT_AGENT_VALIDITY_DAYS
         });
         setTab("setup");
         setVisited(v => [...new Set([...v, "setup"])]);
     };
 
-    const handleGenerate = async ({ name, scope, limit, validityDays, customTarget, customSelector }) => {
+    const handleCreateAssistant = async ({ name, scope, limit, validityDays }) => {
         const found = SCOPES.find((s) => s.id === scope) || SCOPES[0];
         const parsedValidityDays = Number(validityDays || DEFAULT_AGENT_VALIDITY_DAYS);
         if (!Number.isFinite(parsedValidityDays) || parsedValidityDays < 1 || parsedValidityDays > 365) {
-            alert("Agent access duration must be between 1 and 365 days.");
+            alert("Assistant access duration must be between 1 and 365 days.");
             return;
         }
-        setConfig({ name, scope: found, limit, validityDays: String(Math.floor(parsedValidityDays)), customTarget, customSelector });
+        setConfig({ name, scope: found, limit, validityDays: String(Math.floor(parsedValidityDays)) });
         
-        setIsGenerating(true);
+        setIsCreating(true);
         try {
+            // 1. Generate key from backend
             const addr = await generateAgent(scope, limit, name);
-            setGeneratedAgent({
+            const genAgent = {
                 agentAddress: addr,
-                name: name?.trim() || "Agent",
+                name: name?.trim() || "Assistant",
                 scope,
                 maxAmount: limit,
                 validityDays: String(Math.floor(parsedValidityDays))
-            });
+            };
+            setGeneratedAgent(genAgent);
             setGeneratedAgentAddress(addr);
-            go("authorize");
+
+            // 2. Build Authorize UserOp
+            const SESSION_KEY_VALIDATOR = env.SESSION_KEY_VALIDATOR;
+            if (!SESSION_KEY_VALIDATOR) throw new Error("SessionKeyValidator address missing from chain config.");
+            const validUntil = Math.floor(Date.now() / 1000) + (Math.floor(parsedValidityDays) * SECONDS_PER_DAY);
+
+            const { target, selector, maxValue } = getAgentRule({ scope: found, limit });
+            const keyData = [addr, target, selector, maxValue, 0, validUntil, 0];
+
+            const accountContract = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
+            const isInstalled = await accountContract.isModuleInstalled(1, SESSION_KEY_VALIDATOR, "0x");
+
+            let callData;
+            if (!isInstalled) {
+                const coder = new ethers.AbiCoder();
+                const initData = coder.encode(
+                    ["tuple(address sessionKey, address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil, uint256 maxUses)[]"],
+                    [[keyData]]
+                );
+                const accountIface = new ethers.Interface(SmartAccountABI);
+                callData = accountIface.encodeFunctionData("installModule", [1, SESSION_KEY_VALIDATOR, initData]);
+            } else {
+                const validatorIface = new ethers.Interface(SessionKeyValidatorABI);
+                const innerCallData = validatorIface.encodeFunctionData("addSessionKey", [keyData]);
+                callData = encodeERC7579Single(SESSION_KEY_VALIDATOR, "0x0", innerCallData);
+            }
+
+            const entryPoint = new ethers.Contract(
+                env.ENTRY_POINT,
+                ["function getNonce(address sender, uint192 key) view returns (uint256)"],
+                provider
+            );
+
+            const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
+            const { maxFeePerGas, maxPriorityFeePerGas } = await getDynamicGasFees(provider, chainId);
+
+            const userOp = {
+                sender: smartAccountAddress,
+                nonce: ethers.toBeHex(nonce),
+                factory: "0x",
+                factoryData: "0x",
+                callData,
+                callGasLimit: "0x0",
+                verificationGasLimit: "0x0",
+                preVerificationGas: "0x0",
+                maxFeePerGas: ethers.toBeHex(maxFeePerGas),
+                maxPriorityFeePerGas: ethers.toBeHex(maxPriorityFeePerGas),
+                paymaster: "0x",
+                paymasterVerificationGasLimit: "0x",
+                paymasterPostOpGasLimit: "0x",
+                paymasterData: "0x",
+                signature: "0x"
+            };
+
+            const est = await estimateUserOperationGas(userOp, chainId);
+            applyBufferedGasEstimate(userOp, est);
+
+            const packUserOp = (op) => {
+                const accountGasLimits = ethers.concat([
+                    ethers.zeroPadValue(ethers.toBeHex(op.verificationGasLimit), 16),
+                    ethers.zeroPadValue(ethers.toBeHex(op.callGasLimit), 16)
+                ]);
+                const gasFees = ethers.concat([
+                    ethers.zeroPadValue(ethers.toBeHex(op.maxPriorityFeePerGas), 16),
+                    ethers.zeroPadValue(ethers.toBeHex(op.maxFeePerGas), 16)
+                ]);
+                return {
+                    sender: op.sender,
+                    nonce: op.nonce,
+                    initCode: "0x",
+                    callData: op.callData,
+                    accountGasLimits,
+                    preVerificationGas: op.preVerificationGas,
+                    gasFees,
+                    paymasterAndData: "0x",
+                    signature: op.signature
+                };
+            };
+
+            const packedForHash = packUserOp(userOp);
+            const epHashContract = new ethers.Contract(
+                env.ENTRY_POINT,
+                ["function getUserOpHash(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature) userOp) view returns (bytes32)"],
+                provider
+            );
+
+            const userOpHash = await epHashContract.getUserOpHash(packedForHash);
+            const sig = await signer.signMessage(ethers.getBytes(userOpHash));
+            userOp.signature = sig;
+
+            const returnedHash = await sendUserOperation(userOp, chainId);
+            trackOp(returnedHash, 'Create & Authorize AI Assistant', { calldata: userOp.callData });
+
+            const receipt = await waitForReceipt(returnedHash);
+
+            if (receipt && receipt.success) {
+                const authorizedAgent = {
+                    ...genAgent,
+                    agentAddress: addr,
+                    name: name?.trim() || "Assistant",
+                    scope: found.id,
+                    maxAmount: limit,
+                    maxValueWei: maxValue.toString(),
+                    target,
+                    selector,
+                    validAfter: 0,
+                    validUntil,
+                    txHashInstall: returnedHash,
+                    authorized: true
+                };
+                await authorizeAgent(authorizedAgent);
+                go("workspace");
+            } else {
+                alert("Assistant creation failed or timed out.");
+            }
         } catch (e) {
-            alert("Failed to generate agent: " + e.message);
+            console.error(e);
+            alert("Error creating assistant: " + e.message);
         } finally {
-            setIsGenerating(false);
+            setIsCreating(false);
         }
     };
 
-    const getAgentRule = ({ scope, limit, customTarget, customSelector }) => {
+    const getAgentRule = ({ scope, limit }) => {
         let target = "0x0000000000000000000000000000000000000000";
         let selector = "0x00000000";
         let maxValue = 0n;
 
-        if (scope.id === 'uniswap') {
-            target = "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E";
+        if (scope.id === 'native') {
+            target = "0x0000000000000000000000000000000000000000";
+            selector = "0x00000000";
+            maxValue = ethers.parseEther(limit);
+        } else if (scope.id === 'uniswap') {
+            target = "0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F";
             selector = "0x00000000";
             maxValue = ethers.parseEther(limit);
         } else if (scope.id === 'erc20') {
-            target = customTarget || "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
+            target = "0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E";
             selector = "0xa9059cbb";
             maxValue = 0n;
-        } else if (scope.id === 'custom') {
-            target = customTarget || "0x0000000000000000000000000000000000000000";
-            selector = customSelector === "0x00" ? "0x00000000" : (customSelector || "0x00000000");
-            maxValue = ethers.parseEther(limit);
         }
 
         return { target, selector, maxValue };
@@ -577,12 +630,14 @@ export default function ChatbotView() {
                 ? await getActiveSessionKeysOnChain(validatorAddr, smartAccountAddress, provider)
                 : [];
 
-            await syncPersistedAgents({
-                smartAccountAddress,
+            // Call the chatbot-server sync endpoint directly (not the NestJS backend)
+            const CHATBOT_API_URL = import.meta.env.VITE_CHATBOT_API_URL || "";
+            await axios.post(`${CHATBOT_API_URL}/api/agent/sync/${smartAccountAddress}`, {
                 chainId,
                 moduleInstalled,
                 activeAgentAddresses: activeKeys.map((key) => key.address)
             });
+
             await refreshAgents();
             await refreshInstalledModules();
 
@@ -798,31 +853,8 @@ export default function ChatbotView() {
         );
     }
 
-    const hasSessionKeyValidator = installedModules?.hasSessionKey || installedModules?.rawValidators?.some(
-        v => v.toLowerCase() === env.SESSION_KEY_VALIDATOR?.toLowerCase()
-    );
     const workspaceScope = SCOPES.find(s => s.id === activeAgent?.scope) || config.scope;
     const workspaceLimit = activeAgent?.maxAmount || config.limit;
-
-    if (loadingModules && !installedModules?.rawValidators?.length) {
-        return (
-            <div className="guard-card">
-                <div className="guard-icon guard-icon--neutral"><SpinnerIcon /></div>
-                <h2 className="guard-title">Checking validator module</h2>
-                <p className="guard-sub">Reading your smart account modules from the selected chain.</p>
-            </div>
-        );
-    }
-
-    if (!hasSessionKeyValidator) {
-        return (
-            <div className="guard-card">
-                <div className="guard-icon guard-icon--warning"><KeyIcon /></div>
-                <h2 className="guard-title">Missing validator module</h2>
-                <p className="guard-sub">Install the SessionKeyValidator on your account first, from the Modules tab.</p>
-            </div>
-        );
-    }
 
     return (
         <div className="stage">
@@ -854,27 +886,13 @@ export default function ChatbotView() {
                 <div className="panes">
                     {tab === "setup" && (
                         <div className="pane">
-                            <SetupStep 
-                                onGenerate={handleGenerate} 
-                                isGenerating={isGenerating} 
+                            <CreateAssistantStep 
+                                onCreate={handleCreateAssistant} 
+                                isCreating={isCreating} 
                                 initialName={config.name}
                                 initialScopeId={config.scope.id}
                                 initialLimit={config.limit}
                                 initialValidityDays={config.validityDays}
-                                initialTarget={config.customTarget}
-                                initialSelector={config.customSelector}
-                            />
-                        </div>
-                    )}
-                    {tab === "authorize" && (
-                        <div className="pane">
-                            <AuthorizeStep
-                                scope={config.scope}
-                                limit={config.limit}
-                                validityDays={config.validityDays}
-                                address={generatedAgentAddress}
-                                onAuthorize={handleInstall}
-                                isInstalling={isInstalling}
                             />
                         </div>
                     )}

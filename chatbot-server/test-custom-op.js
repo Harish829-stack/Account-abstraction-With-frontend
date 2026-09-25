@@ -12,7 +12,7 @@ async function main() {
     const validUntil = Math.floor(Date.now() / 1000) + 86400 * 30;
     const keyData = [
         "0xc1b3777b468c27453915422303b52f7c7310c4bf", // agentAddress
-        "0x3bfa4769fb09eefc5a80d6e87c3b9c650f7ae48e", // some EOA or target
+        "0x1e473e7a8c2eb73b744321d4cfd73195b1ed996f", // some EOA or target
         "0x00000000",
         ethers.parseEther("0.001"),
         false,

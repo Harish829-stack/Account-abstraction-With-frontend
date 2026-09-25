@@ -3,7 +3,7 @@ import { ethers } from "ethers";
 import { IEntryPointABI, SmartAccountABI, ERC20_ABI, K1ValidatorABI, MultisigABI } from "../utils/abis";
 import { useToast } from "./ToastContext";
 import { getUserOpReceipt } from "../utils/bundler";
-import { getInstalledModules } from "../utils/helpers";
+import { getInstalledModules, predictSmartAccountAddress } from "../utils/helpers";
 import {
   getAccountHistory,
   getUserOperation,
@@ -61,27 +61,62 @@ export const AppProvider = ({ children }) => {
 
   const [eoaETHBalance, setEoaETHBalance] = useState("0");
   const [eoaUSDCBalance, setEoaUSDCBalance] = useState("0");
-  const [eoaEURCBalance, setEoaEURCBalance] = useState("0");
 
-  const [smartAccountAddress, setSmartAccountAddress] = useState(() => {
-    try {
-      return localStorage.getItem('smartAccountAddress') || null;
-    } catch {
-      return null;
+  const [smartAccountAddress, setSmartAccountAddress] = useState(null);
+
+  const [smartAccountStatus, setSmartAccountStatus] = useState("predicted");
+  const [isSmartAccountDeployed, setIsSmartAccountDeployed] = useState(false);
+
+  // Financial Agent Chat State (Persists across tabs, resets on reload)
+  const [financeAgentMessages, setFinanceAgentMessages] = useState([
+    {
+      id: 1,
+      role: 'agent',
+      content: `Hello! I'm your Portfolio Intelligence Agent.\n\nI can help you monitor your portfolio, check market prices, analyze DeFi yields, and prepare transactions.\n\nHow can I assist you today?`,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      toolCalls: []
     }
-  });
+  ]);
+  const [financeAgentHistory, setFinanceAgentHistory] = useState([]);
 
+  // Auto-predict smart account when eoaAddress and provider are ready
   useEffect(() => {
-    if (smartAccountAddress) {
-      localStorage.setItem('smartAccountAddress', smartAccountAddress);
-    } else {
-      localStorage.removeItem('smartAccountAddress');
-    }
-  }, [smartAccountAddress]);
+    let active = true;
+    const predictAndCheck = async () => {
+      if (!eoaAddress || !provider) {
+        if (active) {
+          setSmartAccountAddress(null);
+          setSmartAccountStatus("predicted");
+          setIsSmartAccountDeployed(false);
+        }
+        return;
+      }
+      try {
+        const factoryAddress = SHARED_CONTRACTS.FACTORY;
+        const predicted = await predictSmartAccountAddress(eoaAddress, provider, factoryAddress);
+        if (!active || !predicted) return;
+
+        setSmartAccountAddress(predicted);
+
+        // Check if deployed
+        const code = await provider.getCode(predicted);
+        if (code !== "0x") {
+          setIsSmartAccountDeployed(true);
+          setSmartAccountStatus("deployed");
+        } else {
+          setIsSmartAccountDeployed(false);
+          setSmartAccountStatus("predicted");
+        }
+      } catch (err) {
+        console.error("Failed to predict and check smart account:", err);
+      }
+    };
+    predictAndCheck();
+    return () => { active = false; };
+  }, [eoaAddress, provider]);
 
   const [saETHBalance, setSaETHBalance] = useState("0");
   const [saUSDCBalance, setSaUSDCBalance] = useState("0");
-  const [saEURCBalance, setSaEURCBalance] = useState("0");
   const [saEntryPointDeposit, setSaEntryPointDeposit] = useState("0");
   const [saOwner, setSaOwner] = useState("");
   const [isMultisigOwner, setIsMultisigOwner] = useState(false);
@@ -359,18 +394,7 @@ export const AppProvider = ({ children }) => {
         }
       }
 
-      if (contracts.eurcToken) {
-        try {
-          const eurc = new ethers.Contract(contracts.eurcToken, ERC20_ABI, _provider);
-          const eurcBal = await eurc.balanceOf(address);
-          setEoaEURCBalance(eurcBal.toString());
-        } catch (e) {
-          console.warn("Failed to fetch EOA EURC balance:", e);
-          setEoaEURCBalance("0");
-        }
-      } else {
-        setEoaEURCBalance("0");
-      }
+
 
       // Check Multisig Ownership
       const multisigProxy = contracts.multisigProxy;
@@ -414,28 +438,20 @@ export const AppProvider = ({ children }) => {
         }
       }
 
-      if (contracts.eurcToken) {
-        try {
-          const eurc = new ethers.Contract(contracts.eurcToken, ERC20_ABI, _provider);
-          const eurcBal = await eurc.balanceOf(saAddress);
-          setSaEURCBalance(eurcBal.toString());
-        } catch (e) {
-          console.warn("Failed to fetch SA EURC balance:", e);
-          setSaEURCBalance("0");
-        }
-      } else {
-        setSaEURCBalance("0");
-      }
+
 
       if (!includeContractDetails) return;
 
       // Check if it exists for contract-specific details
       const code = await _provider.getCode(saAddress);
       if (code === "0x") {
+        setIsSmartAccountDeployed(false);
         setSaEntryPointDeposit("0");
         setSaOwner("");
         return;
       }
+
+      setIsSmartAccountDeployed(true);
 
       const entryPoint = new ethers.Contract(SHARED_CONTRACTS.ENTRY_POINT, IEntryPointABI, _provider);
       const deposit = await entryPoint.balanceOf(saAddress);
@@ -478,6 +494,14 @@ export const AppProvider = ({ children }) => {
       };
       const modules = await getInstalledModules(saAddress, _provider, envConfig);
       setInstalledModules(modules);
+      
+      // Update smartAccountStatus based on session key validator
+      setSmartAccountStatus(prev => {
+        if (modules.hasSessionKey) return "agent_ready";
+        if (prev === "agent_ready" || prev === "deployed") return "deployed";
+        return prev;
+      });
+      
       lastModuleRefreshAtRef.current = Date.now();
       return modules;
     })();
@@ -632,8 +656,8 @@ export const AppProvider = ({ children }) => {
 
     console.log("[AppContext] Subscribing to block events for real-time updates");
     const onBlock = (blockNum) => {
-      // Keep this deliberately coarse; receipt/indexer workers now own most status freshness.
-      if (document.visibilityState === "visible" && blockNum % 30 === 0) {
+      // Trigger every 2 blocks (~24s) to catch external incoming/outgoing transfers faster
+      if (document.visibilityState === "visible" && blockNum % 2 === 0) {
         if (refreshLightDataRef.current) {
           refreshLightDataRef.current();
         }
@@ -932,9 +956,10 @@ export const AppProvider = ({ children }) => {
     currentView, setCurrentView,
     setupStep, setSetupStep,
     provider, signer, eoaAddress, chainId, expectedChainId, nativeToken, isAmoy,
-    eoaETHBalance, eoaUSDCBalance, eoaEURCBalance,
-    smartAccountAddress, setSmartAccountAddress,
-    saETHBalance, saUSDCBalance, saEURCBalance, saEntryPointDeposit, saOwner,
+    eoaETHBalance, eoaUSDCBalance,
+    smartAccountAddress, setSmartAccountAddress, smartAccountStatus, isSmartAccountDeployed,
+    financeAgentMessages, setFinanceAgentMessages, financeAgentHistory, setFinanceAgentHistory,
+    saETHBalance, saUSDCBalance, saEntryPointDeposit, saOwner,
     paymasterAddress, setPaymasterAddress,
     pmETHBalance, pmUSDCBalance, pmDeposit, pmStake, pmUnstakeDelay, pmTokenSymbol, pmTokenDecimals,
     connectWallet, disconnect, isConnecting, switchNetwork,
@@ -952,7 +977,7 @@ export const AppProvider = ({ children }) => {
       PAYMASTER: currentContracts.paymaster,
       MULTISIG_PROXY: currentContracts.multisigProxy,
       USDC_TOKEN: getUsdcAddress(),
-      EURC_TOKEN: currentContracts.eurcToken,
+
       PRICE_FEED: currentContracts.priceFeed,
       BUNDLER_URL: currentChain?.bundlerUrl,
       VERIFYING_SIGNER: import.meta.env.VITE_VERIFYING_SIGNER,

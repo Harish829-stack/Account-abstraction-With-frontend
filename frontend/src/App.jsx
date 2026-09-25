@@ -10,6 +10,8 @@ import BatchSendView from './views/BatchSendView';
 import WebAuthnView from './views/WebAuthnView';
 import AdminView from './views/AdminView';
 import ChatbotView from './views/ChatbotView';
+import FinancialAgentView from './views/FinancialAgentView';
+import MintUSDCView from './views/MintUSDCView';
 import { AlertTriangle } from 'lucide-react';
 import { getDefaultChainId, getSupportedChainIds } from './config/chains';
 
@@ -27,8 +29,6 @@ function App() {
     switch (currentView) {
       case "modules":
         return <ModulesView />;
-      case "setup":
-        return <AccountSetupView />;
       case "send":
         return <SendOpView />;
       case "batch-send":
@@ -41,6 +41,10 @@ function App() {
         return <AdminView />;
       case "chatbot":
         return <ChatbotView />;
+      case "financial-agent":
+        return <FinancialAgentView />;
+      case "mint-usdc":
+        return <MintUSDCView />;
       case "home":
       default:
         return <HomeView />;

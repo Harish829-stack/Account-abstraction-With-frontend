@@ -14,10 +14,11 @@ export default function AccountSetupView() {
     signer,
     provider,
     smartAccountAddress,
+    isSmartAccountDeployed,
     setSmartAccountAddress,
     saETHBalance,
     saUSDCBalance,
-    saEURCBalance,
+
     saEntryPointDeposit,
     refreshAllData,
     env,
@@ -152,10 +153,10 @@ export default function AccountSetupView() {
 
   // Auto-redirect logic
   useEffect(() => {
-    if (smartAccountAddress) {
+    if (isSmartAccountDeployed) {
       if (setupStep === 1) setSetupStep(2);
     }
-  }, [smartAccountAddress]);
+  }, [isSmartAccountDeployed]);
 
   useEffect(() => {
     if (Number(saETHBalance) > 0 && setupStep === 2) {
@@ -303,7 +304,7 @@ export default function AccountSetupView() {
   if (Number(saEntryPointDeposit) > 0) completedSteps.push(4);
 
   return (
-    <div className="flex flex-col gap-6 max-w-5xl mx-auto pb-12">
+    <div className="flex flex-col gap-6 w-full max-w-[1720px] mx-auto h-[calc(100vh-140px)] overflow-y-auto pb-10 px-4 pt-6">
 
       {/* Details Section (Shown under navbar if connected) */}
       {smartAccountAddress && (
@@ -342,12 +343,7 @@ export default function AccountSetupView() {
               <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">USDC Balance</span>
               <span className="font-bold text-2xl text-gradient-secondary truncate">{formatNum(saUSDCBalance, 6)} <span className="text-sm font-normal text-muted">USDC</span></span>
             </div>
-            {!isAmoy && (
-              <div className="glass-stat-card group">
-                <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">EURC Balance</span>
-                <span className="font-bold text-2xl text-gradient-secondary truncate">{formatNum(saEURCBalance, 6)} <span className="text-sm font-normal text-muted">EURC</span></span>
-              </div>
-            )}
+
             <div className="glass-stat-card group">
               <span className="text-xs text-muted uppercase tracking-wider font-semibold mb-1 block">EP Deposit</span>
               <span className="font-bold text-2xl text-gradient-primary">{formatNum(saEntryPointDeposit, 18)} <span className="text-sm font-normal text-muted">{nativeToken}</span></span>
@@ -538,9 +534,7 @@ export default function AccountSetupView() {
                     onChange={(e) => setPullTokenAddress(e.target.value)}
                   >
                     <option value={env.USDC_TOKEN}>USDC ({env.USDC_TOKEN?.slice(0, 6)}...)</option>
-                    {!isAmoy && (
-                      <option value="0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4">EURC (0x0821...)</option>
-                    )}
+
                   </select>
                 </div>
                 <div className="flex flex-col gap-1">

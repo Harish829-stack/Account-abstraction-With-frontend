@@ -1,5 +1,6 @@
 import hre from "hardhat"
-
+import * as fs from "fs";
+import * as path from "path";
 async function main() {
   // @ts-ignore
   const { ethers } = await hre.network.connect();
@@ -9,7 +10,7 @@ async function main() {
   console.log(`Deploying with account: ${deployer.address}`);
 
   // Use the already deployed CREATE3Factory address from deployCreate3.ts
-  const create3FactoryAddress = "0xb31fd259D799Fa4AdAdc64726B75E6195D635C59";
+  const create3FactoryAddress = process.env.CREATE3_FACTORY || "0xb31fd259D799Fa4AdAdc64726B75E6195D635C59";
   
   // Note: This script assumes CREATE3Factory is already deployed via the main script.
   const create3Factory = await ethers.getContractAt("CREATE3Factory", create3FactoryAddress, deployer);
@@ -24,15 +25,30 @@ async function main() {
   const chainId = (await ethers.provider.getNetwork()).chainId;
   
   let nativeUsdFeed;
-  if (chainId === 80002n) {
-    // We are on Amoy, deploy MockAggregator for Native(POL)/USD
-    console.log("Deploying MockAggregator for POL/USD on Amoy...");
+  if (chainId === 80002n || chainId === 421614n) {
+    // We are on Amoy or Arbitrum Sepolia, deploy MockAggregator for Native/USD
+    console.log("Deploying MockAggregator for Native/USD...");
     const MockAggregatorArtifact = await ethers.getContractFactory("MockAggregator");
     // $0.50 with 8 decimals = 0.50 * 10^8 = 50000000
-    const mockFeed = await MockAggregatorArtifact.deploy(50000000n);
+    // Actually, ETH is like $3000, so let's use 3000 * 10^8 = 300000000000
+    // The previous 50000000n was for POL ($0.50).
+    const price = chainId === 421614n ? 300000000000n : 50000000n;
+    const mockFeed = await MockAggregatorArtifact.deploy(price);
     await mockFeed.waitForDeployment();
     nativeUsdFeed = await mockFeed.getAddress();
     console.log("MockAggregator deployed at:", nativeUsdFeed);
+
+    // Automatically save the mock aggregator to .env for the specific network
+    const envPath = path.resolve(process.cwd(), ".env");
+    let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf-8") : "";
+    const envKey = chainId === 421614n ? "ARBITRUM_MOCKAGG" : "AMOY_MOCKAGG";
+    if (envContent.includes(`${envKey}=`)) {
+      envContent = envContent.replace(new RegExp(`${envKey}=.*`), `${envKey}="${nativeUsdFeed}"`);
+    } else {
+      envContent += `\n${envKey}="${nativeUsdFeed}"`;
+    }
+    fs.writeFileSync(envPath, envContent);
+    console.log(`Saved ${envKey} to .env`);
   } else {
     // Sepolia or others
     nativeUsdFeed = nativeUsdFeedSepolia; 
@@ -41,7 +57,7 @@ async function main() {
   const paymasterTx = await PaymasterArtifact.getDeployTransaction(deployer.address, entryPointAddress, nativeUsdFeed);
   const paymasterCreationCode = paymasterTx.data;
 
-  const paymasterSalt = ethers.id("MULTI_TOKEN_PAYMASTER_SALT_V5");
+  const paymasterSalt = ethers.id("MULTI_TOKEN_PAYMASTER_SALT_V6");
   const paymasterExpectedAddress = await create3Factory.getDeployed(deployer.address, paymasterSalt);
 
   const codeAtPaymaster = await ethers.provider.getCode(paymasterExpectedAddress);
@@ -50,7 +66,8 @@ async function main() {
     const txData = create3Factory.interface.encodeFunctionData("deploy", [paymasterSalt, paymasterCreationCode]);
     const tx = await deployer.sendTransaction({
       to: create3FactoryAddress,
-      data: txData
+      data: txData,
+      gasLimit: 8000000
     });
     await tx.wait();
     console.log("MultiTokenPaymaster deployed!");
@@ -61,8 +78,6 @@ async function main() {
   console.log("\nDeployment Complete!");
   console.log("MultiTokenPaymaster:", paymasterExpectedAddress);
 
-  const fs = require("fs");
-  const path = require("path");
   const envPath = path.resolve(process.cwd(), ".env");
   let envContent = fs.readFileSync(envPath, "utf-8");
   if (envContent.includes("MULTITOKEN_PAYMASTER=")) {

@@ -3,16 +3,16 @@ import { createPortal } from 'react-dom';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { shortenAddress, toHex, getEthPriceInUsd, packUserOp, encodeERC7579Single } from '../utils/helpers';
+import { shortenAddress, toHex, getEthPriceInUsd, packUserOp, encodeERC7579Single, buildAndSendAccountOp } from '../utils/helpers';
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
-import { IEntryPointABI, SmartAccountABI } from '../utils/abis';
+import { IEntryPointABI, SmartAccountABI, K1ValidatorFactoryABI } from '../utils/abis';
 import { getDashboardSummary } from '../utils/backendApi';
 import {
   Zap, ShieldCheck, Layers, Gift, Clock, Network,
   CheckCircle2, XCircle, ArrowRight, ArrowUpRight,
   RefreshCw, TrendingUp, Activity, Wallet, Box, BarChart3,
   ChevronDown, ArrowDown, Puzzle, Fuel, MapPin, Key, Users,
-  Fingerprint, Check, ChevronRight
+  Fingerprint, Check, ChevronRight, Copy
 } from 'lucide-react';
 
 import ChainMarquee from '../components/ChainMarquee';
@@ -23,7 +23,7 @@ import FAQAccordion from '../components/FAQAccordion';
 import FinalCTA from '../components/FinalCTA';
 import Newsletter from '../components/Newsletter';
 import LandingFooter from '../components/LandingFooter';
-const UNISWAP_ROUTER = '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E';
+const UNISWAP_ROUTER = '0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F';
 const WETH_SEPOLIA = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
 
 const features = [
@@ -125,8 +125,8 @@ function DonutChart({ eoaUSDC, saUSDC }) {
 // ─── Connected Dashboard ──────────────────────────────────────────────────────
 function ConnectedDashboard() {
   const {
-    eoaAddress, eoaETHBalance, eoaUSDCBalance, eoaEURCBalance,
-    smartAccountAddress, saETHBalance, saUSDCBalance, saEURCBalance, saEntryPointDeposit, saOwner,
+    eoaAddress, eoaETHBalance, eoaUSDCBalance,
+    smartAccountAddress, smartAccountStatus, isSmartAccountDeployed, saETHBalance, saUSDCBalance, saEntryPointDeposit, saOwner,
     paymasterAddress,
     setCurrentView, refreshAllData, signer, provider, env, chainId, nativeToken, isAmoy,
     trackOp, setGlobalLoading, setSetupStep, refreshTrigger
@@ -138,9 +138,9 @@ function ConnectedDashboard() {
   const [loadingDashboardSummary, setLoadingDashboardSummary] = useState(false);
 
   const fetchPmAllowance = async () => {
-    if (!signer || !env.USDC_TOKEN || !smartAccountAddress || !paymasterAddress) return;
+    if (!signer || !env.VITE_USDC_TOKEN || !smartAccountAddress || !paymasterAddress) return;
     try {
-      const usdc = new ethers.Contract(env.USDC_TOKEN, ["function allowance(address owner, address spender) view returns (uint256)"], provider);
+      const usdc = new ethers.Contract(env.VITE_USDC_TOKEN, ["function allowance(address owner, address spender) view returns (uint256)"], provider);
       const allowance = await usdc.allowance(smartAccountAddress, paymasterAddress);
       setPmAllowance(allowance.toString());
     } catch (err) {
@@ -186,12 +186,7 @@ function ConnectedDashboard() {
   const [usePmForSwap, setUsePmForSwap] = useState(false);
   const [selectedGasToken, setSelectedGasToken] = useState(env?.USDC_TOKEN || '');
   
-  const trackedTokens = isAmoy 
-    ? [{ symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 }]
-    : [
-        { symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 },
-        { symbol: 'EURC', address: env?.EURC_TOKEN, decimals: 6 }
-      ].filter((token) => token.address);
+  const trackedTokens = [{ symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 }].filter(t => t.address);
 
   const [ethPrice, setEthPrice] = useState(3300);
   const [estimatedUsdcOutput, setEstimatedUsdcOutput] = useState('0.00');
@@ -227,7 +222,7 @@ function ConnectedDashboard() {
         const amountIn = ethers.parseEther(swapAmount);
         const params = {
           tokenIn: WETH_SEPOLIA,
-          tokenOut: env.USDC_TOKEN,
+          tokenOut: env.VITE_USDC_TOKEN,
           amountIn: amountIn,
           fee: 3000,
           sqrtPriceLimitX96: 0
@@ -253,14 +248,12 @@ function ConnectedDashboard() {
   // Stats derived from balances
   const eoaUSDC = parseFloat(ethers.formatUnits(eoaUSDCBalance || '0', 6));
   const saUSDC = parseFloat(ethers.formatUnits(saUSDCBalance || '0', 6));
-  const eoaEURC = parseFloat(ethers.formatUnits(eoaEURCBalance || '0', 6));
-  const saEURC = parseFloat(ethers.formatUnits(saEURCBalance || '0', 6));
   const eoaETH = parseFloat(ethers.formatEther(eoaETHBalance || '0'));
   const saETH = parseFloat(ethers.formatEther(saETHBalance || '0'));
   // Checklist
   const checklist = [
     { label: 'EOA Wallet Connected', done: !!eoaAddress },
-    { label: 'Smart Account Deployed', done: !!smartAccountAddress },
+    { label: 'Smart Account Deployed', done: isSmartAccountDeployed },
     { label: 'Smart Account Funded (USDC)', done: saUSDC > 0 },
     { label: 'Paymaster Approved', done: Number(pmAllowance) > 0 },
   ];
@@ -279,9 +272,82 @@ function ConnectedDashboard() {
     setRefreshing(false);
   };
 
+  const handleActivateAgenticAI = async () => {
+    if (!smartAccountAddress || !signer || !env.SESSION_KEY_VALIDATOR) {
+      toast.error("Connect wallet and ensure env is configured.");
+      return;
+    }
+    
+    // Safety check: ensure user has some ETH in the predicted address
+    if (parseFloat(saETHBalance || "0") < 0.0001) {
+      toast.error(`Please fund your predicted address ${shortenAddress(smartAccountAddress)} with some ${nativeToken} first!`);
+      // Copy to clipboard to help the user
+      navigator.clipboard.writeText(smartAccountAddress);
+      toast.info("Address copied to clipboard!");
+      return;
+    }
+
+    setGlobalLoading(true, "Activating Agentic AI...");
+    try {
+      const wallet = ethers.Wallet.createRandom();
+      const burnerKey = wallet.privateKey;
+      const sessionKeyAddr = wallet.address;
+
+      localStorage.setItem("session_burner_key", burnerKey);
+      try {
+          const mapStr = localStorage.getItem("session_burner_keys_map");
+          const map = mapStr ? JSON.parse(mapStr) : {};
+          map[sessionKeyAddr.toLowerCase()] = burnerKey;
+          localStorage.setItem("session_burner_keys_map", JSON.stringify(map));
+      } catch {}
+
+      const parsedValue = ethers.parseEther("0.1"); // Default max value
+      const validUntilTimestamp = Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 7); // 7 days
+
+      const keyData = [
+          sessionKeyAddr,
+          ethers.ZeroAddress,
+          "0x00000000",
+          parsedValue,
+          0,
+          validUntilTimestamp,
+          0
+      ];
+
+      const initData = ethers.AbiCoder.defaultAbiCoder().encode(
+          ["tuple(address,address,bytes4,uint256,uint48,uint48,uint256)[]"],
+          [[keyData]]
+      );
+      const accountIface = new ethers.Interface(SmartAccountABI);
+      const callData = accountIface.encodeFunctionData("installModule", [1, env.SESSION_KEY_VALIDATOR, initData]);
+      
+      let initCodeObj = null;
+      if (!isSmartAccountDeployed) {
+          const factoryIface = new ethers.Interface(K1ValidatorFactoryABI);
+          const factoryData = factoryIface.encodeFunctionData("createAccount", [eoaAddress, 1, [], 0]);
+          initCodeObj = { factory: env.FACTORY, factoryData };
+      }
+
+      const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId, initCodeObj);
+      trackOp(opHash, 'Activate Agentic Wallet', { calldata: callData });
+      toast.success(`Agentic Wallet Activating! OpHash: ${shortenAddress(opHash)}...`);
+      setTimeout(() => refreshAllData(), 4000);
+    } catch (err) {
+      console.error(err);
+      toast.error(err.reason || err.message || "Failed to activate Agentic AI");
+    } finally {
+      setGlobalLoading(false);
+    }
+  };
+
   const handleQuickSwap = async () => {
     if (!signer || !smartAccountAddress) {
       toast.error("Connect Smart Account first!");
+      return;
+    }
+    
+    if (!isSmartAccountDeployed) {
+      toast.error("Please deploy your Smart Account first to use Quick Swap!");
       return;
     }
 
@@ -307,7 +373,7 @@ function ConnectedDashboard() {
 
       const params = {
         tokenIn: WETH_SEPOLIA,
-        tokenOut: env.USDC_TOKEN,
+        tokenOut: env.VITE_USDC_TOKEN,
         fee: 3000,
         recipient: smartAccountAddress,
         amountIn: amtIn,
@@ -407,93 +473,7 @@ function ConnectedDashboard() {
         </button>
       </div>
 
-      {(dashboardSummary || loadingDashboardSummary) && (
-        <div className="glass-card flex flex-col gap-4" style={{ padding:'1rem' }}>
-          <div className="flex items-center justify-between gap-3" style={{ flexWrap:'wrap' }}>
-            <div className="flex items-center gap-2">
-              <div style={{ width:34, height:34, borderRadius:9, background:'rgba(22, 163, 74,0.1)', display:'grid', placeItems:'center', color:'var(--primary)', flexShrink:0 }}>
-                <Activity size={17} />
-              </div>
-              <div>
-                <h3 style={{ fontSize:'1rem', margin:0, fontWeight:800 }}>Product Readiness</h3>
-                <p className="text-xs text-muted" style={{ marginTop:2 }}>
-                  {dashboardSummary?.chain?.name || (isAmoy ? 'Amoy' : 'Sepolia')} account state from backend persistence
-                </p>
-              </div>
-            </div>
-            <span style={{
-              padding:'4px 10px',
-              borderRadius:99,
-              fontSize:'0.68rem',
-              fontWeight:800,
-              background: readinessScore >= 80 ? 'rgba(22, 163, 74,0.1)' : 'rgba(234, 179, 8,0.12)',
-              color: readinessScore >= 80 ? '#16a34a' : '#a16207',
-              border: readinessScore >= 80 ? '1px solid rgba(22, 163, 74,0.22)' : '1px solid rgba(234, 179, 8,0.24)'
-            }}>
-              {loadingDashboardSummary ? 'Refreshing' : `${readinessScore}% Ready`}
-            </span>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="portfolio-alloc-card" style={{ minHeight:88 }}>
-              <div className="flex items-center gap-2 text-xs text-muted"><Check size={14} /> Readiness</div>
-              <div style={{ fontSize:'1.6rem', fontWeight:900, color:'#141827', marginTop:8 }}>{readinessScore}%</div>
-              <div className="progress-track" style={{ marginTop:8 }}>
-                <div className="progress-fill" style={{ width:`${readinessScore}%` }} />
-              </div>
-            </div>
-            <div className="portfolio-alloc-card" style={{ minHeight:88 }}>
-              <div className="flex items-center gap-2 text-xs text-muted"><Clock size={14} /> UserOps</div>
-              <div style={{ fontSize:'1.4rem', fontWeight:900, color:'#141827', marginTop:8 }}>{backendConfirmedOps}</div>
-              <div style={{ fontSize:'0.72rem', color:'var(--text-muted)', marginTop:4 }}>{backendPendingOps} pending, {dashboardSummary?.userOps?.total || 0} total</div>
-            </div>
-            <div className="portfolio-alloc-card" style={{ minHeight:88 }}>
-              <div className="flex items-center gap-2 text-xs text-muted"><Users size={14} /> AI Agents</div>
-              <div style={{ fontSize:'1.4rem', fontWeight:900, color:'#141827', marginTop:8 }}>{backendActiveAgents}</div>
-              <div style={{ fontSize:'0.72rem', color:'var(--text-muted)', marginTop:4 }}>{backendExpiringAgents} expiring soon, {dashboardSummary?.agents?.total || 0} saved</div>
-            </div>
-            <div className="portfolio-alloc-card" style={{ minHeight:88 }}>
-              <div className="flex items-center gap-2 text-xs text-muted"><Network size={14} /> Chain Ops</div>
-              <div style={{ fontSize:'1rem', fontWeight:800, color:'#141827', marginTop:8 }}>
-                {dashboardSummary?.chain?.isActive ? 'Active' : 'Needs config'}
-              </div>
-              <div style={{ fontSize:'0.72rem', color:'var(--text-muted)', marginTop:4 }}>
-                Index {dashboardSummary?.chain?.lastIndexedBlock || 'not started'}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              {(readiness?.checklist || []).map((item) => (
-                <div key={item.key} style={{ display:'flex', alignItems:'center', gap:8, fontSize:'0.78rem' }}>
-                  <span className={item.complete ? 'setup-done-pill' : 'setup-pending-pill'} style={{ minWidth:64, textAlign:'center' }}>
-                    {item.complete ? 'Ready' : 'Todo'}
-                  </span>
-                  <span style={{ color:'#141827', fontWeight:600 }}>{item.label}</span>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              {(dashboardSummary?.userOps?.recent || []).slice(0, 3).map((op) => (
-                <div key={op.userOpHash} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:10, padding:'0.55rem 0.65rem', border:'1px solid rgba(17,17,16,0.08)', borderRadius:8 }}>
-                  <div style={{ minWidth:0 }}>
-                    <div style={{ fontSize:'0.78rem', fontWeight:700, color:'#141827', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{op.label || 'UserOperation'}</div>
-                    <div className="text-xs text-muted">{formatRelativeDashboardTime(op.updatedAt)}</div>
-                  </div>
-                  <span className={op.status === 'confirmed' ? 'setup-done-pill' : 'setup-pending-pill'}>
-                    {formatStatusLabel(op.status)}
-                  </span>
-                </div>
-              ))}
-              {(!dashboardSummary?.userOps?.recent || dashboardSummary.userOps.recent.length === 0) && (
-                <div style={{ fontSize:'0.78rem', color:'var(--text-muted)', padding:'0.55rem 0' }}>No backend-tracked operations yet.</div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Wallet Cards ─────────────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -521,12 +501,7 @@ function ConnectedDashboard() {
               <div className="text-xs text-muted mb-1">USDC</div>
               <div className="font-bold text-lg">{eoaUSDC.toFixed(2)}</div>
             </div>
-            {!isAmoy && (
-              <div className="text-right">
-                <div className="text-xs text-muted mb-1">EURC</div>
-                <div className="font-bold text-lg">{eoaEURC.toFixed(2)}</div>
-              </div>
-            )}
+
           </div>
         </div>
 
@@ -539,21 +514,39 @@ function ConnectedDashboard() {
               </div>
               <div>
                 <div className="text-xs text-muted">Smart Vault</div>
-                <div className="font-mono text-sm font-semibold">
-                  {smartAccountAddress ? shortenAddress(smartAccountAddress) : <span className="text-muted">Not deployed</span>}
+                <div className="font-mono text-sm font-semibold flex items-center gap-2">
+                  {smartAccountAddress ? (
+                    <>
+                      {shortenAddress(smartAccountAddress)}
+                      <button 
+                        onClick={() => {
+                          navigator.clipboard.writeText(smartAccountAddress);
+                          toast.success("Address copied to clipboard!");
+                        }}
+                        className="text-muted hover:text-white transition-colors"
+                        title="Copy Address"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-muted">Loading...</span>
+                  )}
                 </div>
-                {smartAccountAddress && saOwner && (
+                {isSmartAccountDeployed && saOwner && (
                   <div className="text-[10px] text-muted mt-0.5">Owner: {shortenAddress(saOwner)}</div>
                 )}
               </div>
             </div>
-            {smartAccountAddress
-              ? <div className="wallet-summary-card__pill wallet-summary-card__pill--success">Active</div>
-              : <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '0.75rem' }} onClick={() => setCurrentView('setup')}>Setup →</button>
+            {smartAccountStatus === "agent_ready"
+              ? <div className="wallet-summary-card__pill wallet-summary-card__pill--success">Agent Ready</div>
+              : <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '0.75rem' }} onClick={handleActivateAgenticAI}>
+                  {smartAccountStatus === "predicted" ? "Activate Agentic AI" : "Complete Activation"}
+                </button>
             }
           </div>
           <div className="wallet-summary-card__divider" />
-          {smartAccountAddress ? (
+          {isSmartAccountDeployed ? (
             <div className="flex justify-between">
               <div>
                 <div className="text-xs text-muted mb-1">{nativeToken}</div>
@@ -563,19 +556,27 @@ function ConnectedDashboard() {
                 <div className="text-xs text-muted mb-1">USDC</div>
                 <div className="font-bold text-lg">{saUSDC.toFixed(2)}</div>
               </div>
-              {!isAmoy && (
-                <div className="text-center">
-                  <div className="text-xs text-muted mb-1">EURC</div>
-                  <div className="font-bold text-lg">{saEURC.toFixed(2)}</div>
-                </div>
-              )}
+
               <div className="text-right">
                 <div className="text-xs text-muted mb-1">EP Deposit</div>
                 <div className="font-bold text-lg">{parseFloat(ethers.formatEther(saEntryPointDeposit || '0')).toFixed(4)}</div>
               </div>
             </div>
           ) : (
-            <p className="text-sm text-muted">Deploy a Smart Account to enable gasless transactions and token management.</p>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted">Predicted address. Fund it with ETH to pre-load gas, then activate.</p>
+                <span className="setup-pending-pill">Predicted</span>
+              </div>
+              {saETH > 0 && (
+                <div className="flex gap-6">
+                  <div>
+                    <div className="text-xs text-muted mb-1">{nativeToken} (pre-funded)</div>
+                    <div className="font-bold text-lg" style={{ color: 'var(--accent-green)' }}>{saETH.toFixed(4)}</div>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -735,43 +736,19 @@ function ConnectedDashboard() {
             <h3 style={{ fontSize:'1rem', margin:0, fontWeight:700 }}>Quick Actions</h3>
           </div>
 
-          <button className="quick-action-btn quick-action-btn--primary" onClick={() => setCurrentView('send')}>
+          <button className="quick-action-btn quick-action-btn--primary" onClick={() => {
+            if (!isSmartAccountDeployed) {
+              toast.error("Activate Agentic Wallet to continue");
+              return;
+            }
+            setCurrentView('send');
+          }}>
             <div className="quick-action-icon quick-action-icon--primary"><ArrowUpRight size={18} /></div>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:'0.85rem', fontWeight:700 }}>Transfer Asset</div>
               <div style={{ fontSize:'0.65rem', opacity:0.8 }}>Send tokens to any address</div>
             </div>
             <ArrowRight size={15} style={{ opacity:0.7 }} />
-          </button>
-
-          <button 
-            className="quick-action-btn quick-action-btn--secondary" 
-            onClick={() => {
-              setSetupStep(2); // Step 2 is Fund ETH
-              setCurrentView('setup');
-            }}
-          >
-            <div className="quick-action-icon quick-action-icon--secondary"><Wallet size={18} /></div>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:'0.85rem', fontWeight:600, color:'#141827' }}>Fund {nativeToken}</div>
-              <div style={{ fontSize:'0.65rem', color:'var(--text-muted)' }}>Top up your EOA wallet</div>
-            </div>
-            <ArrowRight size={15} style={{ color:'var(--text-muted)' }} />
-          </button>
-
-          <button 
-            className="quick-action-btn quick-action-btn--secondary" 
-            onClick={() => {
-              setSetupStep(3); // Step 3 is Pull USDC
-              setCurrentView('setup');
-            }}
-          >
-            <div className="quick-action-icon quick-action-icon--secondary"><Box size={18} /></div>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:'0.85rem', fontWeight:600, color:'#141827' }}>Fund USDC</div>
-              <div style={{ fontSize:'0.65rem', color:'var(--text-muted)' }}>Fund Smart Account</div>
-            </div>
-            <ArrowRight size={15} style={{ color:'var(--text-muted)' }} />
           </button>
 
           <button className="quick-action-btn quick-action-btn--secondary" onClick={() => setCurrentView('paymaster')}>

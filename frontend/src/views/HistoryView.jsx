@@ -32,23 +32,24 @@ export default function HistoryView() {
   ].slice(0, 10);
 
   return (
-    <div className="flex flex-col gap-6 max-w-4xl mx-auto pb-10">
+    <div className="flex flex-col gap-6 w-full max-w-[1720px] mx-auto h-[calc(100vh-140px)] overflow-y-auto pb-10 px-4 pt-6">
 
-      <div className="glass-card flex items-center justify-between p-4 bg-white/5 border-white/10 mb-2">
+      <div className="glass-card flex items-center justify-between p-4 bg-white/5 border-white/10 mb-2 w-full max-w-[1720px] mx-auto">
         <div className="flex items-center gap-3 text-gradient">
           <Clock size={24} />
           <h2 className="m-0 text-xl">UserOp History</h2>
         </div>
+        <div className="text-sm font-mono text-muted">Recent Activity</div>
       </div>
 
       {!smartAccountAddress ? (
-        <div className="glass-card text-center p-8">
+        <div className="glass-card text-center p-8 w-full max-w-[1720px] mx-auto border-stone-300 shadow-md">
           <p className="text-muted text-sm border border-red-500/30 px-3 py-1 rounded-md bg-red-500/5 inline-block">
             Please connect or deploy a Smart Account to view its UserOp History.
           </p>
         </div>
       ) : (
-        <div className="glass-card">
+        <div className="glass-card w-full max-w-[1720px] mx-auto border-stone-300 shadow-md">
           <div className="flex items-center justify-between mb-4">
             <h2 className="flex items-center gap-2 text-gradient"><Activity size={24} /> Recent Transactions</h2>
             <button className="btn btn-secondary py-1 text-xs" onClick={() => fetchRecentOps()} disabled={loadingOps}>

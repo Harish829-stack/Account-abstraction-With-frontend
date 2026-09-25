@@ -1,5 +1,26 @@
 import { ethers } from 'ethers';
+import { K1ValidatorFactoryABI } from './abis';
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from './bundler';
+
+export const DEFAULT_ACCOUNT_INDEX = 1;
+
+export async function predictSmartAccountAddress(eoaAddress, provider, factoryAddress) {
+  if (!eoaAddress || !provider || !factoryAddress) return null;
+  try {
+    const factory = new ethers.Contract(factoryAddress, K1ValidatorFactoryABI, provider);
+    
+    const predicted = await factory.getFunction("computeAccountAddress")(
+      eoaAddress,
+      DEFAULT_ACCOUNT_INDEX,
+      [],
+      0
+    );
+    return predicted;
+  } catch (err) {
+    console.error("Failed to predict smart account address:", err);
+    return null;
+  }
+}
 
 export function toHex(value) {
   return "0x" + BigInt(value).toString(16);
@@ -119,7 +140,8 @@ export async function buildAndSendAccountOp(
   callData, 
   entryPointAddress, 
   validatorAddress,
-  chainId
+  chainId,
+  initCodeObj = null
 ) {
     const entryPoint = new ethers.Contract(
       entryPointAddress, 
@@ -146,8 +168,8 @@ export async function buildAndSendAccountOp(
     const rpcUserOp = {
         sender: smartAccountAddress,
         nonce: toHex(nonce),
-        factory: "0x",
-        factoryData: "0x",
+        factory: initCodeObj ? initCodeObj.factory : "0x",
+        factoryData: initCodeObj ? initCodeObj.factoryData : "0x",
         callData,
         callGasLimit: "0x0",
         verificationGasLimit: "0x0",
@@ -164,11 +186,15 @@ export async function buildAndSendAccountOp(
 
     try {
         const est = await estimateUserOperationGas(rpcUserOp, chainId);
-        
-        // Add an aggressive 50% margin to reduce gas-limit failures from state drift.
-        const callGasWithMargin = (BigInt(est.callGasLimit) * 15n) / 10n;
-        const vgfWithMargin = (BigInt(est.verificationGasLimit) * 15n) / 10n;
-        const pvgWithMargin = (BigInt(est.preVerificationGas) * 15n) / 10n;
+        // Add a 10% margin as requested, and enforce minimums to prevent "must be at least 10000" bundler errors
+        let callGasWithMargin = (BigInt(est.callGasLimit || 0) * 11n) / 10n;
+        let vgfWithMargin = (BigInt(est.verificationGasLimit || 0) * 11n) / 10n;
+        let pvgWithMargin = (BigInt(est.preVerificationGas || 0) * 11n) / 10n;
+
+        // Enforce safe minimums
+        if (vgfWithMargin < 150000n) vgfWithMargin = 150000n;
+        if (callGasWithMargin < 50000n) callGasWithMargin = 50000n;
+        if (pvgWithMargin < 50000n) pvgWithMargin = 50000n;
 
         rpcUserOp.callGasLimit = toHex(callGasWithMargin);
         rpcUserOp.verificationGasLimit = toHex(vgfWithMargin);

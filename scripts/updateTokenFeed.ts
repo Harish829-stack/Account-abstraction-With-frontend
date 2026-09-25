@@ -11,7 +11,7 @@ async function main() {
   }
 
   // Token and Feed to update
-  const tokenToUpdate = process.env.SEPOLIA_USDC_TOKEN || process.env.USDC_TOKEN_ADDRESS || "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"; // Update this logic if using amoy
+  const tokenToUpdate = process.env.SEPOLIA_USDC_TOKEN || process.env.USDC_TOKEN_ADDRESS || "0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E"; // Update this logic if using amoy
   const newFeedAddress = process.env.MOCK_AGGREGATOR;
 
   if (!newFeedAddress) {

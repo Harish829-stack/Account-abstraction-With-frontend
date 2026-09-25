@@ -15,5 +15,50 @@ services:
     ports:
       - "6379:6379"
 
+  backend:
+    build:
+      context: ./apps/backend
+    ports:
+      - "3001:3001"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://aa_wallet:aa_wallet@postgres:5432/aa_wallet?schema=public&connection_limit=10
+      - REDIS_URL=redis://redis:6379
+    env_file:
+      - ./apps/backend/.env
+
+  chatbot-server:
+    build:
+      context: ./chatbot-server
+    ports:
+      - "3002:3002"
+    depends_on:
+      - redis
+      - backend
+    environment:
+      - HOST=0.0.0.0
+      - REDIS_URL=redis://redis:6379
+      - AGENT_STORE_API_URL=http://backend:3001
+    env_file:
+      - ./chatbot-server/.env
+
+  financial-agent:
+    build:
+      context: ./financial-agent
+    ports:
+      - "3003:3003"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://aa_wallet:aa_wallet@postgres:5432/aa_wallet?schema=public&connection_limit=10
+      - REDIS_URL=redis://redis:6379
+    env_file:
+      - ./financial-agent/.env
+
 volumes:
   aa_wallet_postgres:

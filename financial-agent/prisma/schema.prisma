@@ -1,0 +1,222 @@
+// financial-agent/prisma/schema.prisma
+// ─────────────────────────────────────────────────────────────────────────────
+// UNIFIED READ SCHEMA — Contains ALL models from apps/backend/prisma/schema.prisma
+// PLUS the 3 new financial-agent models.
+//
+// IMPORTANT: This schema must be kept in sync with apps/backend/prisma/schema.prisma
+// for the shared models. The financial-agent only WRITES to the 3 new models.
+// All other models are declared here so Prisma db push does not drop them.
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Existing models from apps/backend (DO NOT MODIFY THESE) ─────────────────
+
+model Chain {
+  id                 Int             @id @default(autoincrement())
+  chainId            Int             @unique
+  name               String
+  rpcUrl             String
+  bundlerUrl         String
+  explorerUrl        String
+  explorerApiUrl     String?
+  explorerApiChainId Int?
+  nativeSymbol       String
+  nativeName         String
+  nativeDecimals     Int             @default(18)
+  isTestnet          Boolean
+  isActive           Boolean         @default(true)
+  viewOnly           Boolean         @default(false)
+  minPriorityFeeWei  String
+  minFeeWei          String
+  lastIndexedBlock   Int?
+  lastSyncError      String?
+  lastSyncAt         DateTime?
+  contracts          ChainContract[]
+  userOps            UserOperation[]
+}
+
+model ChainContract {
+  id      Int    @id @default(autoincrement())
+  chain   Chain  @relation(fields: [chainId], references: [id])
+  chainId Int
+  key     String
+  address String
+
+  @@unique([chainId, key])
+}
+
+model SharedContract {
+  id      Int    @id @default(autoincrement())
+  key     String @unique
+  address String
+}
+
+model AdminUser {
+  id      Int      @id @default(autoincrement())
+  address String   @unique
+  role    String
+  addedBy String
+  addedAt DateTime @default(now())
+}
+
+model SiweSession {
+  id        String   @id @default(cuid())
+  address   String
+  nonce     String
+  issuedAt  DateTime
+  expiresAt DateTime
+}
+
+model SmartAccount {
+  id          Int             @id @default(autoincrement())
+  ownerEoa    String
+  chainId     Int
+  address     String
+  salt        String
+  deployedAt  DateTime        @default(now())
+  sessionKeys SessionKey[]
+  guardians   Guardian[]
+  userOps     UserOperation[]
+
+  // Financial agent relations
+  financialProposals TransactionProposal[]
+  financialSnapshots FinancialSnapshot[]
+
+  @@unique([chainId, address])
+}
+
+model Guardian {
+  id             Int          @id @default(autoincrement())
+  smartAccountId Int
+  smartAccount   SmartAccount @relation(fields: [smartAccountId], references: [id])
+  address        String
+  addedAt        DateTime     @default(now())
+}
+
+model SessionKey {
+  id             Int          @id @default(autoincrement())
+  smartAccountId Int
+  smartAccount   SmartAccount @relation(fields: [smartAccountId], references: [id])
+  keyAddress     String
+  name           String?
+  scope          String       @default("custom")
+  status         String       @default("pending")
+  privateKey     String?
+  target         String       @default("0x0000000000000000000000000000000000000000")
+  selector       String       @default("0x00000000")
+  allowedTargets String[]
+  maxValueWei    String
+  maxAmount      String?
+  validAfter     Int
+  validUntil     Int
+  revoked        Boolean      @default(false)
+  txHashInstall  String?
+  txHashRevoke   String?
+  revokedAt      DateTime?
+  authorizedAt   DateTime?
+  rawPermissions Json
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([smartAccountId, keyAddress])
+}
+
+model UserOperation {
+  id             Int          @id @default(autoincrement())
+  hash           String       @unique
+  smartAccountId Int
+  smartAccount   SmartAccount @relation(fields: [smartAccountId], references: [id])
+  chain          Chain        @relation(fields: [chainId], references: [chainId])
+  chainId        Int
+  label          String?
+  status         String       @default("pending")
+  txHash         String?
+  confirmedBlock Int?
+  confirmedAt    DateTime?
+  droppedAt      DateTime?
+  calldata       String       @default("0x")
+  receipt        Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model MultisigProposal {
+  id             Int      @id @default(autoincrement())
+  chainId        Int
+  targetContract String
+  calldata       String
+  signatures     Json
+  status         String
+  createdAt      DateTime @default(now())
+}
+
+// ─── NEW: Financial Agent Models ──────────────────────────────────────────────
+
+/// Transaction proposal lifecycle:
+/// AWAITING_CONFIRMATION → CONFIRMED | CANCELLED | EXPIRED
+/// CONFIRMED → REVALIDATING → SIMULATING → EXECUTING → SUBMITTED → CONFIRMED_ONCHAIN | FAILED
+model TransactionProposal {
+  id                  String   @id @default(cuid())
+
+  userId              String
+  smartAccountAddress String
+  agentAddress        String
+  chainId             Int
+
+  action              String
+  calls               Json
+  displayedSummary    Json
+  financialContext    Json
+
+  status              String   @default("AWAITING_CONFIRMATION")
+  expiresAt           DateTime
+  createdAt           DateTime @default(now())
+  confirmedAt         DateTime?
+  executedAt          DateTime?
+
+  userOpHash          String?
+  transactionHash     String?
+
+  smartAccount        SmartAccount        @relation(fields: [smartAccountAddress, chainId], references: [address, chainId])
+  auditLogs           FinancialAuditLog[]
+
+  @@index([userId, status])
+  @@index([smartAccountAddress, chainId])
+}
+
+/// Portfolio snapshots (optional, stored on demand)
+model FinancialSnapshot {
+  id                  String   @id @default(cuid())
+  userId              String
+  smartAccountAddress String
+  chainId             Int
+  portfolioJson       Json
+  createdAt           DateTime @default(now())
+
+  smartAccount        SmartAccount @relation(fields: [smartAccountAddress, chainId], references: [address, chainId])
+
+  @@index([userId, chainId])
+}
+
+/// Immutable financial audit log
+model FinancialAuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  proposalId String?
+  eventType  String
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  proposal   TransactionProposal? @relation(fields: [proposalId], references: [id])
+
+  @@index([userId, eventType])
+  @@index([proposalId])
+}

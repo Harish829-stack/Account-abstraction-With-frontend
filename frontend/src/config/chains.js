@@ -3,7 +3,7 @@ const env = import.meta.env;
 export const SHARED_CONTRACTS = {
   ENTRY_POINT: env.VITE_ENTRY_POINT,
   CREATE3_FACTORY: env.VITE_CREATE3FACTORY,
-  FACTORY: env.VITE_FACTORY,
+  FACTORY: env.VITE_K1_VALIDATOR_FACTORY,
   OLD_EOA_FACTORY: env.VITE_OLD_EOA_FACTORY,
   NEXUS_IMPLEMENTATION: env.VITE_NEXUS_IMPLEMENTATION,
   NEXUS_BOOTSTRAP: env.VITE_NEXUS_BOOTSTRAP,
@@ -29,7 +29,7 @@ export const CHAIN_REGISTRY = [
     isActive: true,
     viewOnly: false,
     rpcUrl: env.VITE_SEPOLIA_RPC_URL,
-    bundlerUrl: env.VITE_SKANDHA_RPC_URL,
+    bundlerUrl: env.VITE_SEPOLIA_BUNDLER_URL || env.VITE_SKANDHA_RPC_URL,
     explorerUrl: "https://sepolia.etherscan.io",
     explorerApiUrl: "https://api.etherscan.io/v2/api",
     explorerApiChainId: 11155111,
@@ -40,7 +40,7 @@ export const CHAIN_REGISTRY = [
       paymaster: env.VITE_PAYMASTER,
       usdcToken: env.VITE_USDC_TOKEN,
       eurcToken: "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4",
-      priceFeed: env.VITE_PRICE_FEED,
+      priceFeed: env.VITE_SEPOLIA_PRICE_FEED || "0x694AA1769357215DE4FAC081bf1f309aDC325306",
       multisigProxy: env.VITE_MULTISIG_PROXY,
     },
     switchNetwork: {
@@ -118,6 +118,32 @@ export const CHAIN_REGISTRY = [
     },
   },
   {
+    chainId: 421614,
+    name: "Arbitrum Sepolia",
+    isTestnet: true,
+    isActive: true,
+    viewOnly: false,
+    rpcUrl: env.VITE_ARBITRUM_SEPOLIA_RPC_URL || "https://sepolia-rollup.arbitrum.io/rpc",
+    bundlerUrl: env.VITE_ARBITRUM_SEPOLIA_BUNDLER_URL || "",
+    explorerUrl: "https://sepolia.arbiscan.io",
+    explorerApiUrl: "https://api-sepolia.arbiscan.io/api",
+    explorerApiChainId: 421614,
+    nativeCurrency: { name: "Arbitrum Sepolia Ether", symbol: "ETH", decimals: 18 },
+    minPriorityFeeWei: "150000000",
+    minFeeWei: "500000000",
+    contracts: {
+      paymaster: env.VITE_PAYMASTER,
+      usdcToken: env.VITE_USDC_TOKEN,
+      priceFeed: env.VITE_ARBITRUM_SEPOLIA_PRICE_FEED || "0xd30e2101a97dcbAeBCBC04F14C3f624E67A35165",
+      multisigProxy: env.VITE_MULTISIG_PROXY,
+    },
+    switchNetwork: {
+      chainName: "Arbitrum Sepolia",
+      rpcUrls: [env.VITE_ARBITRUM_SEPOLIA_RPC_URL || "https://sepolia-rollup.arbitrum.io/rpc"],
+      blockExplorerUrls: ["https://sepolia.arbiscan.io"],
+    },
+  },
+  {
     chainId: 11155420,
     name: "Optimism Sepolia",
     isTestnet: true,
@@ -177,27 +203,7 @@ function applyRemoteConfig(config) {
 }
 
 async function loadRemoteConfig() {
-  if (!env.VITE_CONFIG_API_URL) return null;
-  if (!configLoadPromise) {
-    configLoadPromise = fetch(`${env.VITE_CONFIG_API_URL.replace(/\/$/, "")}/config`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`Config request failed: ${res.status}`);
-        return res.json();
-      })
-      .then((config) => {
-        applyRemoteConfig(config);
-        writeCachedConfig(config);
-        return config;
-      })
-      .catch((error) => {
-        console.warn("[chains] Falling back to static config:", error);
-        return null;
-      })
-      .finally(() => {
-        configLoadPromise = null;
-      });
-  }
-  return configLoadPromise;
+  return null;
 }
 
 export async function refreshRemoteConfig() {

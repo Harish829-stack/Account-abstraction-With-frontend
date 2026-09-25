@@ -7,7 +7,7 @@ import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '
 import { toHex, getEthPriceInUsd, packUserOp, encodeERC7579Batch } from '../utils/helpers';
 import { Layers, Settings, ExternalLink, Plus, Trash2, Send, CheckCircle2, RotateCcw } from 'lucide-react';
 
-const UNISWAP_ROUTER = '0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E';
+const UNISWAP_ROUTER = '0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F';
 const WETH_SEPOLIA = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
 
 export default function BatchSendView() {
@@ -31,12 +31,7 @@ export default function BatchSendView() {
   const [usePaymaster, setUsePaymaster] = useState(false);
   const [selectedGasToken, setSelectedGasToken] = useState(env?.USDC_TOKEN || '');
 
-  const trackedTokens = isAmoy 
-    ? [{ symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 }]
-    : [
-        { symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 },
-        { symbol: 'EURC', address: env?.EURC_TOKEN, decimals: 6 }
-      ].filter((token) => token.address);
+  const trackedTokens = [{ symbol: 'USDC', address: env?.USDC_TOKEN, decimals: 6 }].filter(t => t.address);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -168,9 +163,13 @@ export default function BatchSendView() {
 
       const est = await estimateUserOperationGas(userOp, chainId);
       
-      const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
-      const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
-      const pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
+      let callGasWithMargin = (BigInt(est.callGasLimit || 0) * 11n) / 10n;
+      let vgfWithMargin = (BigInt(est.verificationGasLimit || 0) * 11n) / 10n;
+      let pvgWithMargin = (BigInt(est.preVerificationGas || 0) * 11n) / 10n;
+
+      if (vgfWithMargin < 150000n) vgfWithMargin = 150000n;
+      if (callGasWithMargin < 50000n) callGasWithMargin = 50000n;
+      if (pvgWithMargin < 50000n) pvgWithMargin = 50000n;
 
       setCallGasLimit(callGasWithMargin.toString());
       setVerificationGasLimit(vgfWithMargin.toString());
@@ -229,9 +228,13 @@ export default function BatchSendView() {
       try {
         const est = await estimateUserOperationGas(userOp, chainId);
         
-        const callGasWithMargin = (BigInt(est.callGasLimit) * 12n) / 10n;
-        const vgfWithMargin = (BigInt(est.verificationGasLimit) * 12n) / 10n;
-        const pvgWithMargin = (BigInt(est.preVerificationGas) * 12n) / 10n;
+        let callGasWithMargin = (BigInt(est.callGasLimit || 0) * 11n) / 10n;
+        let vgfWithMargin = (BigInt(est.verificationGasLimit || 0) * 11n) / 10n;
+        let pvgWithMargin = (BigInt(est.preVerificationGas || 0) * 11n) / 10n;
+
+        if (vgfWithMargin < 150000n) vgfWithMargin = 150000n;
+        if (callGasWithMargin < 50000n) callGasWithMargin = 50000n;
+        if (pvgWithMargin < 50000n) pvgWithMargin = 50000n;
 
         userOp.callGasLimit = toHex(callGasWithMargin);
         userOp.verificationGasLimit = toHex(vgfWithMargin);
@@ -277,16 +280,18 @@ export default function BatchSendView() {
 
   if (!smartAccountAddress) {
     return (
-      <div className="glass-card max-w-3xl mx-auto text-center py-10 border border-red-500/30">
+      <div className="flex flex-col gap-6 w-full max-w-[1720px] mx-auto h-[calc(100vh-140px)] overflow-y-auto pb-10 px-4 pt-6">
+        <div className="glass-card w-full max-w-[1720px] mx-auto text-center py-10 border border-red-500/30">
         <h3 className="text-danger mb-2">Smart Account Required</h3>
         <p className="text-muted text-sm">You must set up or connect a Smart Account before sending operations.</p>
+      </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl mx-auto">
-      <div className="glass-card flex flex-col gap-5">
+    <div className="flex flex-col gap-6 w-full max-w-[1720px] mx-auto h-[calc(100vh-140px)] overflow-y-auto pb-10 pt-6 px-4">
+      <div className="glass-card w-full max-w-[1720px] mx-auto flex flex-col gap-5 border-stone-300 shadow-md">
         {/* ── Form ──────────────────────────────────── */}
          <div className="flex justify-between items-center border-b border-white/10 pb-3">
            <h2 className="flex items-center gap-2 text-gradient"><Layers size={24} /> Batch Operations</h2>

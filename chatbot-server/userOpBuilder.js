@@ -67,20 +67,20 @@ function getNonceForValidator(validatorAddress) {
 }
 
 function encodeUniswapSwap(tokenIn, tokenOut, fee, recipient, amountIn, amountOutMinimum, sqrtPriceLimitX96) {
-    // exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96))
+    // We are interacting with MockUniswapRouter which implements swapExactETHForTokens instead of exactInputSingle
     const swapRouterIface = new ethers.Interface([
-        "function exactInputSingle(tuple(address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96) params) external payable returns (uint256 amountOut)"
+        "function swapExactETHForTokens(uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) external payable returns (uint256[] memory amounts)"
     ]);
     
-    return swapRouterIface.encodeFunctionData("exactInputSingle", [{
-        tokenIn,
-        tokenOut,
-        fee,
-        recipient,
-        amountIn,
+    const path = [tokenIn, tokenOut];
+    const deadline = Math.floor(Date.now() / 1000) + 3600;
+    
+    return swapRouterIface.encodeFunctionData("swapExactETHForTokens", [
         amountOutMinimum,
-        sqrtPriceLimitX96
-    }]);
+        path,
+        recipient,
+        deadline
+    ]);
 }
 
 function encodeERC20Transfer(recipient, amount) {
@@ -110,8 +110,8 @@ async function getDynamicGasFees(provider) {
   return { maxPriorityFeePerGas, maxFeePerGas };
 }
 
-async function estimateUserOperationGas(userOp) {
-  let rpcUrl = process.env.BUNDLER_URL;
+async function estimateUserOperationGas(userOp, bundlerUrl) {
+  let rpcUrl = bundlerUrl || process.env.BUNDLER_URL;
   const entryPoint = process.env.ENTRY_POINT;
 
   const opToEstimate = { ...userOp };
@@ -161,8 +161,8 @@ async function estimateUserOperationGas(userOp) {
   }
 }
 
-async function sendUserOperation(userOp) {
-  let rpcUrl = process.env.BUNDLER_URL;
+async function sendUserOperation(userOp, bundlerUrl) {
+  let rpcUrl = bundlerUrl || process.env.BUNDLER_URL;
   const entryPoint = process.env.ENTRY_POINT;
 
   try {
@@ -203,8 +203,8 @@ async function sendUserOperation(userOp) {
   }
 }
 
-async function waitForUserOp(opHash, timeoutMs = 90000) {
-  const rpcUrl = process.env.BUNDLER_URL;
+async function waitForUserOp(opHash, timeoutMs = 90000, bundlerUrl = null) {
+  const rpcUrl = bundlerUrl || process.env.BUNDLER_URL;
   const startTime = Date.now();
   
   while (Date.now() - startTime < timeoutMs) {
@@ -255,7 +255,8 @@ async function buildAndSendAgentOp(
   callData,
   entryPointAddress,
   validatorAddress,
-  nonce
+  nonce,
+  bundlerUrl
 ) {
     const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
 
@@ -283,7 +284,7 @@ async function buildAndSendAgentOp(
 
     try {
         try {
-            const est = await estimateUserOperationGas(rpcUserOp);
+            const est = await estimateUserOperationGas(rpcUserOp, bundlerUrl);
             
             // Add an aggressive 50% margin to reduce gas-limit failures from state drift.
             let callGasWithMargin = (BigInt(est.callGasLimit) * 15n) / 10n;
@@ -323,6 +324,6 @@ async function buildAndSendAgentOp(
     const packedSignature = ethers.concat([ agentWallet.address, rawSig ]);
     rpcUserOp.signature = ethers.hexlify(packedSignature);
 
-    const opHash = await sendUserOperation(rpcUserOp);
+    const opHash = await sendUserOperation(rpcUserOp, bundlerUrl);
     return opHash;
 }

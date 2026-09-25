@@ -34,9 +34,9 @@ async function main() {
     owner,
   );
 
-  let PAYMASTER_ADDRESS = process.env.MULTITOKEN_PAYMASTER || process.env.PAYMASTER;
+  let PAYMASTER_ADDRESS = process.env.MULTITOKEN_PAYMASTER;
   if (!PAYMASTER_ADDRESS || PAYMASTER_ADDRESS === "0x") {
-    const paymasterSalt = ethers.id("MULTI_TOKEN_PAYMASTER_SALT_V5");
+    const paymasterSalt = ethers.id("MULTI_TOKEN_PAYMASTER_SALT_V6");
     PAYMASTER_ADDRESS = await create3Factory.getDeployed(
       owner.address,
       paymasterSalt,
@@ -57,14 +57,14 @@ async function main() {
   if (networkName === "sepolia") {
     tokens.push({
       symbol: "USDC",
-      tokenAddress: process.env.SEPOLIA_USDC_TOKEN || process.env.USDC_TOKEN_ADDRESS || "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
-      feedAddress: process.env.MOCK_AGGREGATOR || "0x79167C9Dccc113Da5b0B03425098bfD0cE211b8e",
+      tokenAddress: process.env.SEPOLIA_USDC_TOKEN || process.env.USDC_TOKEN_ADDRESS || "0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E",
+      feedAddress: "0x79167C9Dccc113Da5b0B03425098bfD0cE211b8e", // Real Sepolia USDC/USD feed
       minTokenPriceUsd: 0n, // calculated dynamically
     });
     tokens.push({
       symbol: "EURC",
       tokenAddress: "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4",
-      feedAddress: process.env.MOCK_AGGREGATOR || "0x79167C9Dccc113Da5b0B03425098bfD0cE211b8e", // Re-using mock aggregator for testing
+      feedAddress: "0x79167C9Dccc113Da5b0B03425098bfD0cE211b8e", // Using USDC/USD feed for testing since there is no EURC feed
       minTokenPriceUsd: 0n,
     });
   } else if (networkName === "amoy" || networkName === "polygonAmoy") {
@@ -72,6 +72,13 @@ async function main() {
       symbol: "USDC",
       tokenAddress: process.env.AMOY_USDC || "0xA0C3907b1fc323AdB95dA27e08e289deaE87BD8C",
       feedAddress: process.env.AMOY_MOCKAGG || "0x2A60D7e36FC5FDa6e97aE2C7d054656382f730D7",
+      minTokenPriceUsd: 0n,
+    });
+  } else if (networkName === "arbitrum-sepolia") {
+    tokens.push({
+      symbol: "USDC",
+      tokenAddress: process.env.ARBITRUM_USDC || "0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E",
+      feedAddress: process.env.ARBITRUM_MOCKAGG || "0x8849302d838Ec4b83a624CdfFdc2E3E934038fEF",
       minTokenPriceUsd: 0n,
     });
   }
