@@ -28,7 +28,7 @@ contract AaveYieldPool is Ownable, ReentrancyGuard {
     event RewardClaimed(address indexed user, uint256 reward);
     event APYUpdated(uint256 newApy);
 
-    constructor(address _stakingToken, uint256 _initialApy) Ownable(msg.sender) {
+    constructor(address _stakingToken, uint256 _initialApy, address initialOwner) Ownable(initialOwner) {
         stakingToken = IMockERC20(_stakingToken);
         apy = _initialApy;
     }

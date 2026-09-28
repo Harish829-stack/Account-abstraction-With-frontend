@@ -76,11 +76,11 @@ async function main() {
   // ── Step 2: deploy AaveYieldPool using the canonical MockUSDC ──────────────
   // Salt V2 ensures a fresh pool that receives the right token.
   // Initial APY: 500 basis points = 5%
-  const aaveYieldPoolSalt = "AAVE_YIELD_POOL_V2";
+  const aaveYieldPoolSalt = "AAVE_YIELD_POOL_V3";
   const aaveYieldPoolAddress = await deployViaCreate3(
     "AaveYieldPool",
     aaveYieldPoolSalt,
-    [usdcAddress, 500]
+    [usdcAddress, 500, deployer.address]
   );
 
   console.log("\n=================================");

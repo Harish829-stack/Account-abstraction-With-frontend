@@ -94,9 +94,8 @@ export default function Navbar() {
           <div className="wallet-nav-items">
             <NavItem viewId="home" icon={<LayoutDashboard size={18} />} label="Dashboard" />
             <NavItem viewId="paymaster" icon={<DollarSign size={18} />} label="Gas Sponsorship" disabled={!smartAccountAddress} />
-            <NavItem viewId="batch-send" icon={<Send size={18} />} label="Batch Ops" disabled={!smartAccountAddress} />
-            <NavItem viewId="chatbot" icon={<Bot size={18} />} label="AI Agent" disabled={!smartAccountAddress} />
-            <NavItem viewId="financial-agent" icon={<Bot size={18} />} label="💹 Finance AI" disabled={!smartAccountAddress} />
+
+            <NavItem viewId="chatbot" icon={<Bot size={18} />} label="Wallet Copilot" disabled={!smartAccountAddress} />
             <NavItem viewId="history" icon={<Clock size={18} />} label="UserOp History" disabled={!smartAccountAddress} />
             <NavItem viewId="mint-usdc" icon={<Coins size={18} />} label="Mint USDC" disabled={!smartAccountAddress} />
             {isMultisigOwner && (

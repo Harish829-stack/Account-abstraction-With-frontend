@@ -24,7 +24,7 @@ async function main() {
       keyAddress: "0x5aafed20d23dbb7aa94e1ae788830f95a3ebd343096df4c1910935e012c307b3",
       name: "Financial Agent Session Key",
       status: "authorized",
-      allowedTargets: ["0xAB49984529296Ead4dF03309BFeA6b273d9d34E4"],
+      allowedTargets: ["0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A"],
       maxValueWei: "0",
       validAfter: 0,
       validUntil: 1999999999,

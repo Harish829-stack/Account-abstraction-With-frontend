@@ -57,7 +57,7 @@ const CHAIN_CONFIGS = {
     tokens: [
       { symbol: 'USDC', address: '0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E', priceSymbol: 'USDC' },
       { symbol: 'WETH', address: '0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c', priceSymbol: 'ETH'  },
-      { symbol: 'aUSDC (Aave)', address: '0xAB49984529296Ead4dF03309BFeA6b273d9d34E4', priceSymbol: 'USDC' },
+      { symbol: 'aUSDC (Aave)', address: '0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A', priceSymbol: 'USDC' },
     ],
 
     // Uniswap V3 — all checksummed
@@ -67,7 +67,7 @@ const CHAIN_CONFIGS = {
 
     // AaveYieldPool V2 — deployed with canonical MockUSDC (0x4665...) as staking token
     // salt "AAVE_YIELD_POOL_V2" via CREATE3, same address on all chains
-    aavePoolAddress:           '0xAB49984529296Ead4dF03309BFeA6b273d9d34E4',
+    aavePoolAddress:           '0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A',
     aaveDataProviderAddress:   undefined,
     aavePoolAddressesProvider: undefined,
   },
@@ -94,7 +94,7 @@ const CHAIN_CONFIGS = {
     tokens: [
       { symbol: 'USDC', address: '0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E', priceSymbol: 'USDC' },
       { symbol: 'WETH', address: '0x980B3b374e3c40ffBf522c74C3470D4E01B7c773', priceSymbol: 'ETH'  },
-      { symbol: 'aUSDC (Aave)', address: '0xAB49984529296Ead4dF03309BFeA6b273d9d34E4', priceSymbol: 'USDC' },
+      { symbol: 'aUSDC (Aave)', address: '0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A', priceSymbol: 'USDC' },
     ],
 
     // MockUniswapRouter — same salt, same address as Sepolia
@@ -103,7 +103,7 @@ const CHAIN_CONFIGS = {
     uniswapQuoterV2Address: '0x27f9712A3d0335c49ae639e1F1C1c52E58c28f2A',
 
     // AaveYieldPool V2 — same address across chains
-    aavePoolAddress:           '0xAB49984529296Ead4dF03309BFeA6b273d9d34E4',
+    aavePoolAddress:           '0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A',
     aaveDataProviderAddress:   undefined,
     aavePoolAddressesProvider: undefined,
   },

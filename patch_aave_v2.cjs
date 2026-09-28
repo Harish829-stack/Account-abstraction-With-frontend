@@ -1,6 +1,6 @@
 const fs = require('fs');
 
-const AAVE_V2 = '0xAB49984529296Ead4dF03309BFeA6b273d9d34E4';
+const AAVE_V2 = '0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A';
 const USDC    = '0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E';
 
 const files = ['.env', 'frontend/.env', 'apps/backend/.env', 'chatbot-server/.env', 'financial-agent/.env'];

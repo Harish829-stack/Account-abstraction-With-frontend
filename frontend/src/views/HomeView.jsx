@@ -23,6 +23,7 @@ import FAQAccordion from '../components/FAQAccordion';
 import FinalCTA from '../components/FinalCTA';
 import Newsletter from '../components/Newsletter';
 import LandingFooter from '../components/LandingFooter';
+import { SmartVaultPortfolioWidget, ChainlinkPricesWidget, AaveV3Widget } from '../components/DashboardFinancialWidgets';
 const UNISWAP_ROUTER = '0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F';
 const WETH_SEPOLIA = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
 
@@ -584,194 +585,10 @@ function ConnectedDashboard() {
       {/* ── Middle Row: Setup + Portfolio + Quick Actions ─── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 
-        {/* ─ Setup Complete Card ─ */}
-        <div className="glass-card flex flex-col gap-4" style={{ paddingBottom:'1.25rem' }}>
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 style={{ fontSize:'1rem', margin:0, fontWeight:700 }}>Setup Complete</h3>
-              <p style={{ fontSize:'0.72rem', color:'var(--text-muted)', marginTop:2 }}>Your smart account is ready to go</p>
-            </div>
-            <span style={{
-              padding:'3px 10px', borderRadius:99, fontSize:'0.65rem', fontWeight:700,
-              background:'rgba(22, 163, 74,0.1)', color:'#16a34a',
-              border:'1px solid rgba(22, 163, 74,0.22)'
-            }}>Active</span>
-          </div>
-
-          {/* Progress Bar */}
-          <div>
-            <div className="flex justify-between" style={{ marginBottom:6 }}>
-              <span style={{ fontSize:'0.72rem', color:'var(--text-muted)' }}>Progress</span>
-              <span style={{ fontSize:'0.72rem', fontWeight:700, color:'var(--primary)' }}>{checklistPct}%</span>
-            </div>
-            <div className="progress-track">
-              <div className="progress-fill" style={{ width:`${checklistPct}%` }} />
-            </div>
-          </div>
-
-          {/* Timeline */}
-          <div className="setup-timeline">
-            {checklist.map((item, i) => (
-              <div key={i} className="setup-timeline-item">
-                <div className={`setup-timeline-icon ${item.done ? 'setup-timeline-icon--done' : 'setup-timeline-icon--pending'}`}>
-                  {item.done
-                    ? <CheckCircle2 size={15} />
-                    : <XCircle size={15} />
-                  }
-                </div>
-                <div style={{ flex:1, minWidth:0, paddingTop:2 }}>
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:6 }}>
-                    <span style={{ fontSize:'0.8rem', fontWeight:600, color:'#141827' }}>{item.label}</span>
-                    <span className={item.done ? 'setup-done-pill' : 'setup-pending-pill'}>
-                      {item.done ? 'Done' : 'Pending'}
-                    </span>
-                  </div>
-                  <p style={{ fontSize:'0.68rem', color:'var(--text-muted)', margin:'2px 0 0' }}>
-                    {i === 0 && 'Your EOA wallet has been connected'}
-                    {i === 1 && 'Your smart account is now live on-chain'}
-                    {i === 2 && (saUSDC > 0 ? `Successfully funded with ${saUSDC.toFixed(2)} USDC` : 'Add USDC to enable gasless transactions')}
-                    {i === 3 && `Gasless transactions enabled`}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* CTA Banner */}
-          <div className="setup-cta-banner">
-            <div className="setup-cta-icon">
-              <Zap size={18} />
-            </div>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:'0.8rem', fontWeight:700, color:'#141827' }}>Ready for Gasless Transactions</div>
-              <div style={{ fontSize:'0.68rem', color:'var(--text-muted)', marginTop:2 }}>Powered by ERC-4337</div>
-            </div>
-          </div>
-        </div>
-
-        {/* ─ USDC Portfolio Card ─ */}
-        <div className="glass-card flex flex-col gap-4" style={{ paddingBottom:'1.25rem' }}>
-          <div className="flex items-center gap-2">
-            <div style={{ width:32, height:32, borderRadius:9, background:'rgba(22, 163, 74,0.1)', display:'grid', placeItems:'center', color:'var(--primary)', flexShrink:0 }}>
-              <BarChart3 size={16} />
-            </div>
-            <h3 style={{ fontSize:'1rem', margin:0, fontWeight:700 }}>USDC Portfolio</h3>
-          </div>
-
-          {/* Big balance */}
-          <div style={{ textAlign:'center' }}>
-            <div style={{ fontSize:'1.8rem', fontWeight:800, color:'#141827', letterSpacing:'-0.02em' }}>
-              ${formatCurrencyCompact(eoaUSDC + saUSDC)}
-            </div>
-            <div style={{ fontSize:'0.72rem', color:'var(--text-muted)', marginTop:3 }}>Total USDC Balance</div>
-          </div>
-
-          {/* Donut */}
-          <div style={{ display:'flex', justifyContent:'center' }}>
-            <DonutChart eoaUSDC={eoaUSDC} saUSDC={saUSDC} />
-          </div>
-
-          {/* Legend */}
-          {(() => {
-            const total = eoaUSDC + saUSDC;
-            const eoaPct = total > 0 ? Math.round((eoaUSDC / total) * 100) : 0;
-            const saPct  = total > 0 ? Math.round((saUSDC  / total) * 100) : 0;
-            return (
-              <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:'0.78rem' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:7 }}>
-                    <span style={{ width:10, height:10, borderRadius:3, background:'#16a34a', display:'inline-block', flexShrink:0 }} />
-                    <span style={{ color:'var(--text-muted)' }}>EOA Wallet</span>
-                    <span style={{ fontWeight:700, color:'#141827' }}>{eoaPct}%</span>
-                  </div>
-                  <span style={{ fontWeight:700, color:'#141827' }}>${formatCurrencyCompact(eoaUSDC)}</span>
-                </div>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:'0.78rem' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:7 }}>
-                    <span style={{ width:10, height:10, borderRadius:3, background:'#111110', display:'inline-block', flexShrink:0 }} />
-                    <span style={{ color:'var(--text-muted)' }}>Smart Account</span>
-                    <span style={{ fontWeight:700, color:'#141827' }}>{saPct}%</span>
-                  </div>
-                  <span style={{ fontWeight:700, color:'#141827' }}>${formatCurrencyCompact(saUSDC)}</span>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Allocation mini cards */}
-          {(() => {
-            const total = eoaUSDC + saUSDC;
-            const eoaPct = total > 0 ? Math.round((eoaUSDC / total) * 100) : 0;
-            const saPct  = total > 0 ? Math.round((saUSDC  / total) * 100) : 0;
-            return (
-              <div style={{ display:'flex', gap:8 }}>
-                <div className="portfolio-alloc-card">
-                  <div style={{ fontSize:'0.7rem', fontWeight:600, color:'var(--text-muted)' }}>EOA Wallet</div>
-                  <div style={{ fontSize:'1rem', fontWeight:800, color:'#16a34a' }}>{eoaPct}%</div>
-                  <div className="alloc-progress">
-                    <div style={{ width:`${eoaPct}%`, height:'100%', background:'#16a34a', borderRadius:99 }} />
-                  </div>
-                  <div style={{ fontSize:'0.68rem', color:'var(--text-muted)', marginTop:4 }}>${formatCurrencyCompact(eoaUSDC)} USDC</div>
-                </div>
-                <div className="portfolio-alloc-card">
-                  <div style={{ fontSize:'0.7rem', fontWeight:600, color:'var(--text-muted)' }}>Smart Account</div>
-                  <div style={{ fontSize:'1rem', fontWeight:800, color:'#111110' }}>{saPct}%</div>
-                  <div className="alloc-progress">
-                    <div style={{ width:`${saPct}%`, height:'100%', background:'#111110', borderRadius:99 }} />
-                  </div>
-                  <div style={{ fontSize:'0.68rem', color:'var(--text-muted)', marginTop:4 }}>${formatCurrencyCompact(saUSDC)} USDC</div>
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-
-        {/* ─ Quick Actions + Swap Card ─ */}
-        <div className="glass-card flex flex-col gap-2" style={{ height:'100%', boxSizing:'border-box', paddingBottom: '1rem' }}>
-          <div className="flex items-center gap-2 mb-1">
-            <div style={{ width:32, height:32, borderRadius:9, background:'rgba(22, 163, 74,0.1)', display:'grid', placeItems:'center', color:'var(--primary)', flexShrink:0 }}>
-              <Zap size={16} />
-            </div>
-            <h3 style={{ fontSize:'1rem', margin:0, fontWeight:700 }}>Quick Actions</h3>
-          </div>
-
-          <button className="quick-action-btn quick-action-btn--primary" onClick={() => {
-            if (!isSmartAccountDeployed) {
-              toast.error("Activate Agentic Wallet to continue");
-              return;
-            }
-            setCurrentView('send');
-          }}>
-            <div className="quick-action-icon quick-action-icon--primary"><ArrowUpRight size={18} /></div>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:'0.85rem', fontWeight:700 }}>Transfer Asset</div>
-              <div style={{ fontSize:'0.65rem', opacity:0.8 }}>Send tokens to any address</div>
-            </div>
-            <ArrowRight size={15} style={{ opacity:0.7 }} />
-          </button>
-
-          <button className="quick-action-btn quick-action-btn--secondary" onClick={() => setCurrentView('paymaster')}>
-            <div className="quick-action-icon quick-action-icon--secondary"><ShieldCheck size={18} /></div>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:'0.85rem', fontWeight:600, color:'#141827' }}>Approve Paymaster</div>
-              <div style={{ fontSize:'0.65rem', color:'var(--text-muted)' }}>Enable gas sponsorship</div>
-            </div>
-            <ArrowRight size={15} style={{ color:'var(--text-muted)' }} />
-          </button>
-
-          {/* Quick Swap button */}
-          {!isAmoy && (
-            <button className="quick-action-btn quick-action-btn--secondary" onClick={() => setShowSwapModal(true)}>
-              <div className="quick-action-icon quick-action-icon--secondary"><Activity size={18} /></div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:'0.85rem', fontWeight:600, color:'#141827' }}>Quick Swap</div>
-                <div style={{ fontSize:'0.65rem', color:'var(--text-muted)' }}>{nativeToken} → USDC via Uniswap V3</div>
-              </div>
-              <ArrowRight size={15} style={{ color:'var(--text-muted)' }} />
-            </button>
-          )}
-        </div>
+        {/* ─ Dashboard Financial Widgets ─ */}
+        <SmartVaultPortfolioWidget />
+        <ChainlinkPricesWidget />
+        <AaveV3Widget />
       </div>
 
       {/* ── Quick Swap Modal ────────────────────────────── */}
@@ -1044,20 +861,6 @@ function LandingPage() {
   const { connectWallet, isConnecting } = useAppContext();
   return (
     <div className="aa-landing animate-fade-in">
-      <nav className="aa-landing-nav">
-        <button className="aa-landing-logo" type="button" aria-label="Smart Wallet home">
-          <span className="aa-logo-mark"><Zap size={18} /></span>
-          <span>Smart Wallet</span>
-        </button>
-        <div className="aa-landing-nav-center" aria-hidden="true" />
-        <button className="aa-connect-btn" onClick={connectWallet} disabled={isConnecting}>
-          {isConnecting ? (
-            <><div className="loader" /> Connecting</>
-          ) : (
-            <><Wallet size={17} /> Connect Wallet</>
-          )}
-        </button>
-      </nav>
 
       <section className="aa-hero">
         <div className="aa-hero-grid" aria-hidden="true" />

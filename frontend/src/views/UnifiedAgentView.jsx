@@ -116,64 +116,79 @@ const formatExpiry = (validUntil) => {
   return new Date(timestamp * 1000).toLocaleString();
 };
 
-/* ---------- 1. create step ---------- */
-function CreateAssistantStep({ onCreate, isCreating, initialName, initialScopeId, initialLimit, initialValidityDays }) {
-  const [name, setName] = useState(initialName || "");
-  const [scope, setScope] = useState(initialScopeId || "uniswap");
-  const [limit, setLimit] = useState(initialLimit || "0.01");
-  const [validityDays, setValidityDays] = useState(initialValidityDays || DEFAULT_AGENT_VALIDITY_DAYS);
+function CreateAssistantStep({ onCreate, isCreating }) {
+  const [scopesConfig, setScopesConfig] = useState({
+    native: { enabled: false, limit: "0.01" },
+    uniswap: { enabled: true, limit: "0.01" },
+    erc20: { enabled: false, limit: "10" }
+  });
+  const [validityDays, setValidityDays] = useState(DEFAULT_AGENT_VALIDITY_DAYS);
+
+  const handleToggle = (id) => {
+    setScopesConfig(prev => ({
+      ...prev,
+      [id]: { ...prev[id], enabled: !prev[id].enabled }
+    }));
+  };
+
+  const handleLimitChange = (id, val) => {
+    setScopesConfig(prev => ({
+      ...prev,
+      [id]: { ...prev[id], limit: val }
+    }));
+  };
+
+  const hasAnySelected = Object.values(scopesConfig).some(c => c.enabled);
 
   return (
     <div className="card card--setup">
       <Progress active={1} total={2} />
       <CardHeader
-        title="Create AI Assistant"
-        subtitle="Give your AI assistant permission to act on your behalf, up to the limits you set."
+        title="Configure AI Assistants"
+        subtitle="Select the capabilities you want to enable and set their spending limits."
       />
 
-      <p className="label">1. Name your assistant</p>
-      <div className="field">
-        <input
-          className="field__input"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Trading assistant"
-          maxLength={64}
-        />
+      <p className="label">1. Select capabilities & set limits</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {SCOPES.map((s) => {
+          const config = scopesConfig[s.id];
+          return (
+            <div key={s.id} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px',
+              borderRadius: '12px', border: `1px solid ${config.enabled ? '#10b981' : '#e5e7eb'}`,
+              backgroundColor: config.enabled ? 'rgba(16, 185, 129, 0.05)' : '#fff'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <input 
+                  type="checkbox" 
+                  checked={config.enabled} 
+                  onChange={() => handleToggle(s.id)}
+                  style={{ width: '16px', height: '16px', accentColor: '#10b981' }}
+                />
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#111827' }}>{s.emoji} {s.name}</div>
+                  <div style={{ fontSize: '12px', color: '#6b7280' }}>{s.desc}</div>
+                </div>
+              </div>
+              {config.enabled && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="number"
+                    value={config.limit}
+                    onChange={(e) => handleLimitChange(s.id, e.target.value)}
+                    style={{ width: '80px', padding: '4px 8px', fontSize: '14px', border: '1px solid #d1d5db', borderRadius: '6px', outline: 'none' }}
+                    placeholder="Limit"
+                  />
+                  <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: 'bold' }}>{s.id === 'erc20' ? 'USDC' : 'ETH'}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      <p className="label">2. Select capability / skill</p>
-      <div className="scopeGrid">
-        {SCOPES.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => setScope(s.id)}
-            className={`scope ${scope === s.id ? "is-selected" : ""}`}
-          >
-            <span className="scope__name">
-              <span className="scope__emoji">{s.emoji}</span>{s.name}
-            </span>
-            <span className="scope__desc">{s.desc}</span>
-          </button>
-        ))}
-      </div>
-
-      <p className="label">
-        3. Set spending limit <span className="label__muted">(enforced on-chain)</span>
-      </p>
-      <div className="field">
-        <input
-          className="field__input"
-          value={limit}
-          onChange={(e) => setLimit(e.target.value)}
-          inputMode="decimal"
-        />
-        <span className="field__suffix">{scope === 'erc20' ? 'USDC' : 'ETH'}</span>
-      </div>
-
-      <p className="label">
-        4. Set access duration <span className="label__muted">(days before expiry)</span>
+      <p className="label" style={{ marginTop: '16px' }}>
+        2. Set access duration <span className="label__muted">(days before expiry)</span>
       </p>
       <div className="field">
         <input
@@ -189,9 +204,9 @@ function CreateAssistantStep({ onCreate, isCreating, initialName, initialScopeId
         <span className="field__suffix">days</span>
       </div>
 
-      <button className="agent-btn" disabled={isCreating} onClick={() => onCreate?.({ name, scope, limit, validityDays })}>
+      <button className="agent-btn" style={{ marginTop: '16px' }} disabled={isCreating || !hasAnySelected} onClick={() => onCreate?.({ scopesConfig, validityDays })}>
         {isCreating ? <SpinnerIcon /> : <CheckCircle />}
-        {isCreating ? 'Creating & Authorizing...' : 'Create Assistant'}
+        {isCreating ? 'Creating & Authorizing...' : 'Create Assistants'}
       </button>
     </div>
   );
@@ -235,16 +250,32 @@ function AgentWorkspace({
       <header className="ws__head">
         <span className="iconBox"><BotIcon size={17} /></span>
         <div className="ws__id">
-          <span className="ws__title">{activeAgent?.name || "Agent workspace"}</span>
+          <select 
+            className="agent-dropdown" 
+            value={activeAgentAddress || "financial"} 
+            onChange={(e) => setActiveAgentAddress(e.target.value)}
+            style={{ padding: '6px 32px 6px 12px', borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '14px', fontWeight: 'bold', backgroundColor: '#f9fafb', appearance: 'none', backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%236b7280\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', backgroundSize: '16px' }}
+          >
+            <option value="financial">💹 Financial Agent (Portfolio & Data)</option>
+            {agents.map((a) => (
+              <option key={a.agentAddress} value={a.agentAddress}>
+                {a.name} ({a.scope.toUpperCase()})
+              </option>
+            ))}
+          </select>
           <span className="ws__status">
             <i className="dot" />
-            {activeAgentAddress ? `${activeAgentAddress.slice(0, 6)}...${activeAgentAddress.slice(-4)}` : "No active agent"}
+            {activeAgentAddress && activeAgentAddress !== 'financial' ? `${activeAgentAddress.slice(0, 6)}...${activeAgentAddress.slice(-4)}` : "Read-Only"}
           </span>
         </div>
         <div className="ws__pills">
-          <span className="pill">{scope.name.toUpperCase()}</span>
-          <span className="pill">Max: {maxAmount}</span>
-          <span className="pill">Expires: {activeAgent?.validUntil ? formatExpiry(activeAgent.validUntil) : "Pending"}</span>
+          {activeAgentAddress && activeAgentAddress !== 'financial' && (
+            <>
+              <span className="pill">{scope.name.toUpperCase()}</span>
+              <span className="pill">Max: {maxAmount}</span>
+              <span className="pill">Expires: {activeAgent?.validUntil ? formatExpiry(activeAgent.validUntil) : "Pending"}</span>
+            </>
+          )}
           <button
             className="pill pill--action"
             type="button"
@@ -255,57 +286,34 @@ function AgentWorkspace({
             {isSyncing ? "Syncing..." : "Sync Agents"}
           </button>
           <button className="pill pill--action" type="button" onClick={onNewAgent} title="Create another agent">+ New Agent</button>
-          <button
-            className="pill pill--danger"
-            type="button"
-            disabled={isRevokingAll}
-            onClick={onRevokeAll}
-            title="Uninstall SessionKeyValidator and revoke all agents"
-          >
-            {isRevokingAll ? "Revoking..." : "Revoke All Agents"}
-          </button>
-          <button
-            className="pill pill--danger"
-            type="button"
-            disabled={!activeAgentAddress || isDeleting}
-            onClick={() => onDeleteAgent?.(activeAgentAddress)}
-            title="Revoke this agent on-chain"
-          >
-            {isDeleting ? "Revoking..." : "Revoke Agent"}
-          </button>
+          {activeAgentAddress && activeAgentAddress !== 'financial' && (
+            <button
+              className="pill pill--danger"
+              type="button"
+              disabled={isDeleting}
+              onClick={() => onDeleteAgent?.(activeAgentAddress)}
+              title="Revoke this agent on-chain"
+            >
+              {isDeleting ? "Revoking..." : "Revoke Agent"}
+            </button>
+          )}
         </div>
       </header>
-
-      <div className="agentRail">
-        {agents.length === 0 ? (
-          <span className="agentRail__empty">No agents configured</span>
-        ) : agents.map((agent) => {
-          const selected = agent.agentAddress?.toLowerCase() === activeAgentAddress?.toLowerCase();
-          const agentScope = SCOPES.find(s => s.id === agent.scope) || SCOPES[0];
-          return (
-            <button
-              key={agent.agentAddress}
-              type="button"
-              className={`agentChip ${selected ? "is-selected" : ""}`}
-              onClick={() => setActiveAgentAddress(agent.agentAddress)}
-            >
-              <span className="agentChip__name">{agent.name || "Agent"}</span>
-              <span className="agentChip__meta">
-                {agentScope.name} · {agent.status || "pending"} · {agent.agentAddress.slice(0, 6)}...{agent.agentAddress.slice(-4)}
-              </span>
-            </button>
-          );
-        })}
-      </div>
 
       <div className="ws__thread">
         {messages.length === 0 && (
           <div className="ws__empty">
             <div className="ws__empty-icon"><BotIcon size={22} /></div>
             <p className="ws__empty-title">How can I help?</p>
-            <p className="ws__empty-sub">Describe what you want me to do and I'll execute it using your session key.</p>
+            <p className="ws__empty-sub">
+              {activeAgentAddress && activeAgentAddress !== 'financial' 
+                ? "Describe what you want me to do and I'll execute it using your session key."
+                : "I can help you monitor your portfolio, check market prices, and analyze DeFi yields."}
+            </p>
             <div className="suggestions">
-              {scope.suggestions?.map(s => (
+              {activeAgentAddress && activeAgentAddress !== 'financial' ? scope.suggestions?.map(s => (
+                <button key={s} onClick={() => setValue(s)} className="suggestion-btn">"{s}"</button>
+              )) : ['What is my portfolio worth?', 'Check Aave USDC supply APY', 'What is my ETH & USDC breakdown?'].map(s => (
                 <button key={s} onClick={() => setValue(s)} className="suggestion-btn">"{s}"</button>
               ))}
             </div>
@@ -371,25 +379,133 @@ function AgentWorkspace({
   );
 }
 
-/* ---------- main UI shell ---------- */
-export default function ChatbotView() {
+export default function UnifiedAgentView() {
     const {
         isAgentConfigured,
         agentStatus,
         agents,
-        activeAgent,
-        activeAgentAddress,
+        activeAgentAddress: rawActiveAgentAddress,
         setActiveAgentAddress,
-        messages,
-        sendMessage,
+        messages: chatbotMessages,
+        sendMessage: sendChatbotMessage,
         generateAgent,
         authorizeAgent,
         deleteAgent,
         clearAgents,
         refreshAgents,
-        isChatLoading
+        isChatLoading: isChatbotLoading
     } = useChatbotContext();
-    const { smartAccountAddress, provider, signer, eoaAddress, env, chainId, installedModules, loadingModules, refreshInstalledModules, trackOp } = useAppContext();
+    const { 
+        smartAccountAddress, provider, signer, eoaAddress, env, chainId, 
+        installedModules, loadingModules, refreshInstalledModules, trackOp,
+        financeAgentMessages, setFinanceAgentMessages, 
+        financeAgentHistory, setFinanceAgentHistory
+    } = useAppContext();
+
+    const activeAgentAddress = rawActiveAgentAddress || 'financial';
+    const isFinancialAgent = activeAgentAddress === 'financial';
+    
+    const [isFinancialLoading, setIsFinancialLoading] = useState(false);
+    
+    // Derived state
+    const messages = isFinancialAgent ? financeAgentMessages : chatbotMessages;
+    const isChatLoading = isFinancialAgent ? isFinancialLoading : isChatbotLoading;
+    const activeAgent = isFinancialAgent ? null : agents.find(a => a.agentAddress === activeAgentAddress);
+    
+    const FINANCIAL_API = (import.meta.env.VITE_FINANCIAL_AGENT_URL || 'http://127.0.0.1:3003').replace(/\/$/, '');
+
+    const fmtTime = () => new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+    const [portfolio, setPortfolio] = useState(null);
+    const [prices, setPrices] = useState(null);
+    const [aaveMarket, setAaveMarket] = useState(null);
+
+    useEffect(() => {
+        const resolvedChainId = Number(chainId) || 11155111;
+        (async () => {
+            try {
+                const { data } = await axios.get(`${FINANCIAL_API}/api/financial/market/prices?chainId=${resolvedChainId}`);
+                setPrices(data.prices);
+            } catch (e) {
+                console.error('[Prices]', e.message);
+            }
+        })();
+    }, [chainId, FINANCIAL_API]);
+
+    useEffect(() => {
+        if (!smartAccountAddress) return;
+        const resolvedChainId = Number(chainId) || 11155111;
+        (async () => {
+            try {
+                const { data } = await axios.get(`${FINANCIAL_API}/api/financial/portfolio/${resolvedChainId}/${smartAccountAddress}`);
+                setPortfolio(data);
+            } catch (e) {
+                console.error('[Portfolio]', e.message);
+            }
+        })();
+        (async () => {
+            try {
+                const { data } = await axios.get(`${FINANCIAL_API}/api/financial/aave/${resolvedChainId}/usdc`);
+                if (data && !data.error) {
+                    data.supplyCap = "12000000000";
+                    setAaveMarket(data);
+                }
+            } catch (e) {
+                console.error('[Aave]', e.message);
+            }
+        })();
+    }, [smartAccountAddress, chainId, FINANCIAL_API]);
+
+    const sendFinancialMessage = async (text) => {
+        const userMsg = { id: Date.now(), role: 'user', content: text, time: fmtTime(), toolCalls: [] };
+        setFinanceAgentMessages(prev => [...prev, userMsg]);
+        setIsFinancialLoading(true);
+        const newHistory = [...financeAgentHistory, { role: 'user', content: text }];
+        try {
+            const { data } = await axios.post(`${FINANCIAL_API}/api/financial/chat`, {
+                message: text,
+                smartAccountAddress,
+                chainId: Number(chainId) || 11155111,
+                userId: eoaAddress,
+                conversationHistory: newHistory.slice(-10),
+                liveContext: {
+                    smartAccountAddress,
+                    portfolioBalances: portfolio?.assets,
+                    totalPortfolioValueUsd: portfolio?.totalValueUsd,
+                    aaveSupplyApy: aaveMarket?.supplyApyPercentage,
+                    ethPriceUsd: prices?.ETH_USD?.priceUsd,
+                    ethTrend: prices?.ETH_USD?.priceChange24h > 0 ? 'rising' : 'crashing',
+                    allMarketPrices: prices
+                }
+            });
+            const agentMsg = {
+                id: Date.now() + 1,
+                role: 'agent',
+                content: data.reply || "No response received.",
+                time: fmtTime(),
+                toolCalls: data.toolCalls || []
+            };
+            setFinanceAgentMessages(prev => [...prev, agentMsg]);
+            setFinanceAgentHistory([...newHistory, { role: 'assistant', content: data.reply }]);
+            
+            if (data.portfolio) setPortfolio(data.portfolio);
+            if (data.marketPrices) setPrices(data.marketPrices);
+            if (data.aaveMarket) setAaveMarket(data.aaveMarket);
+        } catch (e) {
+            console.error(e);
+            setFinanceAgentMessages(prev => [...prev, { id: Date.now() + 2, role: 'agent', content: "Sorry, I encountered an error. Please try again.", time: fmtTime() }]);
+        } finally {
+            setIsFinancialLoading(false);
+        }
+    };
+
+    const sendMessage = async (text) => {
+        if (isFinancialAgent) {
+            await sendFinancialMessage(text);
+        } else {
+            await sendChatbotMessage(text);
+        }
+    };
 
     const [tab, setTab] = useState("setup");
     const [visited, setVisited] = useState(["setup"]);
@@ -440,36 +556,46 @@ export default function ChatbotView() {
         setVisited(v => [...new Set([...v, "setup"])]);
     };
 
-    const handleCreateAssistant = async ({ name, scope, limit, validityDays }) => {
-        const found = SCOPES.find((s) => s.id === scope) || SCOPES[0];
+    const handleCreateAssistant = async ({ scopesConfig, validityDays }) => {
         const parsedValidityDays = Number(validityDays || DEFAULT_AGENT_VALIDITY_DAYS);
         if (!Number.isFinite(parsedValidityDays) || parsedValidityDays < 1 || parsedValidityDays > 365) {
             alert("Assistant access duration must be between 1 and 365 days.");
             return;
         }
-        setConfig({ name, scope: found, limit, validityDays: String(Math.floor(parsedValidityDays)) });
         
+        const selectedScopes = SCOPES.filter(s => scopesConfig[s.id].enabled);
+        if (selectedScopes.length === 0) return;
+
         setIsCreating(true);
         try {
-            // 1. Generate key from backend
-            const addr = await generateAgent(scope, limit, name);
-            const genAgent = {
-                agentAddress: addr,
-                name: name?.trim() || "Assistant",
-                scope,
-                maxAmount: limit,
-                validityDays: String(Math.floor(parsedValidityDays))
-            };
-            setGeneratedAgent(genAgent);
-            setGeneratedAgentAddress(addr);
+            // 1. Generate keys from backend for all selected scopes
+            const genAgents = [];
+            for (const scope of selectedScopes) {
+                const limit = scopesConfig[scope.id].limit;
+                const name = `${scope.name} Assistant`;
+                const addr = await generateAgent(scope.id, limit, name);
+                genAgents.push({
+                    agentAddress: addr,
+                    name,
+                    scope,
+                    limit,
+                    validityDays: String(Math.floor(parsedValidityDays))
+                });
+            }
 
             // 2. Build Authorize UserOp
             const SESSION_KEY_VALIDATOR = env.SESSION_KEY_VALIDATOR;
             if (!SESSION_KEY_VALIDATOR) throw new Error("SessionKeyValidator address missing from chain config.");
             const validUntil = Math.floor(Date.now() / 1000) + (Math.floor(parsedValidityDays) * SECONDS_PER_DAY);
 
-            const { target, selector, maxValue } = getAgentRule({ scope: found, limit });
-            const keyData = [addr, target, selector, maxValue, 0, validUntil, 0];
+            const allKeyData = [];
+            for (const gen of genAgents) {
+                const { target, selector, maxValue } = getAgentRule({ scope: gen.scope, limit: gen.limit });
+                gen.target = target;
+                gen.selector = selector;
+                gen.maxValue = maxValue;
+                allKeyData.push([gen.agentAddress, target, selector, maxValue, 0, validUntil, 0]);
+            }
 
             const accountContract = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
             const isInstalled = await accountContract.isModuleInstalled(1, SESSION_KEY_VALIDATOR, "0x");
@@ -479,14 +605,21 @@ export default function ChatbotView() {
                 const coder = new ethers.AbiCoder();
                 const initData = coder.encode(
                     ["tuple(address sessionKey, address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil, uint256 maxUses)[]"],
-                    [[keyData]]
+                    [allKeyData]
                 );
                 const accountIface = new ethers.Interface(SmartAccountABI);
                 callData = accountIface.encodeFunctionData("installModule", [1, SESSION_KEY_VALIDATOR, initData]);
             } else {
                 const validatorIface = new ethers.Interface(SessionKeyValidatorABI);
-                const innerCallData = validatorIface.encodeFunctionData("addSessionKey", [keyData]);
-                callData = encodeERC7579Single(SESSION_KEY_VALIDATOR, "0x0", innerCallData);
+                const innerCalls = allKeyData.map(keyData => 
+                    validatorIface.encodeFunctionData("addSessionKey", [keyData])
+                );
+                const batchedData = encodeERC7579Batch(
+                    innerCalls.map(() => SESSION_KEY_VALIDATOR),
+                    innerCalls.map(() => 0n),
+                    innerCalls
+                );
+                callData = batchedData;
             }
 
             const entryPoint = new ethers.Contract(
@@ -553,26 +686,27 @@ export default function ChatbotView() {
             userOp.signature = sig;
 
             const returnedHash = await sendUserOperation(userOp, chainId);
-            trackOp(returnedHash, 'Create & Authorize AI Assistant', { calldata: userOp.callData });
+            trackOp(returnedHash, 'Batch Create AI Assistants', { calldata: userOp.callData });
 
             const receipt = await waitForReceipt(returnedHash);
 
             if (receipt && receipt.success) {
-                const authorizedAgent = {
-                    ...genAgent,
-                    agentAddress: addr,
-                    name: name?.trim() || "Assistant",
-                    scope: found.id,
-                    maxAmount: limit,
-                    maxValueWei: maxValue.toString(),
-                    target,
-                    selector,
-                    validAfter: 0,
-                    validUntil,
-                    txHashInstall: returnedHash,
-                    authorized: true
-                };
-                await authorizeAgent(authorizedAgent);
+                for (const gen of genAgents) {
+                    const authorizedAgent = {
+                        agentAddress: gen.agentAddress,
+                        name: gen.name,
+                        scope: gen.scope.id,
+                        maxAmount: gen.limit,
+                        maxValueWei: gen.maxValue.toString(),
+                        target: gen.target,
+                        selector: gen.selector,
+                        validAfter: 0,
+                        validUntil,
+                        txHashInstall: returnedHash,
+                        authorized: true
+                    };
+                    await authorizeAgent(authorizedAgent);
+                }
                 go("workspace");
             } else {
                 alert("Assistant creation failed or timed out.");

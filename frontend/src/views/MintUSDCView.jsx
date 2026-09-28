@@ -32,7 +32,7 @@ export default function MintUSDCView() {
   const { success, error, info } = useToast();
 
   const usdcAddress = env.VITE_USDC_TOKEN || '0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E';
-  const AAVE_POOL = '0xAB49984529296Ead4dF03309BFeA6b273d9d34E4';
+  const AAVE_POOL = import.meta.env.VITE_AAVE_YIELD_POOL;
 
   if (!smartAccountAddress) {
     return (

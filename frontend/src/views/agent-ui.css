@@ -107,8 +107,8 @@
 }
 
 @keyframes agentFade {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: none; }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 /* ---------- card ---------- */
@@ -536,8 +536,7 @@ button.pill {
   gap: 16px;
   padding: 28px;
   overflow-y: auto;
-  min-height: 380px;
-  max-height: 520px;
+  height: calc(100vh - 430px);
   background: #FFFFFF;
 }
 
@@ -649,6 +648,7 @@ button.pill {
   line-height: 1.5;
   color: #111110;
   max-width: 100%;
+  white-space: pre-wrap;
 }
 
 .row--user .bubble {
@@ -861,4 +861,27 @@ button.pill {
     min-width: 160px;
   }
   .ws__thread { max-height: 340px; }
+}
+
+/* Markdown styling inside bubble */
+.markdown-body p {
+  margin-top: 0;
+  margin-bottom: 0.5em;
+}
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+.markdown-body ul, .markdown-body ol {
+  margin-top: 0;
+  margin-bottom: 0.5em;
+  padding-left: 1.5em;
+}
+.markdown-body ul {
+  list-style-type: disc;
+}
+.markdown-body ol {
+  list-style-type: decimal;
+}
+.markdown-body strong {
+  font-weight: 600;
 }

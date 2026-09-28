@@ -9,8 +9,7 @@ import HistoryView from './views/HistoryView';
 import BatchSendView from './views/BatchSendView';
 import WebAuthnView from './views/WebAuthnView';
 import AdminView from './views/AdminView';
-import ChatbotView from './views/ChatbotView';
-import FinancialAgentView from './views/FinancialAgentView';
+import UnifiedAgentView from './views/UnifiedAgentView';
 import MintUSDCView from './views/MintUSDCView';
 import { AlertTriangle } from 'lucide-react';
 import { getDefaultChainId, getSupportedChainIds } from './config/chains';
@@ -40,9 +39,7 @@ function App() {
       case "admin":
         return <AdminView />;
       case "chatbot":
-        return <ChatbotView />;
-      case "financial-agent":
-        return <FinancialAgentView />;
+        return <UnifiedAgentView />;
       case "mint-usdc":
         return <MintUSDCView />;
       case "home":

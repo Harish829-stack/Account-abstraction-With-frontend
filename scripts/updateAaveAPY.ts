@@ -5,8 +5,8 @@ async function main() {
   const { ethers } = await hre.network.connect();
   const [deployer] = await ethers.getSigners();
   
-  // The AaveYieldPool V2 is deployed deterministically at this address
-  const expectedAddress = "0xAB49984529296Ead4dF03309BFeA6b273d9d34E4";
+  // The AaveYieldPool V3 is deployed deterministically at this address
+  const expectedAddress = "0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A";
 
   const code = await ethers.provider.getCode(expectedAddress);
   if (code === "0x") {
@@ -19,8 +19,8 @@ async function main() {
   const currentApy = await aaveYieldPool.apy();
   console.log(`Current APY is: ${currentApy} basis points (${Number(currentApy) / 100}%)`);
 
-  console.log("Waiting 60 seconds before updating the APY...");
-  await new Promise(resolve => setTimeout(resolve, 60000));
+  console.log("Waiting 10 seconds before updating the APY...");
+  await new Promise(resolve => setTimeout(resolve, 10000));
 
   // Change APY slightly (random change between -50 and +50 basis points)
   const change = Math.floor(Math.random() * 101) - 50; 
