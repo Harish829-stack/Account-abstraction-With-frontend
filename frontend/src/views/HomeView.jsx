@@ -15,14 +15,7 @@ import {
   Fingerprint, Check, ChevronRight, Copy
 } from 'lucide-react';
 
-import ChainMarquee from '../components/ChainMarquee';
-import CoreStackTabs from '../components/CoreStackTabs';
-import AAStackDeepDive from '../components/AAStackDeepDive';
-import ModulesShowcase from '../components/ModulesShowcase';
-import FAQAccordion from '../components/FAQAccordion';
-import FinalCTA from '../components/FinalCTA';
-import Newsletter from '../components/Newsletter';
-import LandingFooter from '../components/LandingFooter';
+import './new-landing.css';
 import { SmartVaultPortfolioWidget, ChainlinkPricesWidget, AaveV3Widget } from '../components/DashboardFinancialWidgets';
 const UNISWAP_ROUTER = '0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F';
 const WETH_SEPOLIA = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
@@ -859,74 +852,289 @@ function ConnectedDashboard() {
 // ─── Landing (Not Connected) ──────────────────────────────────────────────────
 function LandingPage() {
   const { connectWallet, isConnecting } = useAppContext();
+  const [mockPopupState, setMockPopupState] = useState('hidden'); // hidden, showing, signing, confirmed
+  const [mockTxConfirmed, setMockTxConfirmed] = useState(false);
+  const [mockAmount, setMockAmount] = useState('500');
+  const [mockIsAdjusting, setMockIsAdjusting] = useState(false);
+  const [mockInputValue, setMockInputValue] = useState('500');
+  const [mockTxError, setMockTxError] = useState(null);
+
+  const handleDemoConfirm = () => {
+    if (mockTxConfirmed) return;
+    const amountVal = parseFloat(mockAmount);
+    if (isNaN(amountVal) || amountVal <= 0) {
+      setMockTxError("Transaction blocked: Amount must be greater than 0 USDC.");
+      return;
+    }
+    if (amountVal > 500) {
+      setMockTxError("Transaction blocked: Exceeds remaining daily limit of $500.");
+      return;
+    }
+    setMockTxError(null);
+    setMockPopupState('showing');
+  };
+
+  const handleMockSign = () => {
+    setMockPopupState('signing');
+    setTimeout(() => {
+      setMockPopupState('confirmed');
+      setMockTxConfirmed(true);
+      setTimeout(() => {
+        setMockPopupState('hidden');
+      }, 1500);
+    }, 1500);
+  };
+
   return (
-    <div className="aa-landing animate-fade-in">
+    <div className="new-landing-wrap animate-fade-in relative">
+      {/* Mock MetaMask Popup */}
+      {mockPopupState !== 'hidden' && (
+        <div style={{
+          position: 'fixed', top: 24, right: 24, width: 340, background: '#fff', 
+          borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.15)', border: '1px solid #e5e7eb',
+          zIndex: 9999, overflow: 'hidden',
+          animation: 'slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
+        }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 28, height: 28, background: '#F6851B', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>M</div>
+            <span style={{ fontWeight: 600, color: '#111827', fontSize: '1.1rem' }}>MetaMask</span>
+          </div>
+          
+          <div style={{ padding: '24px 20px', textAlign: 'center' }}>
+            {mockPopupState === 'showing' && (
+              <>
+                <h3 style={{ fontSize: '1.25rem', marginBottom: '8px', color: '#111827', fontWeight: 600 }}>Signature Request</h3>
+                <p style={{ color: '#6B7280', fontSize: '0.9rem', marginBottom: '24px' }}>
+                  Wallet Copilot is requesting you to sign a session key approval.
+                </p>
+                <div style={{ background: '#f9fafb', padding: '12px', borderRadius: 8, fontSize: '0.85rem', fontFamily: 'monospace', color: '#374151', wordBreak: 'break-all', marginBottom: '24px' }}>
+                  Action: Allow up to $1,000 daily spend<br/>
+                  Target: 0x4a1…F2c9
+                </div>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <button onClick={() => setMockPopupState('hidden')} style={{ flex: 1, padding: '10px', borderRadius: 99, border: '1px solid #d1d5db', background: 'white', color: '#374151', fontWeight: 600 }}>Reject</button>
+                  <button onClick={handleMockSign} style={{ flex: 1, padding: '10px', borderRadius: 99, background: '#037DD6', color: 'white', border: 'none', fontWeight: 600 }}>Sign</button>
+                </div>
+              </>
+            )}
+            
+            {mockPopupState === 'signing' && (
+              <div style={{ padding: '30px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                <div className="global-loader-spinner" style={{ width: 32, height: 32, borderColor: '#037DD6', borderRightColor: 'transparent' }}></div>
+                <span style={{ color: '#374151', fontWeight: 500 }}>Signing transaction...</span>
+              </div>
+            )}
 
-      <section className="aa-hero">
-        <div className="aa-hero-grid" aria-hidden="true" />
-        <div className="aa-hero-glow aa-hero-glow-one" />
-        <div className="aa-hero-glow aa-hero-glow-two" />
-
-        <div className="aa-announcement">
-          <span />
-          ERC-7579 Modular Accounts now live
-        </div>
-
-        <div className="aa-hero-content">
-          <div className="aa-hero-badge">ERC-4337 · ERC-7579 · Modular · Gasless</div>
-          <h1>
-            Account Abstraction,
-            <span>Done Right.</span>
-          </h1>
-          <p>
-            Modular smart accounts powered by ERC-4337 and ERC-7579. Session keys,
-            social recovery, WebAuthn, and gasless UX for production-ready wallets.
-          </p>
-          <div className="aa-hero-actions">
-            <button className="aa-primary-cta" onClick={connectWallet} disabled={isConnecting}>
-              {isConnecting ? 'Connecting...' : 'Start Building'}
-              <ArrowRight size={18} />
-            </button>
-            <button className="aa-secondary-cta" type="button">
-              Read the Docs
-              <ArrowUpRight size={17} />
-            </button>
+            {mockPopupState === 'confirmed' && (
+              <div style={{ padding: '30px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                <div style={{ width: 48, height: 48, background: '#10B981', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                  <Check size={24} />
+                </div>
+                <span style={{ color: '#111827', fontWeight: 600, fontSize: '1.1rem' }}>Confirmed!</span>
+              </div>
+            )}
           </div>
         </div>
-
-        <div className="aa-feature-strip">
-          {features.slice(0, 3).map((f, i) => (
-            <div key={i} className="aa-mini-card">
-              <div>{f.icon}</div>
-              <span>{f.title}</span>
+      )}
+      <header className="new-header">
+        <div className="new-bar">
+          <div className="new-word">Wallet<span>Copilot</span></div>
+        </div>
+      </header>
+      
+      <main className="new-main-wrap">
+        <section className="new-phero">
+          <div className="new-phero-inner">
+            <h1>
+              <span className="text-gradient">One account. Every chain.</span>
+              <br className="hidden sm:block" />
+              <span style={{ color: 'var(--text-main)' }}> Nothing to configure.</span>
+            </h1>
+            <p className="new-lede">A single wallet built on modular smart accounts — the same address across Ethereum, Base, Arbitrum, Polygon, and all other EVM chains. Gas, signing, and recovery are handled underneath, so you never deal with the chain layer directly.</p>
+            <div className="new-chain-row">
+              <span>Ethereum</span><span>Arbitrum</span><span>Base</span><span>Polygon</span>
             </div>
-          ))}
-        </div>
-      </section>
+          </div>
+        </section>
 
-      <section className="aa-feature-section">
-        <div className="aa-section-heading">
-          <span>Infrastructure stack</span>
-          <h2>One wallet layer for modern Account Abstraction.</h2>
-        </div>
-        <div className="aa-feature-grid">
-          {features.map((f, i) => (
-            <div key={i} className="aa-feature-card" style={{ animationDelay: `${i * 0.05}s` }}>
-              <div className="aa-feature-icon">{f.icon}</div>
-              <h3>{f.title}</h3>
-              <p>{f.description}</p>
+        <section className="new-hero" id="demo">
+          <div>
+            <h1>Say the move.<br/>It handles the chain.</h1>
+            <p className="new-lede">An agent that sends your crypto, finds yield, and reads your portfolio back to you in plain English — across all supported EVM networks. You set what it's allowed to do; it never does more.</p>
+            <div className="new-cta-row">
+              <button className="new-btn new-btn-gold" onClick={connectWallet} disabled={isConnecting}>
+                {isConnecting ? 'Connecting...' : 'Try Wallet Copilot'}
+              </button>
+              <a className="new-btn new-btn-ghost" href="#how">See how it works</a>
             </div>
-          ))}
-        </div>
-      </section>
-      <ChainMarquee />
-      <CoreStackTabs />
-      <AAStackDeepDive />
-      <ModulesShowcase />
-      <FAQAccordion />
-      <FinalCTA connectWallet={connectWallet} isConnecting={isConnecting} />
-      <Newsletter />
-      <LandingFooter />
+          </div>
+
+          <div className="new-terminal">
+            <div className="new-terminal-top">
+              <div className="new-dot"></div><div className="new-dot"></div><div className="new-dot"></div>
+              <span>agent session · active</span>
+            </div>
+            <div className="new-terminal-body">
+              <div className="new-msg new-msg-user">Move {mockAmount} USDC from Base to wherever it earns the most right now.</div>
+              <div className="new-msg new-msg-agent">Checked Aave, Compound, and two LPs. Aave v3 on Base is paying the best rate with no lockup.</div>
+              <div className="new-msg">
+                <div className="new-card">
+                  <div className="new-card-title">
+                    {mockIsAdjusting ? (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        Supply <input type="number" value={mockInputValue} onChange={(e) => setMockInputValue(e.target.value)} style={{ width: '70px', padding: '2px 6px', borderRadius: '4px', border: '1px solid #d1d5db', background: '#fff', color: '#111827', fontSize: '0.85rem' }} autoFocus /> USDC → Aave v3
+                      </span>
+                    ) : (
+                      <>Supply {mockAmount} USDC → Aave v3 <span className="new-tag">4.8% APY</span></>
+                    )}
+                  </div>
+                  <div className="new-card-row">Session key <b className="new-mono">0x4a1…F2c9</b></div>
+                  <div className="new-card-row">Daily limit remaining <b>$500 of $1,000</b></div>
+                  <div className="new-card-row">Blocked actions <b>approve, ownership transfer</b></div>
+                  <div className="new-confirm">
+                    {mockIsAdjusting ? (
+                      <>
+                        <button className="new-btn new-btn-gold" onClick={() => { setMockAmount(mockInputValue); setMockIsAdjusting(false); }}>Save</button>
+                        <button className="new-btn new-btn-ghost" onClick={() => { setMockInputValue(mockAmount); setMockIsAdjusting(false); }}>Cancel</button>
+                      </>
+                    ) : (
+                      <>
+                        <button 
+                          className="new-btn new-btn-gold" 
+                          onClick={handleDemoConfirm}
+                          disabled={mockTxConfirmed}
+                          style={{ opacity: mockTxConfirmed ? 0.8 : 1, cursor: mockTxConfirmed ? 'default' : 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          {mockTxConfirmed ? <><Check size={16}/> Confirmed</> : 'Confirm'}
+                        </button>
+                        {!mockTxConfirmed && <button className="new-btn new-btn-ghost" onClick={() => { setMockInputValue(mockAmount); setMockIsAdjusting(true); setMockTxError(null); }}>Adjust</button>}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {mockTxError && (
+                <div className="new-msg new-msg-agent" style={{ animation: 'rise 0.4s ease forwards', marginTop: '4px' }}>
+                  <span style={{ color: '#EF4444', fontWeight: 600 }}>✕ {mockTxError}</span>
+                </div>
+              )}
+              {mockTxConfirmed && (
+                <div className="new-msg new-msg-agent" style={{ animation: 'rise 0.4s ease forwards', marginTop: '4px' }}>
+                  <span style={{ color: 'var(--primary)', fontWeight: 600 }}>✓ Transaction successful.</span> {mockAmount} USDC has been supplied to Aave v3 on Base.
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section id="how" className="new-section">
+          <div className="new-head">
+            <h2>Three things to set up. Then just talk to it.</h2>
+          </div>
+          <div className="new-steps">
+            <div className="new-step">
+              <div className="new-num new-mono">01</div>
+              <h3>Connect your wallet</h3>
+              <p>Link MetaMask or any wallet you already use. Nothing custodial, nothing new to remember — your keys never leave it.</p>
+            </div>
+            <div className="new-step">
+              <div className="new-num new-mono">02</div>
+              <h3>Set your agent's limits</h3>
+              <p>Choose what it can touch, how much it can move per day, and what's always off-limits. You set this once, and can change it anytime.</p>
+            </div>
+            <div className="new-step">
+              <div className="new-num new-mono">03</div>
+              <h3>Talk to it</h3>
+              <p>Ask for a transfer, a swap, or where your money should sit this week. It proposes the move; you give the final word.</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="new-section">
+          <div className="new-head">
+            <h2>What it actually does for you</h2>
+            <p>Not a chatbot bolted onto a wallet — a layer that executes, with your rules built into every step.</p>
+          </div>
+          <div className="new-cap-grid">
+            <div className="new-cap">
+              <h3>Transfers, in plain language</h3>
+              <p>Native and stablecoin sends, resolved from a name or address, checked against your balance before anything moves.</p>
+              <div className="new-ex new-mono">"send 200 usdc to maria"</div>
+            </div>
+            <div className="new-cap">
+              <h3>DeFi, executed correctly</h3>
+              <p>Swaps routed through Uniswap, lending through Aave — priced live, with the quote shown before you approve.</p>
+              <div className="new-ex new-mono">"swap 0.2 eth for usdc, best rate"</div>
+            </div>
+            <div className="new-cap">
+              <h3>A portfolio you can read</h3>
+              <p>Live pricing across everything you hold, explained the way you'd explain it to a friend — not a wall of tickers.</p>
+              <div className="new-ex new-mono">"how's my portfolio doing this week"</div>
+            </div>
+            <div className="new-cap">
+              <h3>A second opinion before you move</h3>
+              <p>Ask what a trade would cost, what idle cash could be earning, or whether a position is worth holding. Get an answer, not a dashboard.</p>
+              <div className="new-ex new-mono">"is it worth moving this to aave"</div>
+            </div>
+          </div>
+        </section>
+
+        <section className="new-section">
+          <div className="new-head">
+            <h2>You set the boundaries. It can't cross them.</h2>
+            <p>The agent holds a limited key of its own — never your real one — and everything it can do is bounded before it ever reaches the chain.</p>
+          </div>
+          <div className="new-sec-grid">
+            <div className="new-sec-item">
+              <div className="new-sec-mark">SK</div>
+              <div><h3>Scoped session keys</h3><p>Your agent signs with its own limited key, not your wallet's. Revoke it instantly, anytime, with nothing else affected.</p></div>
+            </div>
+            <div className="new-sec-item">
+              <div className="new-sec-mark">$</div>
+              <div><h3>Spending limits you set</h3><p>Cap what it can move per day or per action. It stops the moment it reaches the ceiling — no exceptions, no override.</p></div>
+            </div>
+            <div className="new-sec-item">
+              <div className="new-sec-mark">✕</div>
+              <div><h3>Risky actions, blocked</h3><p>Approvals, ownership changes, and anything that could hand away control are refused before they reach your wallet.</p></div>
+            </div>
+            <div className="new-sec-item">
+              <div className="new-sec-mark">◇</div>
+              <div><h3>Nothing custodial</h3><p>Your funds sit in a smart account you control. The agent proposes moves; it never holds your assets.</p></div>
+            </div>
+          </div>
+        </section>
+
+        <section className="new-section">
+          <div className="new-head"><h2>Questions people actually ask</h2></div>
+          <div>
+            <details open className="new-details">
+              <summary className="new-summary">Can it move my money without me knowing? <span className="new-plus">+</span></summary>
+              <p>No. Every action stays inside the daily limit you set, and anything above a small threshold waits for your confirmation. You can review or revoke its access at any time.</p>
+            </details>
+            <details className="new-details">
+              <summary className="new-summary">What if I want to stop it? <span className="new-plus">+</span></summary>
+              <p>Revoke the session key from your dashboard and it loses the ability to sign anything, immediately. Your funds were never in its custody to begin with.</p>
+            </details>
+            <details className="new-details">
+              <summary className="new-summary">Which chains does it work on? <span className="new-plus">+</span></summary>
+              <p>Ethereum, Base, Arbitrum, Polygon, and other EVM chains, through one account — you don't manage separate wallets or bridges by hand.</p>
+            </details>
+            <details className="new-details">
+              <summary className="new-summary">Is this custodial? <span className="new-plus">+</span></summary>
+              <p>No. You connect a wallet you already hold the keys to. The agent operates through a scoped, revocable permission — it never takes possession of your assets.</p>
+            </details>
+            <details className="new-details">
+              <summary className="new-summary">How is this built, under the hood? <span className="new-plus">+</span></summary>
+              <p>On a modular smart account (ERC-4337/ERC-7579). The agent's permissions live in a session-key validator module, checked on-chain — not just promised in an app.</p>
+            </details>
+          </div>
+        </section>
+
+        <footer className="new-footer">
+          <div>Wallet<span style={{color: "var(--primary)"}}>Copilot</span></div>
+          <div>Non-custodial · You hold the keys · Revoke anytime</div>
+        </footer>
+      </main>
     </div>
   );
 }
