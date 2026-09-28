@@ -124,8 +124,8 @@ export default function PaymasterView() {
   };
 
   return (
-    <div className="flex flex-col gap-6 w-full max-w-[1720px] mx-auto h-[calc(100vh-140px)] overflow-y-auto pb-10 px-4 pt-6">
-      <div className="glass-card w-full max-w-[1720px] mx-auto animate-fade-in border-stone-300 shadow-md">
+    <div className="flex flex-col gap-6 w-full h-[calc(100vh-140px)] overflow-y-auto pb-10 px-4 pt-6">
+      <div className="glass-card w-full animate-fade-in border-stone-300 shadow-md">
         <h3 className="mb-2 flex items-center gap-2 text-secondary text-2xl font-bold"><DollarSign size={28} /> Gas Sponsorship</h3>
         <div className="bg-secondary/5 border border-secondary/10 p-5 rounded-lg mb-6">
            <p className="text-sm text-muted mb-0 leading-relaxed">

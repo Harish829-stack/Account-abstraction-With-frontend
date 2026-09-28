@@ -36,7 +36,7 @@ export default function MintUSDCView() {
 
   if (!smartAccountAddress) {
     return (
-      <div className="glass-card max-w-2xl mx-auto text-center py-10 border border-red-500/30">
+      <div className="glass-card w-full text-center py-10 border border-red-500/30">
         <h3 className="text-danger mb-2">Smart Account Required</h3>
         <p className="text-muted text-sm">You must set up or connect a Smart Account before minting USDC.</p>
       </div>
@@ -134,8 +134,8 @@ export default function MintUSDCView() {
 
   if (txHash) {
     return (
-      <div className="flex flex-col gap-6 w-full max-w-[1720px] mx-auto h-[calc(100vh-140px)] overflow-y-auto pb-10 px-4 pt-6">
-        <div className="glass-card w-full max-w-5xl mx-auto text-center py-12 animate-fade-in flex flex-col items-center gap-4 border-stone-300 shadow-md">
+      <div className="flex flex-col gap-6 w-full h-[calc(100vh-140px)] overflow-y-auto pb-10 px-4 pt-6">
+        <div className="glass-card w-full text-center py-12 animate-fade-in flex flex-col items-center gap-4 border-stone-300 shadow-md">
           <div className="w-16 h-16 rounded-full bg-success/10 flex items-center justify-center text-success mb-2">
           <CheckCircle2 size={32} />
         </div>
@@ -164,8 +164,8 @@ export default function MintUSDCView() {
   }
 
   return (
-    <div className="flex flex-col gap-6 w-full max-w-[1720px] mx-auto h-[calc(100vh-140px)] overflow-y-auto pb-10 px-4 pt-6">
-      <div className="glass-card w-full mx-auto flex flex-col gap-5 border-stone-300 shadow-md">
+    <div className="flex flex-col gap-6 w-full h-[calc(100vh-140px)] overflow-y-auto pb-10 px-4 pt-6">
+      <div className="glass-card w-full flex flex-col gap-5 border-stone-300 shadow-md">
         <h2 className="flex items-center gap-2 text-gradient"><Coins size={24} /> Mint Mock USDC</h2>
 
         <div className="bg-white/5 border border-white/10 rounded-lg p-4 flex flex-col gap-2">
