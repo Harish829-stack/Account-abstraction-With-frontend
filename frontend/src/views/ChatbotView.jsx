@@ -389,7 +389,7 @@ export default function ChatbotView() {
         refreshAgents,
         isChatLoading
     } = useChatbotContext();
-    const { smartAccountAddress, provider, signer, eoaAddress, env, chainId, installedModules, loadingModules, refreshInstalledModules, trackOp } = useAppContext();
+    const { smartAccountAddress, provider, signer, eoaAddress, env, chainId, refreshInstalledModules, trackOp } = useAppContext();
 
     const [tab, setTab] = useState("setup");
     const [visited, setVisited] = useState(["setup"]);
@@ -398,8 +398,6 @@ export default function ChatbotView() {
     const [isDeleting, setIsDeleting] = useState(false);
     const [isRevokingAll, setIsRevokingAll] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
-    const [generatedAgentAddress, setGeneratedAgentAddress] = useState('');
-    const [generatedAgent, setGeneratedAgent] = useState(null);
     const [config, setConfig] = useState({
         name: '',
         scope: SCOPES[0],
@@ -416,7 +414,6 @@ export default function ChatbotView() {
                 limit: agentStatus.maxAmount,
                 validityDays: getRemainingValidityDays(agentStatus.validUntil)
             });
-            setGeneratedAgentAddress(agentStatus.agentAddress);
             setVisited(v => [...new Set([...v, "setup", "workspace"])]);
             setTab("workspace");
         }
@@ -428,8 +425,6 @@ export default function ChatbotView() {
     };
 
     const handleNewAgent = () => {
-        setGeneratedAgentAddress('');
-        setGeneratedAgent(null);
         setConfig({
             name: '',
             scope: SCOPES[0],
@@ -460,8 +455,6 @@ export default function ChatbotView() {
                 maxAmount: limit,
                 validityDays: String(Math.floor(parsedValidityDays))
             };
-            setGeneratedAgent(genAgent);
-            setGeneratedAgentAddress(addr);
 
             // 2. Build Authorize UserOp
             const SESSION_KEY_VALIDATOR = env.SESSION_KEY_VALIDATOR;
@@ -578,7 +571,6 @@ export default function ChatbotView() {
                 alert("Assistant creation failed or timed out.");
             }
         } catch (e) {
-            console.error(e);
             alert("Error creating assistant: " + e.message);
         } finally {
             setIsCreating(false);
@@ -651,121 +643,6 @@ export default function ChatbotView() {
             alert("Failed to sync agents: " + (e.response?.data?.error || e.message));
         } finally {
             setIsSyncing(false);
-        }
-    };
-
-    const handleInstall = async () => {
-        setIsInstalling(true);
-        try {
-            const SESSION_KEY_VALIDATOR = env.SESSION_KEY_VALIDATOR;
-            if (!SESSION_KEY_VALIDATOR) throw new Error("SessionKeyValidator address missing from chain config.");
-            const parsedValidityDays = Number(config.validityDays || DEFAULT_AGENT_VALIDITY_DAYS);
-            if (!Number.isFinite(parsedValidityDays) || parsedValidityDays < 1 || parsedValidityDays > 365) {
-                throw new Error("Agent access duration must be between 1 and 365 days.");
-            }
-            const validUntil = Math.floor(Date.now() / 1000) + (Math.floor(parsedValidityDays) * SECONDS_PER_DAY);
-
-            const { target, selector, maxValue } = getAgentRule(config);
-
-            const keyData = [generatedAgentAddress, target, selector, maxValue, 0, validUntil, 0];
-
-            const validatorIface = new ethers.Interface(SessionKeyValidatorABI);
-            const innerCallData = validatorIface.encodeFunctionData("addSessionKey", [keyData]);
-            const callData = encodeERC7579Single(SESSION_KEY_VALIDATOR, "0x0", innerCallData);
-
-            const entryPoint = new ethers.Contract(
-                env.ENTRY_POINT,
-                ["function getNonce(address sender, uint192 key) view returns (uint256)"],
-                provider
-            );
-
-            const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
-            const { maxFeePerGas, maxPriorityFeePerGas } = await getDynamicGasFees(provider, chainId);
-
-            const userOp = {
-                sender: smartAccountAddress,
-                nonce: ethers.toBeHex(nonce),
-                factory: "0x",
-                factoryData: "0x",
-                callData,
-                callGasLimit: "0x0",
-                verificationGasLimit: "0x0",
-                preVerificationGas: "0x0",
-                maxFeePerGas: ethers.toBeHex(maxFeePerGas),
-                maxPriorityFeePerGas: ethers.toBeHex(maxPriorityFeePerGas),
-                paymaster: "0x",
-                paymasterVerificationGasLimit: "0x",
-                paymasterPostOpGasLimit: "0x",
-                paymasterData: "0x",
-                signature: "0x"
-            };
-
-            const est = await estimateUserOperationGas(userOp, chainId);
-            applyBufferedGasEstimate(userOp, est);
-
-            const packUserOp = (op) => {
-                const accountGasLimits = ethers.concat([
-                    ethers.zeroPadValue(ethers.toBeHex(op.verificationGasLimit), 16),
-                    ethers.zeroPadValue(ethers.toBeHex(op.callGasLimit), 16)
-                ]);
-                const gasFees = ethers.concat([
-                    ethers.zeroPadValue(ethers.toBeHex(op.maxPriorityFeePerGas), 16),
-                    ethers.zeroPadValue(ethers.toBeHex(op.maxFeePerGas), 16)
-                ]);
-                return {
-                    sender: op.sender,
-                    nonce: op.nonce,
-                    initCode: "0x",
-                    callData: op.callData,
-                    accountGasLimits,
-                    preVerificationGas: op.preVerificationGas,
-                    gasFees,
-                    paymasterAndData: "0x",
-                    signature: op.signature
-                };
-            };
-
-            const packedForHash = packUserOp(userOp);
-            const epHashContract = new ethers.Contract(
-                env.ENTRY_POINT,
-                ["function getUserOpHash(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature) userOp) view returns (bytes32)"],
-                provider
-            );
-
-            const userOpHash = await epHashContract.getUserOpHash(packedForHash);
-            const sig = await signer.signMessage(ethers.getBytes(userOpHash));
-            userOp.signature = sig;
-
-            const returnedHash = await sendUserOperation(userOp, chainId);
-            trackOp(returnedHash, 'Authorize AI Agent', { calldata: userOp.callData });
-
-            const receipt = await waitForReceipt(returnedHash);
-
-            if (receipt && receipt.success) {
-                const authorizedAgent = {
-                    ...(generatedAgent || {}),
-                    agentAddress: generatedAgentAddress,
-                    name: config.name?.trim() || generatedAgent?.name || "Agent",
-                    scope: config.scope.id,
-                    maxAmount: config.limit,
-                    maxValueWei: maxValue.toString(),
-                    target,
-                    selector,
-                    validAfter: 0,
-                    validUntil,
-                    txHashInstall: returnedHash,
-                    authorized: true
-                };
-                await authorizeAgent(authorizedAgent);
-                go("workspace");
-            } else {
-                alert("Agent installation failed or timed out.");
-            }
-        } catch (e) {
-            console.error(e);
-            alert("Error installing agent: " + e.message);
-        } finally {
-            setIsInstalling(false);
         }
     };
 

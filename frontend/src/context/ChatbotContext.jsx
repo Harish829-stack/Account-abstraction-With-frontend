@@ -133,8 +133,7 @@ export const ChatbotProvider = ({ children }) => {
                 setActiveAgentAddress("");
             }
             return nextAgents;
-        } catch (e) {
-            console.error("Failed to check agent status:", e);
+        } catch {
             setAgents([]);
             setActiveAgentAddress("");
             return [];
@@ -147,62 +146,46 @@ export const ChatbotProvider = ({ children }) => {
     }, [refreshAgents]);
 
     const generateAgent = async (scope, maxAmount, name = "") => {
-        try {
-            const res = await axios.post(`${CHATBOT_API_URL}/api/agent/generate`, {
-                smartAccountAddress,
-                ownerEoa: eoaAddress,
-                chainId: chainId ? chainId.toString() : String(getDefaultChainId()),
-                scope,
-                maxAmount,
-                name
-            });
-            upsertAgent(res.data);
-            return res.data.agentAddress;
-        } catch (e) {
-            console.error("Failed to generate agent:", e);
-            throw e;
-        }
+        const res = await axios.post(`${CHATBOT_API_URL}/api/agent/generate`, {
+            smartAccountAddress,
+            ownerEoa: eoaAddress,
+            chainId: chainId ? chainId.toString() : String(getDefaultChainId()),
+            scope,
+            maxAmount,
+            name
+        });
+        upsertAgent(res.data);
+        return res.data.agentAddress;
     };
 
     const authorizeAgent = async (agent) => {
         if (!smartAccountAddress || !agent?.agentAddress) return;
-        try {
-            const res = await axios.patch(`${CHATBOT_API_URL}/api/agent/${smartAccountAddress}/${agent.agentAddress}/authorize`, {
-                chainId: chainId ? chainId.toString() : String(getDefaultChainId()),
-                target: agent.target,
-                selector: agent.selector,
-                maxValueWei: agent.maxValueWei,
-                validAfter: agent.validAfter,
-                validUntil: agent.validUntil,
-                txHashInstall: agent.txHashInstall
-            });
-            if (res.data.agent) {
-                upsertAgent(res.data.agent, true);
-            } else {
-                upsertAgent({ ...agent, authorized: true }, true);
-            }
-            // Ensure we have the absolute latest state from the backend
-            await refreshAgents();
-        } catch (e) {
-            console.error("Failed to mark agent authorized:", e);
-            throw e;
+        const res = await axios.patch(`${CHATBOT_API_URL}/api/agent/${smartAccountAddress}/${agent.agentAddress}/authorize`, {
+            chainId: chainId ? chainId.toString() : String(getDefaultChainId()),
+            target: agent.target,
+            selector: agent.selector,
+            maxValueWei: agent.maxValueWei,
+            validAfter: agent.validAfter,
+            validUntil: agent.validUntil,
+            txHashInstall: agent.txHashInstall
+        });
+        if (res.data.agent) {
+            upsertAgent(res.data.agent, true);
+        } else {
+            upsertAgent({ ...agent, authorized: true }, true);
         }
+        // Ensure we have the absolute latest state from the backend
+        await refreshAgents();
     };
 
     const deleteAgent = async (agentAddress, { txHashRevoke } = {}) => {
         if (!smartAccountAddress || !agentAddress) return;
-        const key = normalizeAddress(agentAddress);
-        try {
-            const res = await axios.patch(`${CHATBOT_API_URL}/api/agent/${smartAccountAddress}/${agentAddress}/revoke`, {
-                chainId: chainId ? chainId.toString() : String(getDefaultChainId()),
-                txHashRevoke
-            });
-            // Completely refresh agents from the backend to guarantee accurate state
-            await refreshAgents();
-        } catch (e) {
-            console.error("Failed to delete agent:", e);
-            throw e;
-        }
+        await axios.patch(`${CHATBOT_API_URL}/api/agent/${smartAccountAddress}/${agentAddress}/revoke`, {
+            chainId: chainId ? chainId.toString() : String(getDefaultChainId()),
+            txHashRevoke
+        });
+        // Completely refresh agents from the backend to guarantee accurate state
+        await refreshAgents();
     };
 
     const clearAgents = async ({ txHashRevoke } = {}) => {
@@ -268,7 +251,6 @@ export const ChatbotProvider = ({ children }) => {
             
             setAgentMessages(activeAgentAddress, (prev) => [...prev, aiMsg]);
         } catch (e) {
-            console.error("Chat error:", e);
             setAgentMessages(activeAgentAddress, (prev) => [...prev, { role: "agent", content: "Sorry, I encountered an error: " + (e.response?.data?.error || e.message) }]);
         } finally {
             setIsChatLoading(false);

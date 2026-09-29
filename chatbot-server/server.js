@@ -702,7 +702,6 @@ app.post('/api/chat', async (req, res) => {
             const currentNonce = baseNonce + BigInt(i);
             
             try {
-                console.log(`Sending UserOp using chainId: ${chainId}, rpcUrl: ${chainProvider._getConnection().url}, bundlerUrl: ${bundlerUrl}`);
                 const opHash = await buildAndSendAgentOp(
                     agentWallet,
                     chainProvider,
@@ -715,9 +714,7 @@ app.post('/api/chat', async (req, res) => {
                 );
                 
                 // Wait for the UserOp to be completely mined before sending the next one
-                console.log(`Waiting for UserOp ${opHash} to be mined...`);
                 const receipt = await waitForUserOp(opHash, 90000, bundlerUrl);
-                console.log(`UserOp ${opHash} mined successfully!`);
                 
                 let txUrl = `https://jiffyscan.xyz/userOpHash/${opHash}`;
                 if (receipt && receipt.receipt && receipt.receipt.transactionHash) {

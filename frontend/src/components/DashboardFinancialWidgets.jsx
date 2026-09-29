@@ -4,6 +4,7 @@ import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { buildAndSendAccountOp, encodeERC7579Batch } from '../utils/helpers';
+import { getDefaultChainId } from '../config/chains';
 
 const FINANCIAL_API = (import.meta.env.VITE_FINANCIAL_AGENT_URL || 'http://127.0.0.1:3003').replace(/\/$/, '');
 const AAVE_POOL = import.meta.env.VITE_AAVE_YIELD_POOL;
@@ -14,7 +15,7 @@ const truncAddr = (a) => a ? `${a.slice(0, 6)}...${a.slice(-4)}` : '';
 
 export function SmartVaultPortfolioWidget() {
   const { smartAccountAddress, chainId, refreshTrigger } = useAppContext();
-  const resolvedChainId = Number(chainId) || 11155111;
+  const resolvedChainId = Number(chainId) || getDefaultChainId();
   const [portfolio, setPortfolio] = useState(null);
   const [isLoadingPortfolio, setIsLoadingPortfolio] = useState(false);
 
@@ -24,8 +25,8 @@ export function SmartVaultPortfolioWidget() {
     try {
       const { data } = await axios.get(`${FINANCIAL_API}/api/financial/portfolio/${resolvedChainId}/${smartAccountAddress}`);
       setPortfolio(data);
-    } catch (e) {
-      console.error('[Portfolio]', e.message);
+    } catch {
+      setPortfolio(null);
     } finally {
       setIsLoadingPortfolio(false);
     }
@@ -92,7 +93,7 @@ export function SmartVaultPortfolioWidget() {
 
 export function ChainlinkPricesWidget() {
   const { chainId } = useAppContext();
-  const resolvedChainId = Number(chainId) || 11155111;
+  const resolvedChainId = Number(chainId) || getDefaultChainId();
   const [prices, setPrices] = useState(null);
   const [isLoadingPrices, setIsLoadingPrices] = useState(false);
 
@@ -101,8 +102,8 @@ export function ChainlinkPricesWidget() {
     try {
       const { data } = await axios.get(`${FINANCIAL_API}/api/financial/market/prices?chainId=${resolvedChainId}`);
       setPrices(data.prices);
-    } catch (e) {
-      console.error('[Prices]', e.message);
+    } catch {
+      setPrices(null);
     } finally {
       setIsLoadingPrices(false);
     }
@@ -173,7 +174,7 @@ export function ChainlinkPricesWidget() {
 export function AaveV3Widget() {
   const { smartAccountAddress, chainId, env, provider, signer, refreshTrigger, trackOp } = useAppContext();
   const { error } = useToast();
-  const resolvedChainId = Number(chainId) || 11155111;
+  const resolvedChainId = Number(chainId) || getDefaultChainId();
   const usdcAddress = env?.VITE_USDC_TOKEN || '0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E';
 
   const [aaveMarket, setAaveMarket] = useState(null);
@@ -221,7 +222,6 @@ export function AaveV3Widget() {
     } catch (e) {
       const msg = e.response?.data?.error || e.message || 'Unknown error';
       setAaveError(msg);
-      console.error('[Aave]', msg);
     } finally {
       setIsLoadingAave(false);
     }
@@ -252,7 +252,6 @@ export function AaveV3Widget() {
       trackOp(opHash, "Aave Deposit");
       setDepositAmount('');
     } catch (err) {
-      console.error(err);
       error(err.reason || err.message || 'Failed Batched Aave Deposit');
     } finally {
       setIsOpPending(false);
@@ -279,7 +278,6 @@ export function AaveV3Widget() {
       trackOp(opHash, "Aave Withdraw & Claim");
       setWithdrawAmount('');
     } catch (err) {
-      console.error(err);
       error(err.reason || err.message || 'Failed Batched Withdraw & Claim');
     } finally {
       setIsOpPending(false);
@@ -326,6 +324,10 @@ export function AaveV3Widget() {
             <div className="flex justify-between py-1 border-b border-stone-100">
               <span className="text-stone-500">Total Balance (inc. Earning)</span>
               <span className="font-mono font-bold text-stone-900">{aaveTotalBalance} USDC</span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-stone-100">
+              <span className="text-stone-500">Principal</span>
+              <span className="font-mono font-medium text-stone-800">{aavePrincipal} USDC</span>
             </div>
             <div className="flex justify-between py-1 text-emerald-700 bg-emerald-50/60 px-2 rounded font-semibold">
               <span>Your Accrued Earnings</span>

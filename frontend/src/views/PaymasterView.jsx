@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { IEntryPointABI, ERC20_ABI } from '../utils/abis';
-import { shortenAddress, toHex, packUserOp, encodeERC7579Single } from '../utils/helpers';
+import { toHex, packUserOp, encodeERC7579Single } from '../utils/helpers';
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import { useToast } from '../context/ToastContext';
 import { DollarSign } from 'lucide-react';

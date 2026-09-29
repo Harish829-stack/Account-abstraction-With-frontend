@@ -169,6 +169,10 @@ export const CHAIN_REGISTRY = [
 const CONFIG_CACHE_KEY = "aa_wallet_config";
 let configLoadPromise = null;
 
+function getConfigApiBase() {
+  return (env.VITE_CONFIG_API_URL || "").replace(/\/$/, "");
+}
+
 function readCachedConfig() {
   try {
     const raw = window.localStorage.getItem(CONFIG_CACHE_KEY);
@@ -203,7 +207,31 @@ function applyRemoteConfig(config) {
 }
 
 async function loadRemoteConfig() {
-  return null;
+  if (configLoadPromise) return configLoadPromise;
+
+  const base = getConfigApiBase();
+  if (!base) return null;
+
+  configLoadPromise = (async () => {
+    try {
+      const res = await fetch(`${base}/config`, {
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) return null;
+
+      const config = await res.json();
+      applyRemoteConfig(config);
+      writeCachedConfig(config);
+      window.dispatchEvent(new CustomEvent("aa-config-updated"));
+      return config;
+    } catch {
+      return null;
+    } finally {
+      configLoadPromise = null;
+    }
+  })();
+
+  return configLoadPromise;
 }
 
 export async function refreshRemoteConfig() {

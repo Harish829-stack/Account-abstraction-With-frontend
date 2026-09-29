@@ -8,7 +8,6 @@ import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees, applyBu
 import { IEntryPointABI, SmartAccountABI, K1ValidatorFactoryABI } from '../utils/abis';
 import { getDashboardSummary } from '../utils/backendApi';
 import {
-  Zap, ShieldCheck, Layers, Gift, Clock, Network,
   CheckCircle2, XCircle, ArrowRight, ArrowUpRight,
   RefreshCw, TrendingUp, Activity, Wallet, Box, BarChart3,
   ChevronDown, ArrowDown, Puzzle, Fuel, MapPin, Key, Users,
@@ -20,17 +19,6 @@ import { SmartVaultPortfolioWidget, ChainlinkPricesWidget, AaveV3Widget } from '
 const UNISWAP_ROUTER = '0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F';
 const WETH_SEPOLIA = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
 
-const features = [
-  { icon: <Zap size={28} />, title: "Gas Abstraction", description: "Pay fees in USDC, no native token required." },
-  { icon: <ShieldCheck size={28} />, title: "Smart Ownership", description: "Upgrade, transfer, or recover ownership anytime." },
-  { icon: <Layers size={28} />, title: "Batch Transactions", description: "Execute multiple actions in one UserOperation." },
-  { icon: <Gift size={28} />, title: "Sponsored Transactions", description: "Let a Paymaster cover gas costs entirely." },
-  { icon: <Clock size={28} />, title: "Session-based Signing", description: "Time-bounded validity windows, no permanent approvals." },
-  { icon: <Network size={28} />, title: "Bundler Network", description: "Relayed through Skandha bundler, not your EOA." },
-];
-
-
-
 // ─── Number Formatter for Large Balances ────────────────────────────────────────
 const formatCurrencyCompact = (val) => {
   return new Intl.NumberFormat('en-US', {
@@ -38,23 +26,6 @@ const formatCurrencyCompact = (val) => {
     maximumFractionDigits: 2,
     minimumFractionDigits: val < 1000000 ? 2 : 0
   }).format(val);
-};
-
-const formatStatusLabel = (value = '') => {
-  if (!value) return 'Unknown';
-  return value.charAt(0).toUpperCase() + value.slice(1);
-};
-
-const formatRelativeDashboardTime = (isoValue) => {
-  if (!isoValue) return 'No activity yet';
-  const diffMs = Date.now() - new Date(isoValue).getTime();
-  if (!Number.isFinite(diffMs)) return 'Recently updated';
-  const minutes = Math.max(0, Math.floor(diffMs / 60000));
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
 };
 
 // ─── Premium SVG Donut Chart ──────────────────────────────────────────────────
@@ -123,28 +94,12 @@ function ConnectedDashboard() {
     smartAccountAddress, smartAccountStatus, isSmartAccountDeployed, saETHBalance, saUSDCBalance, saEntryPointDeposit, saOwner,
     paymasterAddress,
     setCurrentView, refreshAllData, signer, provider, env, chainId, nativeToken, isAmoy,
-    trackOp, setGlobalLoading, setSetupStep, refreshTrigger
+    trackOp, setGlobalLoading, refreshTrigger
   } = useAppContext();
   const toast = useToast();
   const [refreshing, setRefreshing] = useState(false);
-  const [pmAllowance, setPmAllowance] = useState('0');
-  const [dashboardSummary, setDashboardSummary] = useState(null);
-  const [loadingDashboardSummary, setLoadingDashboardSummary] = useState(false);
-
-  const fetchPmAllowance = async () => {
-    if (!signer || !env.VITE_USDC_TOKEN || !smartAccountAddress || !paymasterAddress) return;
-    try {
-      const usdc = new ethers.Contract(env.VITE_USDC_TOKEN, ["function allowance(address owner, address spender) view returns (uint256)"], provider);
-      const allowance = await usdc.allowance(smartAccountAddress, paymasterAddress);
-      setPmAllowance(allowance.toString());
-    } catch (err) {
-      console.error("Error fetching pm allowance:", err);
-    }
-  };
-
-  useEffect(() => {
-    fetchPmAllowance();
-  }, [smartAccountAddress, paymasterAddress, provider]);
+  const [, setDashboardSummary] = useState(null);
+  const [, setLoadingDashboardSummary] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,25 +199,9 @@ function ConnectedDashboard() {
   const saUSDC = parseFloat(ethers.formatUnits(saUSDCBalance || '0', 6));
   const eoaETH = parseFloat(ethers.formatEther(eoaETHBalance || '0'));
   const saETH = parseFloat(ethers.formatEther(saETHBalance || '0'));
-  // Checklist
-  const checklist = [
-    { label: 'EOA Wallet Connected', done: !!eoaAddress },
-    { label: 'Smart Account Deployed', done: isSmartAccountDeployed },
-    { label: 'Smart Account Funded (USDC)', done: saUSDC > 0 },
-    { label: 'Paymaster Approved', done: Number(pmAllowance) > 0 },
-  ];
-  const checklistPct = Math.round((checklist.filter(c => c.done).length / checklist.length) * 100);
-  const readiness = dashboardSummary?.productReadiness;
-  const readinessScore = readiness?.score ?? checklistPct;
-  const backendConfirmedOps = dashboardSummary?.userOps?.byStatus?.confirmed || 0;
-  const backendPendingOps = dashboardSummary?.userOps?.byStatus?.pending || 0;
-  const backendActiveAgents = dashboardSummary?.agents?.active || 0;
-  const backendExpiringAgents = dashboardSummary?.agents?.expiringSoon || 0;
-
   const handleRefresh = async () => {
     setRefreshing(true);
     await refreshAllData();
-    await fetchPmAllowance();
     setRefreshing(false);
   };
 
@@ -293,7 +232,9 @@ function ConnectedDashboard() {
           const map = mapStr ? JSON.parse(mapStr) : {};
           map[sessionKeyAddr.toLowerCase()] = burnerKey;
           localStorage.setItem("session_burner_keys_map", JSON.stringify(map));
-      } catch {}
+      } catch {
+          localStorage.setItem("session_burner_keys_map", JSON.stringify({ [sessionKeyAddr.toLowerCase()]: burnerKey }));
+      }
 
       const parsedValue = ethers.parseEther("0.1"); // Default max value
       const validUntilTimestamp = Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 7); // 7 days

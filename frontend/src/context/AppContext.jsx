@@ -654,7 +654,6 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     if (!provider) return;
 
-    console.log("[AppContext] Subscribing to block events for real-time updates");
     const onBlock = (blockNum) => {
       // Trigger every 2 blocks (~24s) to catch external incoming/outgoing transfers faster
       if (document.visibilityState === "visible" && blockNum % 2 === 0) {
@@ -766,7 +765,6 @@ export const AppProvider = ({ children }) => {
               const events = await epContract.queryFilter(filter, fromBlock, currentBlock);
               if (events.length > 0) {
                 const txHash = events[0].transactionHash;
-                console.log(`[Tracker] Found op ${op.opHash.slice(0, 10)}... via on-chain fallback! TxHash: ${txHash}`);
                 markConfirmed(op.opHash, txHash, op.label);
               }
             } catch (onChainErr) {

@@ -27,7 +27,6 @@ export default function AccountSetupView() {
     setSetupStep,
     chainId,
     nativeToken,
-    isAmoy,
     trackOp
   } = useAppContext();
   const toast = useToast();
@@ -96,7 +95,6 @@ export default function AccountSetupView() {
         const predicted = await factory.getFunction("computeAccountAddress")(eoaAddress, salt, [], 0);
         if (active) setPredictedAddress(predicted);
       } catch (err) {
-        console.error("Failed to predict:", err);
         if (active) {
           setPredictedAddress('');
           setPredictionError(err.message || err.toString());

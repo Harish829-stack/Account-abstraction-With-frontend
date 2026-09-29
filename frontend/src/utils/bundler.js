@@ -89,7 +89,6 @@ export async function estimateUserOperationGas(userOp, chainId) {
         method: "eth_estimateUserOperationGas",
         params: [opToEstimate, entryPoint]
       };
-    console.log("Estimating UserOp:", JSON.stringify(payload, null, 2));
     const res = await axios.post(
       rpcUrl,
       payload,
@@ -181,8 +180,7 @@ export async function getUserOpReceipt(userOpHash, chainId) {
       }
     );
     return res.data.result;
-  } catch (error) {
-    console.error("Error fetching UserOp receipt:", error);
+  } catch {
     return null;
   }
 }
@@ -213,8 +211,11 @@ export async function getDynamicGasFees(provider, chainId) {
     maxPriorityFeePerGas = (maxPriorityFeePerGas * 11n) / 10n;
     maxFeePerGas = (maxFeePerGas * 11n) / 10n;
     
-  } catch (e) {
-    console.warn("Dynamic gas fetch failed completely, using fallbacks:", e);
+  } catch {
+    if (chainConfig) {
+      maxPriorityFeePerGas = BigInt(chainConfig.minPriorityFeeWei || maxPriorityFeePerGas);
+      maxFeePerGas = BigInt(chainConfig.minFeeWei || maxFeePerGas);
+    }
   }
   
   return { maxPriorityFeePerGas, maxFeePerGas };
