@@ -129,8 +129,8 @@ export default function FinancialAgentView() {
         const earnedRaw = await pool.earned(smartAccountAddress);
         const position = await pool.positions(smartAccountAddress);
         
-        const earningsStr = ethers.formatUnits(earnedRaw, 6);
-        const principalStr = ethers.formatUnits(position.amount, 6);
+        const earningsStr = parseFloat(ethers.formatUnits(earnedRaw, 6)).toFixed(6);
+        const principalStr = parseFloat(ethers.formatUnits(position.amount, 6)).toFixed(6);
         const totalStr = (parseFloat(earningsStr) + parseFloat(principalStr)).toFixed(6);
 
         setAaveEarnings(earningsStr);
@@ -198,10 +198,10 @@ export default function FinancialAgentView() {
       const callData = encodeERC7579Batch(
         [AAVE_POOL, AAVE_POOL],
         [0n, 0n],
-        [withdrawData, claimData]
+        [claimData, withdrawData]
       );
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env?.ENTRY_POINT, env?.K1_VALIDATOR, chainId);
-      trackOp(opHash, "Aave Withdraw & Claim");
+      trackOp(opHash, "Aave Claim & Withdraw");
       setWithdrawAmount('');
     } catch (err) {
       error(err.reason || err.message || 'Failed Batched Withdraw & Claim');
@@ -334,7 +334,7 @@ export default function FinancialAgentView() {
   const ethAsset = portfolio?.assets?.find(a => !a.tokenAddress);
 
   return (
-    <div className="h-[calc(100vh-140px)] overflow-hidden font-sans flex flex-col antialiased text-[#0f172a] bg-[#f8f6f0] rounded-3xl border border-stone-300 shadow-2xl">
+    <div className="h-[calc(100vh-140px)] overflow-hidden font-sans flex flex-col antialiased wallet-card">
 
       {/* BEGIN: MainContent */}
       <main className="flex-1 min-h-0 overflow-hidden max-w-[1720px] w-full mx-auto px-4 lg:px-8 py-3 flex flex-col space-y-3">
@@ -703,7 +703,7 @@ export default function FinancialAgentView() {
                     <div className="flex space-x-2">
                       <input type="number" placeholder="Withdraw Amt" className="w-full px-2 py-1.5 text-xs border border-stone-300 rounded-lg font-mono focus:outline-none focus:border-stone-500" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)} disabled={isOpPending} />
                       <button onClick={handleAaveWithdrawClaimOp} disabled={isOpPending} className="px-3 py-1.5 bg-stone-800 text-white rounded-lg text-xs font-semibold whitespace-nowrap hover:bg-stone-900 disabled:opacity-50 transition shadow-sm" style={{ color: 'white' }}>
-                        Withdraw + Claim
+                        Withdraw
                       </button>
                     </div>
                   </div>

@@ -1,14 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
-import { useChatbotContext } from '../context/ChatbotContext';
-import { useAppContext } from '../context/AppContext';
-import { ethers } from 'ethers';
-import { SessionKeyValidatorABI, SmartAccountABI } from '../utils/abis';
-import { buildAndSendAccountOp, encodeERC7579Single, encodeERC7579Batch, getActiveSessionKeysOnChain, getPrevValidator } from '../utils/helpers';
-import { estimateUserOperationGas, sendUserOperation, getUserOpReceipt, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import { getDefaultChainId } from '../config/chains';
-import "./agent-ui.css";
+import "../views/agent-ui.css";
 
 /* ---------- icons ---------- */
 const BotIcon = ({ size = 16 }) => (
@@ -289,7 +283,7 @@ function AgentWorkspace({
   const scrollRef = useRef(null);
 
   useEffect(() => {
-      scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+      scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages, isChatLoading]);
 
   const submit = (e) => {
@@ -445,6 +439,40 @@ function AgentWorkspace({
         <div ref={scrollRef} />
       </div>
 
+      <div style={{ padding: '0 20px 12px', display: 'flex', gap: '8px', overflowX: 'auto', whiteSpace: 'nowrap' }} className="hide-scrollbar">
+          {(activeAgentAddress === 'financial' ? [
+              "What's my portfolio worth?",
+              "Send 100 USDC to vitalik.eth",
+              "Swap 0.5 ETH for USDC",
+              "Where should I invest for max profit?"
+          ] : (scope?.suggestions || [])).map((q) => (
+              <button
+                  key={q}
+                  type="button"
+                  onClick={() => {
+                      if (!isChatLoading && activeAgentAddress && activeAgent?.authorized !== false) {
+                          sendMessage(q);
+                      }
+                  }}
+                  style={{
+                      background: 'rgba(0, 245, 155, 0.1)',
+                      border: '1px solid rgba(0, 245, 155, 0.2)',
+                      color: '#00f59b',
+                      padding: '6px 12px',
+                      borderRadius: '16px',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                      transition: 'all 0.2s'
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(0, 245, 155, 0.2)'; }}
+                  onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(0, 245, 155, 0.1)'; }}
+              >
+                  {q}
+              </button>
+          ))}
+      </div>
+
       <form className="composer" onSubmit={submit}>
         <input
           className="composer__input"
@@ -466,43 +494,136 @@ function AgentWorkspace({
   );
 }
 
-export default function UnifiedAgentView() {
-    const {
-        isAgentConfigured,
-        agentStatus,
-        agents,
-        activeAgentAddress: rawActiveAgentAddress,
-        setActiveAgentAddress,
-        messages: chatbotMessages,
-        sendMessage: sendChatbotMessage,
-        generateAgent,
-        authorizeAgent,
-        deleteAgent,
-        clearAgents,
-        refreshAgents,
-        isChatLoading: isChatbotLoading
-    } = useChatbotContext();
-    const { 
-        smartAccountAddress, provider, signer, eoaAddress, env, chainId, 
-        refreshInstalledModules, trackOp,
-        financeAgentMessages, setFinanceAgentMessages, 
-        financeAgentHistory, setFinanceAgentHistory
-    } = useAppContext();
-
-    const activeAgentAddress = rawActiveAgentAddress || 'financial';
-    const isFinancialAgent = activeAgentAddress === 'financial';
+export default function AgentDemoView() {
+    // --- Mock State ---
+    const [mockBalances, setMockBalances] = useState({ eth: 2.4, usdc: 4700 });
+    const [mockAgents, setMockAgents] = useState([]);
+    const [mockActiveAgent, setMockActiveAgent] = useState('financial');
+    const [mockMessages, setMockMessages] = useState([]);
+    const [isCreating, setIsCreating] = useState(false);
+    const [isChatbotLoading, setIsChatbotLoading] = useState(false);
     
+    // Derived context
+    const smartAccountAddress = "0xDemoSmartAccount1234567890abcdef12345678";
+    const eoaAddress = "0xDemoUser1234567890abcdef1234567890abcdef";
+    const chainId = 11155111;
+    const provider = {}; 
+    const signer = {};
+    const env = { ENTRY_POINT: '0x' };
+    const trackOp = () => {};
+    const financeAgentMessages = mockMessages;
+    const setFinanceAgentMessages = setMockMessages;
+    const financeAgentHistory = [];
+    const setFinanceAgentHistory = () => {};
+    
+    const isAgentConfigured = mockAgents.length > 0;
+    const agentStatus = mockAgents[0];
+    const agents = mockAgents;
+    const activeAgentAddress = mockActiveAgent;
+    const setActiveAgentAddress = setMockActiveAgent;
+    const chatbotMessages = mockMessages;
+    
+    const sendChatbotMessage = (text) => {
+        const userMsg = { id: Date.now(), role: 'user', content: text, time: new Date().toLocaleTimeString() };
+        setMockMessages(prev => [...prev, userMsg]);
+        setIsChatbotLoading(true);
+        
+        setTimeout(() => {
+            let amount = 0;
+            const match = text.match(/(\d+(\.\d+)?)/);
+            if (match) amount = parseFloat(match[0]);
+            
+            const currentAgent = agents.find(a => a.agentAddress === activeAgentAddress);
+            const limit = currentAgent ? parseFloat(currentAgent.maxAmount) : 0;
+            
+            let reply = "";
+            let newEth = mockBalances.eth;
+            let newUsdc = mockBalances.usdc;
+            let actionObj = null;
+            
+            const lowerText = text.toLowerCase();
+            const isAave = lowerText.includes('aave') || lowerText.includes('supply') || lowerText.includes('invest');
+            const isSwap = lowerText.includes('swap');
+            const isEth = /\d+\s*eth/i.test(lowerText);
+            const isUsdc = /\d+\s*usdc/i.test(lowerText);
+            const actionName = isAave ? 'Supply' : (isSwap ? 'Swap' : 'Transfer');
+            const agentScope = isFinancialAgent ? 'financial' : currentAgent?.scope;
+            
+            if (lowerText.includes("portfolio worth")) {
+                const ethVal = mockBalances.eth * 2500;
+                const total = ethVal + mockBalances.usdc;
+                reply = `💼 **Portfolio Summary**\n\nHere is your current balance:\n- **ETH:** ${mockBalances.eth.toFixed(4)} (~$${ethVal.toFixed(2)})\n- **USDC:** $${mockBalances.usdc.toFixed(2)}\n\n**Total Estimated Value:** $${total.toFixed(2)}`;
+            } else if (lowerText.includes("where should i invest") || lowerText.includes("max profit")) {
+                reply = `📊 **Market Analysis & Recommendation**\n\nBased on current market trends, ETH is experiencing a slight downtrend today.\n\nI recommend **swapping ETH for USDC** to preserve capital, and then **supplying your USDC to the Aave V3 Yield Pool** where it is currently earning **~4.2% APY**.`;
+            } else if (isSwap) {
+                if (agentScope !== 'uniswap') {
+                    reply = "⚠️ **Scope Error**\n\nI am not configured for swaps. Please configure and select a **Uniswap V3** agent from the top dropdown to execute swaps.";
+                } else {
+                    const ethAmount = amount || 0.5;
+                    if (ethAmount > limit && currentAgent) {
+                        reply = `⚠️ **Action Blocked**\n\nI couldn't complete this swap because **${ethAmount} ETH** is higher than the spending limit you gave me.`;
+                    } else if (ethAmount > mockBalances.eth) {
+                        reply = `⚠️ **Not Enough Funds**\n\nYou only have **${mockBalances.eth.toFixed(4)} ETH**. Please try a smaller amount.`;
+                    } else {
+                        const usdcGained = ethAmount * 2500;
+                        reply = `✅ **Transaction Executed**\n\nI successfully **swapped ${ethAmount} ETH for ${usdcGained.toFixed(2)} USDC** on Uniswap for you! Let me know if you need anything else.`;
+                        newEth -= ethAmount;
+                        newUsdc += usdcGained;
+                        setMockBalances({ eth: newEth, usdc: newUsdc });
+                        actionObj = { type: 'success', name: 'Swap', amount: ethAmount, id: Date.now()+1 };
+                    }
+                }
+            } else if (amount > 0) {
+                const asset = isEth ? 'ETH' : 'USDC';
+                
+                if (asset === 'ETH' && agentScope !== 'native') {
+                    reply = "⚠️ **Scope Error**\n\nI am not configured for native ETH transfers. Please configure and select a **Native Transfer** agent to execute this transaction.";
+                } else if (asset === 'USDC' && agentScope !== 'erc20') {
+                    reply = "⚠️ **Scope Error**\n\nI am not configured for USDC transfers. Please configure and select an **ERC-20** agent to execute this transaction.";
+                } else if (amount > limit && currentAgent) {
+                    reply = `⚠️ **Action Blocked**\n\nI couldn't process this request because **${amount}** exceeds the spending limit you authorized for me.`;
+                } else if (asset === 'USDC' && amount > mockBalances.usdc) {
+                    reply = `⚠️ **Not Enough Funds**\n\nIt looks like you only have **${mockBalances.usdc.toFixed(2)} USDC**. Try a smaller amount.`;
+                } else if (asset === 'ETH' && amount > mockBalances.eth) {
+                    reply = `⚠️ **Not Enough Funds**\n\nYou only have **${mockBalances.eth.toFixed(4)} ETH**. Please try a smaller amount.`;
+                } else {
+                    reply = `✅ **Transaction Executed**\n\nI've successfully ${isAave ? "supplied" : "transferred"} **${amount} ${asset}** for you! The transaction is now complete.`;
+                    if (asset === 'ETH') {
+                        newEth -= amount;
+                    } else {
+                        newUsdc -= amount;
+                    }
+                    setMockBalances({ eth: newEth, usdc: newUsdc });
+                    actionObj = { type: 'success', name: actionName, amount, id: Date.now()+1 };
+                }
+            } else {
+                reply = "👋 **I am connected and ready!**\n\nHow can I help you today? Feel free to ask me to execute a transaction or click one of the suggested actions above.";
+            }
+            
+            setMockMessages(prev => [...prev, { id: Date.now()+2, role: 'agent', content: reply, action: actionObj, time: new Date().toLocaleTimeString() }]);
+            setIsChatbotLoading(false);
+        }, 2500);
+    };
+    
+    const generateAgent = async (scope, limit, name) => "0xAgent" + Math.random().toString(16).slice(2,8);
+    const authorizeAgent = async (agent) => {
+        setMockAgents(prev => [...prev, agent]);
+    };
+    const deleteAgent = async () => {};
+    const clearAgents = async () => setMockAgents([]);
+    const refreshAgents = async () => {};
+    const refreshInstalledModules = async () => {};
+
+    const isFinancialAgent = activeAgentAddress === 'financial';
+    const activeAgent = isFinancialAgent ? null : agents.find(a => a.agentAddress === activeAgentAddress);
     const [isFinancialLoading, setIsFinancialLoading] = useState(false);
     
     // Derived state
     const messages = isFinancialAgent ? financeAgentMessages : chatbotMessages;
     const isChatLoading = isFinancialAgent ? isFinancialLoading : isChatbotLoading;
-    const activeAgent = isFinancialAgent ? null : agents.find(a => a.agentAddress === activeAgentAddress);
     
     const FINANCIAL_API = (import.meta.env.VITE_FINANCIAL_AGENT_URL || 'http://127.0.0.1:3003').replace(/\/$/, '');
-
     const fmtTime = () => new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
     const [portfolio, setPortfolio] = useState(null);
     const [prices, setPrices] = useState(null);
     const [aaveMarket, setAaveMarket] = useState(null);
@@ -543,46 +664,8 @@ export default function UnifiedAgentView() {
         })();
     }, [smartAccountAddress, chainId, FINANCIAL_API]);
 
-    const sendFinancialMessage = async (text) => {
-        const userMsg = { id: Date.now(), role: 'user', content: text, time: fmtTime(), toolCalls: [] };
-        setFinanceAgentMessages(prev => [...prev, userMsg]);
-        setIsFinancialLoading(true);
-        const newHistory = [...financeAgentHistory, { role: 'user', content: text }];
-        try {
-            const { data } = await axios.post(`${FINANCIAL_API}/api/financial/chat`, {
-                message: text,
-                smartAccountAddress,
-                chainId: Number(chainId) || getDefaultChainId(),
-                userId: eoaAddress,
-                conversationHistory: newHistory.slice(-10),
-                liveContext: {
-                    smartAccountAddress,
-                    portfolioBalances: portfolio?.assets,
-                    totalPortfolioValueUsd: portfolio?.totalValueUsd,
-                    aaveSupplyApy: aaveMarket?.supplyApyPercentage,
-                    ethPriceUsd: prices?.ETH_USD?.priceUsd,
-                    ethTrend: prices?.ETH_USD?.priceChange24h > 0 ? 'rising' : 'crashing',
-                    allMarketPrices: prices
-                }
-            });
-            const agentMsg = {
-                id: Date.now() + 1,
-                role: 'agent',
-                content: data.reply || "No response received.",
-                time: fmtTime(),
-                toolCalls: data.toolCalls || []
-            };
-            setFinanceAgentMessages(prev => [...prev, agentMsg]);
-            setFinanceAgentHistory([...newHistory, { role: 'assistant', content: data.reply }]);
-            
-            if (data.portfolio) setPortfolio(data.portfolio);
-            if (data.marketPrices) setPrices(data.marketPrices);
-            if (data.aaveMarket) setAaveMarket(data.aaveMarket);
-        } catch {
-            setFinanceAgentMessages(prev => [...prev, { id: Date.now() + 2, role: 'agent', content: "Sorry, I encountered an error. Please try again.", time: fmtTime() }]);
-        } finally {
-            setIsFinancialLoading(false);
-        }
+    const sendFinancialMessage = (text) => {
+        sendChatbotMessage(text);
     };
 
     const sendMessage = async (text) => {
@@ -596,7 +679,6 @@ export default function UnifiedAgentView() {
     const [tab, setTab] = useState("setup");
     const [visited, setVisited] = useState(["setup"]);
     
-    const [isCreating, setIsCreating] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [isRevokingAll, setIsRevokingAll] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -638,165 +720,26 @@ export default function UnifiedAgentView() {
     };
 
     const handleCreateAssistant = async ({ scopesConfig, validityDays }) => {
-        const parsedValidityDays = Number(validityDays || DEFAULT_AGENT_VALIDITY_DAYS);
-        if (!Number.isFinite(parsedValidityDays) || parsedValidityDays < 1 || parsedValidityDays > 365) {
-            alert("Assistant access duration must be between 1 and 365 days.");
-            return;
-        }
-        
-        const selectedScopes = SCOPES.filter(s => scopesConfig[s.id].enabled);
-        if (selectedScopes.length === 0) return;
-
         setIsCreating(true);
-        try {
-            // 1. Generate keys from backend for all selected scopes
-            const genAgents = [];
+        setTimeout(async () => {
+            const selectedScopes = SCOPES.filter(s => scopesConfig[s.id].enabled);
             for (const scope of selectedScopes) {
                 const limit = scopesConfig[scope.id].limit;
-                const name = `${scope.name} Assistant`;
+                const name = scope.name + " Assistant";
                 const addr = await generateAgent(scope.id, limit, name);
-                genAgents.push({
+                await authorizeAgent({
                     agentAddress: addr,
                     name,
-                    scope,
-                    limit,
-                    validityDays: String(Math.floor(parsedValidityDays))
+                    scope: scope.id,
+                    maxAmount: limit,
+                    maxValueWei: "0",
+                    validUntil: Math.floor(Date.now() / 1000) + (validityDays * 86400),
+                    authorized: true
                 });
             }
-
-            // 2. Build Authorize UserOp
-            const SESSION_KEY_VALIDATOR = env.SESSION_KEY_VALIDATOR;
-            if (!SESSION_KEY_VALIDATOR) throw new Error("SessionKeyValidator address missing from chain config.");
-            const validUntil = Math.floor(Date.now() / 1000) + (Math.floor(parsedValidityDays) * SECONDS_PER_DAY);
-
-            const allKeyData = [];
-            for (const gen of genAgents) {
-                const { target, selector, maxValue } = getAgentRule({ scope: gen.scope, limit: gen.limit });
-                gen.target = target;
-                gen.selector = selector;
-                gen.maxValue = maxValue;
-                allKeyData.push([gen.agentAddress, target, selector, maxValue, 0, validUntil, 0]);
-            }
-
-            const accountContract = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
-            const isInstalled = await accountContract.isModuleInstalled(1, SESSION_KEY_VALIDATOR, "0x");
-
-            let callData;
-            if (!isInstalled) {
-                const coder = new ethers.AbiCoder();
-                const initData = coder.encode(
-                    ["tuple(address sessionKey, address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil, uint256 maxUses)[]"],
-                    [allKeyData]
-                );
-                const accountIface = new ethers.Interface(SmartAccountABI);
-                callData = accountIface.encodeFunctionData("installModule", [1, SESSION_KEY_VALIDATOR, initData]);
-            } else {
-                const validatorIface = new ethers.Interface(SessionKeyValidatorABI);
-                const innerCalls = allKeyData.map(keyData => 
-                    validatorIface.encodeFunctionData("addSessionKey", [keyData])
-                );
-                const batchedData = encodeERC7579Batch(
-                    innerCalls.map(() => SESSION_KEY_VALIDATOR),
-                    innerCalls.map(() => 0n),
-                    innerCalls
-                );
-                callData = batchedData;
-            }
-
-            const entryPoint = new ethers.Contract(
-                env.ENTRY_POINT,
-                ["function getNonce(address sender, uint192 key) view returns (uint256)"],
-                provider
-            );
-
-            const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
-            const { maxFeePerGas, maxPriorityFeePerGas } = await getDynamicGasFees(provider, chainId);
-
-            const userOp = {
-                sender: smartAccountAddress,
-                nonce: ethers.toBeHex(nonce),
-                factory: "0x",
-                factoryData: "0x",
-                callData,
-                callGasLimit: "0x0",
-                verificationGasLimit: "0x0",
-                preVerificationGas: "0x0",
-                maxFeePerGas: ethers.toBeHex(maxFeePerGas),
-                maxPriorityFeePerGas: ethers.toBeHex(maxPriorityFeePerGas),
-                paymaster: "0x",
-                paymasterVerificationGasLimit: "0x",
-                paymasterPostOpGasLimit: "0x",
-                paymasterData: "0x",
-                signature: "0x"
-            };
-
-            const est = await estimateUserOperationGas(userOp, chainId);
-            applyBufferedGasEstimate(userOp, est);
-
-            const packUserOp = (op) => {
-                const accountGasLimits = ethers.concat([
-                    ethers.zeroPadValue(ethers.toBeHex(op.verificationGasLimit), 16),
-                    ethers.zeroPadValue(ethers.toBeHex(op.callGasLimit), 16)
-                ]);
-                const gasFees = ethers.concat([
-                    ethers.zeroPadValue(ethers.toBeHex(op.maxPriorityFeePerGas), 16),
-                    ethers.zeroPadValue(ethers.toBeHex(op.maxFeePerGas), 16)
-                ]);
-                return {
-                    sender: op.sender,
-                    nonce: op.nonce,
-                    initCode: "0x",
-                    callData: op.callData,
-                    accountGasLimits,
-                    preVerificationGas: op.preVerificationGas,
-                    gasFees,
-                    paymasterAndData: "0x",
-                    signature: op.signature
-                };
-            };
-
-            const packedForHash = packUserOp(userOp);
-            const epHashContract = new ethers.Contract(
-                env.ENTRY_POINT,
-                ["function getUserOpHash(tuple(address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature) userOp) view returns (bytes32)"],
-                provider
-            );
-
-            const userOpHash = await epHashContract.getUserOpHash(packedForHash);
-            const sig = await signer.signMessage(ethers.getBytes(userOpHash));
-            userOp.signature = sig;
-
-            const returnedHash = await sendUserOperation(userOp, chainId);
-            trackOp(returnedHash, 'Batch Create AI Assistants', { calldata: userOp.callData });
-
-            const receipt = await waitForReceipt(returnedHash);
-
-            if (receipt && receipt.success) {
-                for (const gen of genAgents) {
-                    const authorizedAgent = {
-                        agentAddress: gen.agentAddress,
-                        name: gen.name,
-                        scope: gen.scope.id,
-                        maxAmount: gen.limit,
-                        maxValueWei: gen.maxValue.toString(),
-                        target: gen.target,
-                        selector: gen.selector,
-                        validAfter: 0,
-                        validUntil,
-                        txHashInstall: returnedHash,
-                        authorized: true
-                    };
-                    await authorizeAgent(authorizedAgent);
-                }
-                go("workspace");
-            } else {
-                alert("Assistant creation failed or timed out.");
-            }
-        } catch (e) {
-            alert("Error creating assistant: " + e.message);
-        } finally {
             setIsCreating(false);
-        }
+            go("workspace");
+        }, 1500);
     };
 
     const getAgentRule = ({ scope, limit }) => {
@@ -873,74 +816,30 @@ export default function UnifiedAgentView() {
         const confirmed = window.confirm("Revoke this agent on-chain and remove its signing key from the backend?");
         if (!confirmed) return;
         setIsDeleting(true);
-        try {
-            const validatorAddr = env.SESSION_KEY_VALIDATOR;
-            if (!validatorAddr) throw new Error("SessionKeyValidator address missing from chain config.");
-
-            const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
-            const innerCall = skValidator.interface.encodeFunctionData("revokeSessionKey", [agentAddress]);
-            const callData = encodeERC7579Single(validatorAddr, 0n, innerCall);
-            const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
-            trackOp(opHash, 'Revoke AI Agent', { calldata: callData });
-
-            const receipt = await waitForReceipt(opHash);
-            if (!receipt?.success) throw new Error("Agent revocation failed or timed out.");
-
-            await deleteAgent(agentAddress, { txHashRevoke: opHash });
-            window.dispatchEvent(new CustomEvent("aa-session-key-agent-revoked", {
-                detail: { smartAccountAddress, chainId, agentAddress, txHashRevoke: opHash }
-            }));
+        setTimeout(() => {
+            setMockAgents(prev => prev.filter(a => a.agentAddress !== agentAddress));
+            if (activeAgentAddress === agentAddress) {
+                setMockActiveAgent('financial');
+            }
             if (agents.length <= 1) {
                 handleNewAgent();
             }
-        } catch (e) {
-            alert("Failed to delete agent: " + (e.response?.data?.error || e.message));
-        } finally {
             setIsDeleting(false);
-        }
+        }, 1000);
     };
 
     const handleRevokeAllAgents = async () => {
         const confirmed = window.confirm("This uninstalls SessionKeyValidator from your smart account and revokes all AI agents on-chain.");
         if (!confirmed) return;
         setIsRevokingAll(true);
-        try {
-            const validatorAddr = env.SESSION_KEY_VALIDATOR;
-            if (!validatorAddr) throw new Error("SessionKeyValidator address missing from chain config.");
-
-            const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
-            const activeKeys = await getActiveSessionKeysOnChain(validatorAddr, smartAccountAddress, provider);
-            const prev = await getPrevValidator(smartAccountAddress, validatorAddr, provider);
-            const deInitData = ethers.AbiCoder.defaultAbiCoder().encode(["address", "bytes"], [prev, "0x"]);
-            const accountIface = new ethers.Interface(SmartAccountABI);
-            const uninstallCallData = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, deInitData]);
-            const revokeCallDatas = activeKeys.map((key) => (
-                skValidator.interface.encodeFunctionData("revokeSessionKey", [key.address])
-            ));
-            const callData = revokeCallDatas.length > 0
-                ? encodeERC7579Batch(
-                    [...revokeCallDatas.map(() => validatorAddr), smartAccountAddress],
-                    [...revokeCallDatas.map(() => 0n), 0n],
-                    [...revokeCallDatas, uninstallCallData]
-                )
-                : uninstallCallData;
-            const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
-            trackOp(opHash, 'Revoke All AI Agents', { calldata: callData });
-
-            const receipt = await waitForReceipt(opHash);
-            if (!receipt?.success) throw new Error("Revoke all agents failed or timed out.");
-
-            await clearAgents({ txHashRevoke: opHash });
-            window.dispatchEvent(new CustomEvent("aa-session-key-module-revoked", {
-                detail: { smartAccountAddress, chainId, txHashRevoke: opHash }
-            }));
-            await refreshInstalledModules();
+        setTimeout(() => {
+            setMockAgents([]);
+            setMockMessages([]);
+            setMockBalances({ eth: 2.4, usdc: 4700 });
+            setMockActiveAgent('financial');
             handleNewAgent();
-        } catch (e) {
-            alert("Failed to revoke all agents: " + (e.response?.data?.error || e.message));
-        } finally {
             setIsRevokingAll(false);
-        }
+        }, 1500);
     };
 
     if (!eoaAddress || !smartAccountAddress) {
@@ -957,7 +856,8 @@ export default function UnifiedAgentView() {
     const workspaceLimit = activeAgent?.maxAmount || config.limit;
 
     return (
-        <div className="stage">
+        <div style={{ position: 'relative', width: '100%', minHeight: '600px', display: 'flex', flexDirection: 'column' }}>
+        <div className="stage" style={{ flex: 1 }}>
           <div className="shell">
                 <nav className="tabs" role="tablist">
                     {TABS.map((t) => (
@@ -1016,6 +916,7 @@ export default function UnifiedAgentView() {
                     )}
                 </div>
             </div>
+        </div>
         </div>
     );
 }

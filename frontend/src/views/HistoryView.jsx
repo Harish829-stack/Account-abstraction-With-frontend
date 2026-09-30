@@ -32,46 +32,46 @@ export default function HistoryView() {
   ].slice(0, 10);
 
   return (
-    <div className="flex flex-col gap-6 w-full h-[calc(100vh-140px)] overflow-y-auto pb-10 px-4 pt-6">
+    <div className="flex flex-col gap-6 w-full h-[calc(100vh-140px)] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] pb-10 px-4 pt-6">
 
-      <div className="glass-card flex items-center justify-between p-4 bg-white/5 border-white/10 mb-2 w-full">
-        <div className="flex items-center gap-3 text-gradient">
-          <Clock size={24} />
-          <h2 className="m-0 text-xl">UserOp History</h2>
+      <div className="wallet-card flex items-center justify-between p-4 bg-obsidian-950 mb-2 w-full">
+        <div className="flex items-center gap-3 text-slate-100">
+          <Clock size={24} className="text-mint" />
+          <h2 className="m-0 text-xl font-bold">UserOp History</h2>
         </div>
-        <div className="text-sm font-mono text-muted">Recent Activity</div>
+        <div className="text-sm font-mono text-slate-400">Recent Activity</div>
       </div>
 
       {!smartAccountAddress ? (
-        <div className="glass-card text-center p-8 w-full border-stone-300 shadow-md">
-          <p className="text-muted text-sm border border-red-500/30 px-3 py-1 rounded-md bg-red-500/5 inline-block">
+        <div className="wallet-card text-center p-8 w-full">
+          <p className="text-slate-400 text-sm border border-red-500/30 px-3 py-1 rounded-md bg-red-500/5 inline-block">
             Please connect or deploy a Smart Account to view its UserOp History.
           </p>
         </div>
       ) : (
-        <div className="glass-card w-full border-stone-300 shadow-md">
+        <div className="wallet-card w-full p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="flex items-center gap-2 text-gradient"><Activity size={24} /> Recent Transactions</h2>
-            <button className="btn btn-secondary py-1 text-xs" onClick={() => fetchRecentOps()} disabled={loadingOps}>
+            <h2 className="flex items-center gap-2 text-slate-100 font-bold"><Activity size={24} className="text-mint" /> Recent Transactions</h2>
+            <button className="btn-ghost px-4 py-1.5 rounded-lg text-xs font-semibold" onClick={() => fetchRecentOps()} disabled={loadingOps}>
               {loadingOps ? 'Refreshing...' : 'Refresh'}
             </button>
           </div>
 
           {loadingOps && displayOps.length === 0 ? (
-            <div className="text-sm text-muted">Loading recent operations...</div>
+            <div className="text-sm text-slate-400">Loading recent operations...</div>
           ) : displayOps.length === 0 ? (
-            <div className="text-sm text-muted">No recent UserOperations found for this Smart Account.</div>
+            <div className="text-sm text-slate-400">No recent UserOperations found for this Smart Account.</div>
           ) : (
             <div className="flex flex-col gap-3">
               {displayOps.map((op, idx) => (
-                <div key={idx} className="glass-history-card flex flex-col sm:flex-row justify-between items-start sm:items-center group">
+                <div key={idx} className="wallet-card p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center group">
                   <div className="flex flex-col w-full sm:w-auto overflow-hidden pr-4 gap-1">
                     <div className="flex items-center gap-2 mb-1">
-                       <span className="text-xs font-bold tracking-wide">{op.label || 'On-Chain Transaction'}</span>
-                       {op.timestamp && <span className="text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded-full">{timeAgo(op.timestamp)}</span>}
+                       <span className="text-xs font-bold tracking-wide text-slate-200">{op.label || 'On-Chain Transaction'}</span>
+                       {op.timestamp && <span className="text-[10px] text-mint bg-mint/10 px-2 py-0.5 rounded-full">{timeAgo(op.timestamp)}</span>}
                     </div>
-                    <div className="flex items-center gap-2 bg-primary/5 px-3 py-1.5 rounded-lg border border-primary/10 w-fit">
-                      <span className="font-mono text-xs text-muted truncate max-w-[200px] sm:max-w-[300px]" title={op.txHash || op.userOpHash}>
+                    <div className="flex items-center gap-2 bg-mint/5 px-3 py-1.5 rounded-lg border border-mint/10 w-fit">
+                      <span className="font-mono text-xs text-slate-400 truncate max-w-[200px] sm:max-w-[300px]" title={op.txHash || op.userOpHash}>
                         {op.txHash || op.userOpHash}
                       </span>
                       <button
@@ -79,14 +79,14 @@ export default function HistoryView() {
                           navigator.clipboard.writeText(op.txHash || op.userOpHash);
                           toast.success(`${op.txHash ? 'Transaction' : 'UserOp'} Hash copied!`);
                         }}
-                        className="text-muted hover:text-primary transition-colors"
+                        className="text-slate-500 hover:text-mint transition-colors"
                         title="Copy Hash"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                       </button>
                     </div>
                     {op.details && (
-                      <p className="m-0 text-[11px] text-muted max-w-[520px]">
+                      <p className="m-0 text-[11px] text-slate-300 max-w-[520px] font-medium">
                         {op.details}
                       </p>
                     )}
@@ -94,13 +94,13 @@ export default function HistoryView() {
                   <div className="flex items-center gap-3 mt-4 sm:mt-0 whitespace-nowrap">
 
                     {op.status === 'Success' && (
-                      <span className="flex items-center gap-1.5 text-xs font-bold text-green-400 bg-green-400/10 px-3 py-1.5 rounded-lg border border-green-400/20">Success</span>
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-[#00f59b] bg-[#00f59b]/20 px-3 py-1.5 rounded-lg border border-[#00f59b]/40">Success</span>
                     )}
                     {op.status === 'Reverted' && (
-                      <span className="flex items-center gap-1.5 text-xs font-bold text-red-400 bg-red-400/10 px-3 py-1.5 rounded-lg border border-red-400/20">Reverted</span>
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-red-500 bg-red-500/20 px-3 py-1.5 rounded-lg border border-red-500/40">Reverted</span>
                     )}
                     {op.status === 'Pending' && (
-                      <span className="flex items-center gap-1.5 text-xs font-bold text-yellow-400 bg-yellow-400/10 px-3 py-1.5 rounded-lg border border-yellow-400/20">Pending</span>
+                      <span className="flex items-center gap-1.5 text-xs font-bold text-yellow-500 bg-yellow-500/20 px-3 py-1.5 rounded-lg border border-yellow-500/40">Pending</span>
                     )}
                     {op.status === 'Dropped' && (
                       <span className="flex items-center gap-1.5 text-xs font-bold text-slate-400 bg-slate-400/10 px-3 py-1.5 rounded-lg border border-slate-400/20">Dropped</span>
@@ -112,12 +112,12 @@ export default function HistoryView() {
                           href={getExplorerTxUrl(chainId, op.txHash)}
                           target="_blank"
                           rel="noreferrer"
-                          className="btn btn-secondary py-1.5 px-3 text-xs opacity-80 group-hover:opacity-100 transition-opacity"
+                          className="btn-ghost py-1.5 px-3 rounded-lg text-xs font-semibold opacity-80 hover:opacity-100 transition-opacity"
                         >
                           Explorer
                         </a>
                       ) : (
-                        <span className="btn btn-secondary py-1.5 px-3 text-xs opacity-50 cursor-not-allowed">Explorer</span>
+                        <span className="btn-ghost py-1.5 px-3 rounded-lg text-xs font-semibold opacity-50 cursor-not-allowed">Explorer</span>
                       )}
                     </div>
                   </div>

@@ -53,12 +53,12 @@ function App() {
     return (
       <div style={{
         position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(244, 241, 255, 0.85)', backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
+        background: 'rgba(7, 9, 14, 0.86)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
       }}>
-        <div className="glass-card flex flex-col items-center justify-center text-center max-w-sm w-full py-8 px-6 shadow-2xl animate-fade-in" style={{ border: '1px solid rgba(22, 163, 74, 0.12)' }}>
+        <div className="wallet-card flex flex-col items-center justify-center text-center max-w-sm w-full py-8 px-6 shadow-2xl animate-fade-in" style={{ border: '1px solid rgba(0, 245, 155, 0.24)' }}>
           <div className="global-loader-spinner"></div>
-          <h3 style={{ marginTop: '1.5rem', color: '#141827', fontWeight: 800, fontSize: '1.25rem' }}>
+          <h3 style={{ marginTop: '1.5rem', color: '#f8fafc', fontWeight: 800, fontSize: '1.25rem' }}>
             {txLoadingMessage || 'Processing Transaction...'}
           </h3>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.5rem', fontWeight: 500 }}>
@@ -70,7 +70,7 @@ function App() {
   };
 
   return (
-    <div className={isConnected ? "container min-h-screen py-6 animate-fade-in relative" : "min-h-screen animate-fade-in relative"}>
+    <div className={isConnected ? "min-h-screen animate-fade-in relative" : "min-h-screen animate-fade-in relative"}>
       {isNetworkMismatch && (
         <div className="network-alert">
           <div className="network-alert__content">
@@ -94,7 +94,7 @@ function App() {
       )}
 
       {isConnected && <Navbar />}
-      <main className="animate-fade-in">
+      <main className={isConnected && currentView !== "home" ? "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-7 animate-fade-in" : "animate-fade-in"}>
         {renderCurrentView()}
       </main>
       {renderGlobalLoader()}

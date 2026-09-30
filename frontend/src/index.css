@@ -2,66 +2,47 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap');
 
 :root {
-  /* ── Backgrounds — Figma: #f5f3ee base, #ffffff surface, #f0fdf4 info, #dcfce7 container ── */
-  --bg-base: #F5F3EE;
-  --bg-surface: #FFFFFF;
-  --bg-surface-elevated: #F0FDF4;
-  --bg-surface-green: #DCFCE7;
-  --bg-dark: #0A0A0A;
-  --bg-dark-elevated: #1A1A1A;
-
-  /* ── Primary — Figma button: #22c55e, label: #15803d ── */
-  --primary: #22c55e;
-  --primary-hover: #16a34a;
-  --primary-glow: rgba(34, 197, 94, 0.22);
-
-  /* ── Secondary — Figma dark text: #111110 ── */
-  --secondary: #111110;
-  --secondary-glow: rgba(17, 17, 16, 0.14);
-
-  /* ── Accent — Figma smart-account label: #15803d ── */
-  --accent-blue: #15803d;
-  --accent-blue-glow: rgba(21, 128, 61, 0.16);
-
-  /* ── Danger — Figma: #ef4444 ── */
+  --bg-dark: #07090e;
+  --bg-card: rgba(18, 22, 31, 0.7);
+  --bg-card-hover: rgba(26, 32, 44, 0.85);
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-color-glow: rgba(0, 245, 155, 0.35);
+  --primary-accent: #00f59b;
+  --primary-accent-glow: rgba(0, 245, 155, 0.15);
+  --text-main: #f3f4f6;
+  --text-muted: #9ca3af;
+  --text-dim: #6b7280;
   --danger: #ef4444;
-  --danger-hover: #dc2626;
-
-  /* ── Text — Figma: #111110 main, #9ca3af muted ── */
-  --text-main: #111110;
-  --text-muted: #9CA3AF;
-
-  /* ── Borders ── */
-  --border-light: #E4E0D8;
-  --border-focus: #22c55e;
-
-  /* ── Glass / card surfaces ── */
-  --glass-bg: #FFFFFF;
-  --glass-border: #E4E0D8;
-
-  /* ── Theme invert helpers ── */
-  --theme-invert-10: rgba(0, 0, 0, 0.08);
-  --theme-invert-20: rgba(0, 0, 0, 0.15);
-  --theme-invert-02: rgba(0, 0, 0, 0.03);
-
-  /* ── Typography — Figma: Inter all weights, DM Mono for code ── */
-  --font-body: 'Inter', system-ui, sans-serif;
-  --font-heading: 'Inter', system-ui, sans-serif;
-  --font-mono: 'DM Mono', 'SFMono-Regular', Consolas, monospace;
-
-  /* ── Border radii — Figma nodes: 8, 10, 12, 14, 16, 20 ── */
+  --warning: #f59e0b;
+  --blue-accent: #3b82f6;
+  --mono-font: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --sans-font: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  
+  /* Aliases for legacy index.css compatibility */
+  --primary: var(--primary-accent);
+  --primary-hover: #1affab;
+  --primary-glow: var(--primary-accent-glow);
+  --bg-base: var(--bg-dark);
+  --bg-surface: var(--bg-card);
+  --bg-surface-elevated: var(--bg-card-hover);
+  --bg-surface-green: rgba(0, 245, 155, 0.1);
+  --secondary: #0b0e14;
+  --secondary-glow: rgba(0,0,0,0.5);
+  --border-light: var(--border-color);
+  --border-focus: var(--primary-accent);
+  --glass-bg: var(--bg-card);
+  --glass-border: var(--border-color);
+  --font-body: var(--sans-font);
+  --font-heading: var(--sans-font);
+  --font-mono: var(--mono-font);
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 20px;
   --radius-pill: 9999px;
-
   --transition-fast: 0.15s ease-out;
   --transition-normal: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-bounce: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-
-  --color-bg: #FFFFFF;
-  --color-muted: #9CA3AF;
 }
 
 * {
@@ -76,14 +57,122 @@ html {
 }
 
 body {
-  font-family: var(--font-body);
-  background: var(--bg-base);
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-dark);
   color: var(--text-main);
-  line-height: 1.6;
+  font-family: var(--sans-font);
   -webkit-font-smoothing: antialiased;
-  min-height: 100vh;
   overflow-x: hidden;
-  position: relative;
+}
+
+/* Glassmorphism Cards */
+.wallet-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color-glow);
+  border-radius: 1rem;
+  box-shadow: 0 18px 50px -34px rgba(0, 0, 0, 0.9);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.wallet-card:hover {
+  border-color: var(--primary-accent);
+  background: var(--bg-card-hover);
+  box-shadow: 0 0 24px var(--primary-accent-glow), 0 18px 50px -34px rgba(0, 0, 0, 0.9);
+}
+
+.wallet-card-active {
+  border-color: var(--primary-accent);
+  box-shadow: 0 0 24px var(--primary-accent-glow);
+}
+
+/* Terminal Chrome */
+.terminal-window {
+  background: #0b0e14;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 40px rgba(0, 245, 155, 0.05);
+  overflow: hidden;
+}
+
+.terminal-header {
+  background: #11151f;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 0.75rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Scrollbars */
+.custom-scroll::-webkit-scrollbar,
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scroll::-webkit-scrollbar-track,
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+.custom-scroll::-webkit-scrollbar-thumb,
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+.custom-scroll::-webkit-scrollbar-thumb:hover,
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 245, 155, 0.5);
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Glowing text and buttons */
+.text-glow {
+  text-shadow: 0 0 20px rgba(0, 245, 155, 0.4);
+}
+
+.btn-glow {
+  background-color: var(--primary-accent);
+  color: #05070a;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  box-shadow: 0 0 15px rgba(0, 245, 155, 0.3);
+}
+
+.btn-glow:hover {
+  background-color: #1affab;
+  box-shadow: 0 0 25px rgba(0, 245, 155, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Animation utilities */
+@keyframes pulseSubtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.96); }
+}
+
+.pulse-dot {
+  animation: pulseSubtle 2s infinite ease-in-out;
 }
 
 button {
@@ -152,8 +241,8 @@ a:hover {
 
 .glass-card:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-  border-color: var(--primary);
+  border-color: #00f59b;
+  box-shadow: 0 0 15px rgba(0, 245, 155, 0.2);
 }
 
 /* Glass Stat Card — Figma: #f0fdf4 tint surface */
@@ -394,7 +483,8 @@ a:hover {
 /* App chrome */
 .network-alert {
   width: 100%;
-  margin: 0 0 1rem;
+  max-width: 80rem;
+  margin: 1rem auto;
   padding: 0.9rem 1rem;
   display: flex;
   align-items: center;
@@ -402,8 +492,8 @@ a:hover {
   gap: 1rem;
   border: 1px solid rgba(239, 68, 68, 0.24);
   border-radius: var(--radius-lg);
-  background: #FFFFFF;
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.12);
+  background: rgba(18, 22, 31, 0.92);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.38);
 }
 
 .network-alert__content {
@@ -431,7 +521,7 @@ a:hover {
 
 .network-alert__text h4 {
   margin: 0 0 0.15rem;
-  color: var(--text-main);
+  color: #f8fafc;
   font-size: 0.95rem;
 }
 
@@ -1339,8 +1429,8 @@ a:hover {
 }
 
 .aa-mini-card:hover {
-  border-color: rgba(34, 197, 94, 0.35);
-  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.1);
+  border-color: #00f59b;
+  box-shadow: 0 0 15px rgba(0, 245, 155, 0.2);
 }
 
 .aa-mini-card div {
@@ -1419,8 +1509,8 @@ a:hover {
 
 .aa-feature-card:hover {
   transform: translateY(-3px);
-  border-color: rgba(34, 197, 94, 0.35);
-  box-shadow: 0 6px 20px rgba(34, 197, 94, 0.1);
+  border-color: #00f59b;
+  box-shadow: 0 0 15px rgba(0, 245, 155, 0.2);
 }
 
 .aa-feature-icon {
@@ -1788,8 +1878,8 @@ a:hover {
 
 .aa-module-card:hover {
   transform: translateY(-3px);
-  box-shadow: 0 8px 24px rgba(34, 197, 94, 0.1);
-  border-color: rgba(34, 197, 94, 0.38);
+  border-color: #00f59b;
+  box-shadow: 0 0 15px rgba(0, 245, 155, 0.2);
 }
 
 .aa-module-top {

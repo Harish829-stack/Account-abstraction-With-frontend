@@ -121,12 +121,12 @@ const CHAIN_CONFIGS = {
     entryPointAddress:         '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
     sessionKeyValidatorAddress: '0xC578bF1899fF9E49d0FC65BE5b1a0A26EB11aF44',
 
-    usdcAddress:     '0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582',
+    usdcAddress:     '0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E',
     aaveUsdcAddress: undefined,
     wethAddress:     undefined,
 
     tokens: [
-      { symbol: 'USDC', address: '0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582', priceSymbol: 'USDC' },
+      { symbol: 'USDC', address: '0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E', priceSymbol: 'USDC' },
     ],
 
     uniswapFactoryAddress:  undefined,

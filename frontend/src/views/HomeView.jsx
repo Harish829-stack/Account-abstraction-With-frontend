@@ -7,6 +7,7 @@ import { shortenAddress, toHex, getEthPriceInUsd, packUserOp, encodeERC7579Singl
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import { IEntryPointABI, SmartAccountABI, K1ValidatorFactoryABI } from '../utils/abis';
 import { getDashboardSummary } from '../utils/backendApi';
+import { getSupportedChains } from '../config/chains';
 import {
   CheckCircle2, XCircle, ArrowRight, ArrowUpRight,
   RefreshCw, TrendingUp, Activity, Wallet, Box, BarChart3,
@@ -16,76 +17,9 @@ import {
 
 import './new-landing.css';
 import { SmartVaultPortfolioWidget, ChainlinkPricesWidget, AaveV3Widget } from '../components/DashboardFinancialWidgets';
+import AgentDemoView from '../components/AgentDemoView';
 const UNISWAP_ROUTER = '0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F';
 const WETH_SEPOLIA = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
-
-// ─── Number Formatter for Large Balances ────────────────────────────────────────
-const formatCurrencyCompact = (val) => {
-  return new Intl.NumberFormat('en-US', {
-    notation: val >= 1000000 ? 'compact' : 'standard',
-    maximumFractionDigits: 2,
-    minimumFractionDigits: val < 1000000 ? 2 : 0
-  }).format(val);
-};
-
-// ─── Premium SVG Donut Chart ──────────────────────────────────────────────────
-function DonutChart({ eoaUSDC, saUSDC }) {
-  const total = eoaUSDC + saUSDC;
-  const size = 150;
-  const strokeWidth = 18;
-  const r = (size - strokeWidth) / 2;
-  const circ = 2 * Math.PI * r;
-  const cx = size / 2, cy = size / 2;
-
-  if (total === 0) {
-    return (
-      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap: 8 }}>
-        <div style={{ position: 'relative', width: size, height: size }}>
-          <svg width={size} height={size}>
-            <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(22, 163, 74,0.08)" strokeWidth={strokeWidth} />
-          </svg>
-          <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ fontSize:'1.4rem', fontWeight:800, color:'#141827' }}>0.00</span>
-            <span style={{ fontSize:'0.75rem', color:'var(--text-muted)', fontWeight:500, marginTop: 2 }}>USDC total</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const saPct  = saUSDC  / total;
-  const saDash  = saPct  * circ;
-
-  return (
-    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap: 10 }}>
-      <div className="donut-wrapper" style={{ width: size, height: size, position: 'relative' }}>
-        <svg width={size} height={size} style={{ transform:'rotate(-90deg)' }}>
-          <defs>
-            <linearGradient id="donutGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#111110" />
-              <stop offset="100%" stopColor="#16a34a" />
-            </linearGradient>
-          </defs>
-          {/* Base track (represents total balance) */}
-          <circle cx={cx} cy={cy} r={r} fill="none" stroke="url(#donutGradient)" strokeWidth={strokeWidth} />
-          {/* SA segment */}
-          {saPct > 0 && (
-            <circle cx={cx} cy={cy} r={r} fill="none"
-              stroke="#111110" strokeWidth={strokeWidth}
-              strokeDasharray={`${saDash} ${circ - saDash}`}
-              strokeDashoffset={0}
-              strokeLinecap="round" />
-          )}
-        </svg>
-        <div className="donut-center-text" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontSize:'1.4rem', fontWeight:800, color:'#141827' }}>{formatCurrencyCompact(total)}</span>
-          <span style={{ fontSize:'0.75rem', color:'var(--text-muted)', fontWeight:500, marginTop: 2 }}>USDC total</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 
 // ─── Connected Dashboard ──────────────────────────────────────────────────────
 function ConnectedDashboard() {
@@ -199,6 +133,14 @@ function ConnectedDashboard() {
   const saUSDC = parseFloat(ethers.formatUnits(saUSDCBalance || '0', 6));
   const eoaETH = parseFloat(ethers.formatEther(eoaETHBalance || '0'));
   const saETH = parseFloat(ethers.formatEther(saETHBalance || '0'));
+  const eoaValueUsd = eoaETH * ethPrice + eoaUSDC;
+  const smartValueUsd = saETH * ethPrice + saUSDC;
+  const entryPointDeposit = parseFloat(ethers.formatEther(saEntryPointDeposit || '0'));
+  const agentIsReady = smartAccountStatus === "agent_ready";
+  const smartStatusLabel = agentIsReady ? "Agent Ready" : (isSmartAccountDeployed ? "Needs Session Key" : "Predicted");
+  const chainLabel = isAmoy ? "Amoy Testnet" : "Sepolia Testnet";
+  const fmtUsdShort = (value) => `$${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   const handleRefresh = async () => {
     setRefreshing(true);
     await refreshAllData();
@@ -388,142 +330,234 @@ function ConnectedDashboard() {
   };
 
   return (
-    <div className="animate-fade-in flex flex-col gap-6" style={{ paddingBottom: '4rem' }}>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-7 space-y-6">
 
-      {/* Page Header */}
-      <div className="flex items-center justify-between">
+      {/* BEGIN: Greeting & Header Bar */}
+      <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-white/5">
         <div>
-          <h1 style={{ fontSize: '2rem', marginBottom: '0.25rem' }}>
-            Welcome back, <span className="text-gradient">{shortenAddress(eoaAddress)}</span>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white flex flex-wrap items-center gap-2">
+            <span>Welcome back,</span>
+            <span className="bg-gradient-to-r from-mint via-emerald-300 to-cyan-400 bg-clip-text text-transparent font-mono">{shortenAddress(eoaAddress)}</span>
           </h1>
-          <p className="text-sm text-muted">Your Smart Account Dashboard — {isAmoy ? "Amoy" : "Sepolia"} Testnet</p>
+          <p className="text-xs sm:text-sm text-slate-400 mt-1 flex items-center gap-2">
+            <span>Your Smart Account Dashboard</span>
+            <span className="inline-block w-1 h-1 rounded-full bg-slate-600"></span>
+            <span className="text-mint font-mono text-xs">{chainLabel}</span>
+          </p>
         </div>
-        <button
-          className="btn btn-secondary flex items-center gap-2"
-          onClick={handleRefresh}
-          disabled={refreshing}
-        >
-          <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
-          Refresh
-        </button>
-      </div>
+        <div className="flex items-center gap-3">
+          <span className="hidden sm:inline-flex items-center gap-2 text-[11px] font-mono text-slate-500">
+            <span className="w-1.5 h-1.5 rounded-full bg-mint animate-pulse"></span>
+            Live chain data
+          </span>
+          <button 
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-obsidian-900 border border-white/10 text-slate-200 hover:text-mint hover:border-mint/40 transition-all shadow-sm active:scale-95 group" 
+            onClick={handleRefresh}
+            disabled={refreshing}
+          >
+            <svg className={`w-3.5 h-3.5 text-slate-400 group-hover:text-mint transition-transform duration-700 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+            <span>Refresh</span>
+          </button>
+        </div>
+      </section>
 
-
-
-      {/* ── Wallet Cards ─────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* EOA Card */}
-        <div className="glass-card wallet-summary-card wallet-summary-card--signer flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="wallet-summary-card__icon">
-                <Wallet size={18} />
+      {/* BEGIN: Top Overview Cards */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        
+        {/* Card 1: Signer Wallet (Connected EOA) */}
+        <article className="wallet-card p-5 sm:p-6 relative overflow-hidden group">
+          <div className="absolute -right-12 -top-12 w-36 h-36 bg-slate-700/10 rounded-full blur-2xl pointer-events-none group-hover:bg-mint/5 transition-all"></div>
+          <div className="flex items-center justify-between pb-4 border-b border-white/5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-obsidian-900 border border-white/10 flex items-center justify-center text-slate-300">
+                <Wallet size={20} />
               </div>
               <div>
-                <div className="text-xs text-muted">Signer Wallet (Connected)</div>
-                <div className="font-mono text-sm font-semibold">{shortenAddress(eoaAddress)}</div>
+                <p className="text-xs text-slate-400 font-medium">Signer Wallet (Connected)</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="font-mono text-sm font-semibold text-slate-100">{shortenAddress(eoaAddress)}</span>
+                  <button 
+                    className="text-slate-500 hover:text-mint" 
+                    onClick={() => {
+                      navigator.clipboard.writeText(eoaAddress);
+                      toast.success("Signer EOA Copied!");
+                    }}
+                  >
+                    <Copy size={14} />
+                  </button>
+                </div>
               </div>
             </div>
-            <div className="wallet-summary-card__pill">EOA</div>
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700">
+              EOA Signer
+            </span>
           </div>
-          <div className="wallet-summary-card__divider" />
-          <div className="flex justify-between">
+          <div className="grid grid-cols-2 gap-4 pt-5 pb-2">
             <div>
-              <div className="text-xs text-muted mb-1">{nativeToken}</div>
-              <div className="font-bold text-lg">{eoaETH.toFixed(4)}</div>
+              <span className="text-xs font-mono uppercase tracking-wider text-slate-400">{nativeToken}</span>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-2xl sm:text-3xl font-bold font-mono text-white tracking-tight">{eoaETH.toFixed(4)}</span>
+                <span className="hidden sm:inline text-xs text-slate-500">≈ {fmtUsdShort(eoaETH * ethPrice)}</span>
+              </div>
             </div>
-            <div className="text-center">
-              <div className="text-xs text-muted mb-1">USDC</div>
-              <div className="font-bold text-lg">{eoaUSDC.toFixed(2)}</div>
+            <div>
+              <span className="text-xs font-mono uppercase tracking-wider text-slate-400">USDC</span>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-2xl sm:text-3xl font-bold font-mono text-white tracking-tight">{eoaUSDC.toFixed(2)}</span>
+                <span className="hidden sm:inline text-xs text-slate-500">{fmtUsdShort(eoaUSDC)}</span>
+              </div>
             </div>
-
           </div>
-        </div>
+          <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-500 font-mono">
+            <span>Signer total</span>
+            <span className="text-slate-300">{fmtUsdShort(eoaValueUsd)}</span>
+          </div>
+        </article>
 
-        {/* Smart Account Card */}
-        <div className={`glass-card wallet-summary-card ${smartAccountAddress ? 'wallet-summary-card--smart' : 'wallet-summary-card--empty'} flex flex-col gap-4`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="wallet-summary-card__icon">
-                <Box size={18} />
+        {/* Card 2: Smart Vault */}
+        <article className={`wallet-card p-5 sm:p-6 relative overflow-hidden transition-all duration-300 ${smartAccountAddress ? 'hover:border-[#00f59b] hover:shadow-[0_0_24px_rgba(0,245,155,0.15)] group' : 'opacity-80'}`}>
+          {smartAccountAddress && <div className="absolute -right-12 -top-12 w-36 h-36 bg-mint/10 rounded-full blur-2xl pointer-events-none group-hover:bg-mint/15 transition-all"></div>}
+          <div className="flex items-center justify-between pb-4 border-b border-white/5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-mint/15 border border-mint/40 flex items-center justify-center text-mint shadow-mint-sm">
+                <Box size={20} />
               </div>
               <div>
-                <div className="text-xs text-muted">Smart Vault</div>
-                <div className="font-mono text-sm font-semibold flex items-center gap-2">
+                <p className="text-xs text-slate-400 font-medium">Smart Vault (Modular Account)</p>
+                <div className="flex items-center gap-2 mt-0.5">
                   {smartAccountAddress ? (
                     <>
-                      {shortenAddress(smartAccountAddress)}
+                      <span className="font-mono text-sm font-bold text-mint">{shortenAddress(smartAccountAddress)}</span>
                       <button 
+                        className="text-slate-400 hover:text-white" 
                         onClick={() => {
                           navigator.clipboard.writeText(smartAccountAddress);
-                          toast.success("Address copied to clipboard!");
+                          toast.success("Smart Vault Address Copied!");
                         }}
-                        className="text-muted hover:text-white transition-colors"
-                        title="Copy Address"
                       >
                         <Copy size={14} />
                       </button>
+                      {isSmartAccountDeployed && saOwner && (
+                        <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">Owner: {shortenAddress(saOwner)}</span>
+                      )}
                     </>
                   ) : (
-                    <span className="text-muted">Loading...</span>
+                    <span className="text-slate-500">Loading...</span>
                   )}
                 </div>
-                {isSmartAccountDeployed && saOwner && (
-                  <div className="text-[10px] text-muted mt-0.5">Owner: {shortenAddress(saOwner)}</div>
-                )}
               </div>
             </div>
-            {smartAccountStatus === "agent_ready"
-              ? <div className="wallet-summary-card__pill wallet-summary-card__pill--success">Agent Ready</div>
-              : <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: '0.75rem' }} onClick={handleActivateAgenticAI}>
-                  {smartAccountStatus === "predicted" ? "Activate Agentic AI" : "Complete Activation"}
-                </button>
-            }
+            
+            {agentIsReady ? (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-mint/15 text-mint border border-mint/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-mint animate-ping"></span>
+                <span>{smartStatusLabel}</span>
+              </div>
+            ) : (
+              <button 
+                className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full bg-cyan-400 text-obsidian-950 border border-cyan-400 hover:bg-cyan-300 transition-colors" 
+                onClick={handleActivateAgenticAI}
+              >
+                {smartAccountStatus === "predicted" ? "Activate Agent" : "Finish Setup"}
+              </button>
+            )}
           </div>
-          <div className="wallet-summary-card__divider" />
+          
           {isSmartAccountDeployed ? (
-            <div className="flex justify-between">
+            <div className="grid grid-cols-3 gap-2 sm:gap-4 pt-5 pb-2">
               <div>
-                <div className="text-xs text-muted mb-1">{nativeToken}</div>
-                <div className="font-bold text-lg">{saETH.toFixed(4)}</div>
+                <span className="text-xs font-mono uppercase tracking-wider text-slate-400">{nativeToken}</span>
+                <div className="mt-1">
+                  <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">{saETH.toFixed(4)}</span>
+                  <p className="text-[11px] text-slate-500 hidden sm:block">≈ {fmtUsdShort(saETH * ethPrice)}</p>
+                </div>
               </div>
-              <div className="text-center">
-                <div className="text-xs text-muted mb-1">USDC</div>
-                <div className="font-bold text-lg">{saUSDC.toFixed(2)}</div>
+              <div>
+                <span className="text-xs font-mono uppercase tracking-wider text-slate-400">USDC</span>
+                <div className="mt-1">
+                  <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">{saUSDC.toFixed(2)}</span>
+                  <p className="text-[11px] text-slate-500 hidden sm:block">{fmtUsdShort(saUSDC)}</p>
+                </div>
               </div>
-
-              <div className="text-right">
-                <div className="text-xs text-muted mb-1">EP Deposit</div>
-                <div className="font-bold text-lg">{parseFloat(ethers.formatEther(saEntryPointDeposit || '0')).toFixed(4)}</div>
+              <div>
+                <span className="text-xs font-mono uppercase tracking-wider text-slate-400">EP Deposit</span>
+                <div className="mt-1">
+                  <span className="text-xl sm:text-2xl font-bold font-mono text-mint tracking-tight">{entryPointDeposit.toFixed(4)}</span>
+                  <p className="text-[11px] text-slate-500 font-mono hidden sm:block">Gas Tank</p>
+                </div>
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted">Predicted address. Fund it with ETH to pre-load gas, then activate.</p>
-                <span className="setup-pending-pill">Predicted</span>
-              </div>
+            <div className="pt-5 pb-2">
+              <p className="text-sm text-slate-400 mb-2">Predicted address. Fund it with {nativeToken} to pre-load gas, then activate.</p>
               {saETH > 0 && (
-                <div className="flex gap-6">
-                  <div>
-                    <div className="text-xs text-muted mb-1">{nativeToken} (pre-funded)</div>
-                    <div className="font-bold text-lg" style={{ color: 'var(--accent-green)' }}>{saETH.toFixed(4)}</div>
-                  </div>
+                <div className="mt-2">
+                  <div className="text-xs text-slate-400 uppercase tracking-wider mb-1">{nativeToken} (pre-funded)</div>
+                  <div className="font-bold text-lg text-mint">{saETH.toFixed(4)}</div>
                 </div>
               )}
             </div>
           )}
+          <div className="mt-3 pt-3 border-t border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-[11px] text-slate-500 font-mono">
+            <span className="inline-flex items-center gap-2">
+              <span className={`w-1.5 h-1.5 rounded-full ${agentIsReady ? 'bg-mint' : 'bg-slate-600'}`}></span>
+              Session Keys: <b className={agentIsReady ? 'text-mint' : 'text-slate-300'}>{agentIsReady ? '1 Active' : 'Not active'}</b>
+            </span>
+            <span className="text-slate-300">Vault total {fmtUsdShort(smartValueUsd)}</span>
+          </div>
+        </article>
+      </section>
+
+      <section className="wallet-card p-4 sm:p-5 relative overflow-hidden transition-all duration-300 hover:border-[#00f59b] hover:shadow-[0_0_24px_rgba(0,245,155,0.15)] group">
+        <div className="absolute inset-y-0 left-0 w-1 bg-mint"></div>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pl-2">
+          <div className="flex items-start gap-4 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-mint/10 border border-mint/30 text-mint grid place-items-center flex-shrink-0">
+              <Activity size={18} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <span className="px-2 py-0.5 rounded bg-mint/15 text-mint text-[10px] font-mono font-bold uppercase tracking-wider">Non-custodial Policy</span>
+                <h2 className="text-sm sm:text-base font-bold text-white">AI Agent Policy & Access Control</h2>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed max-w-4xl">
+                Your smart account keeps custody. Session-key automation only uses the scoped permissions already managed by this platform.
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-mono text-slate-500">
+                <span>Enforced via ERC-7579 scoped Session Key Validator</span>
+                <span>On-chain non-custodial architecture</span>
+              </div>
+            </div>
+          </div>
+          {agentIsReady ? (
+            <button
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-mono font-bold bg-mint/10 text-mint border border-mint/30 hover:bg-mint/15 transition-all"
+              onClick={() => setCurrentView('chatbot')}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-mint animate-pulse"></span>
+              Agent Active
+            </button>
+          ) : (
+            <button
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-mono font-bold bg-mint text-obsidian-950 hover:bg-mint-400 transition-all"
+              onClick={handleActivateAgenticAI}
+            >
+              Activate Agent
+              <ChevronRight size={14} />
+            </button>
+          )}
         </div>
-      </div>
+      </section>
 
-      {/* ── Middle Row: Setup + Portfolio + Quick Actions ─── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
+      {/* ── Middle Row: Widgets ─── */}
+      <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* ─ Dashboard Financial Widgets ─ */}
         <SmartVaultPortfolioWidget />
         <ChainlinkPricesWidget />
         <AaveV3Widget />
-      </div>
+      </section>
 
       {/* ── Quick Swap Modal ────────────────────────────── */}
       {showSwapModal && createPortal(
@@ -533,14 +567,7 @@ function ConnectedDashboard() {
             setShowSellDropdown(false);
             setShowBuyDropdown(false);
           }}
-          style={{
-            position:'fixed', inset:0, zIndex:9999,
-            background:'rgba(244, 241, 255, 0.85)',
-            backdropFilter:'blur(8px)',
-            WebkitBackdropFilter:'blur(8px)',
-            display:'flex', alignItems:'center', justifyContent:'center',
-            padding:'1rem'
-          }}
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-obsidian-950/80 backdrop-blur-md"
         >
           <div
             onClick={e => {
@@ -549,53 +576,36 @@ function ConnectedDashboard() {
               setShowSellDropdown(false);
               setShowBuyDropdown(false);
             }}
-            style={{
-              background:'#fff',
-              borderRadius:24,
-              padding:'1rem',
-              width:'100%',
-              maxWidth:440,
-              boxShadow:'0 32px 80px rgba(0, 0, 0,0.18)',
-              position:'relative'
-            }}
+            className="w-full max-w-[440px] bg-obsidian-900 border border-white/10 rounded-[24px] p-4 shadow-card-glass relative"
           >
             {/* Modal Header */}
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0.5rem 0.5rem 1rem' }}>
-              <div style={{ fontSize:'1.1rem', fontWeight:700, color:'#141827' }}>Swap</div>
-              <button onClick={() => setShowSwapModal(false)} style={{ color:'#64748b' }}><XCircle size={22} /></button>
+            <div className="flex items-center justify-between pb-4 px-2">
+              <div className="text-lg font-bold text-white">Swap</div>
+              <button onClick={() => setShowSwapModal(false)} className="text-slate-400 hover:text-white transition-colors"><XCircle size={22} /></button>
             </div>
 
             {/* Sell Card */}
-            <div style={{ background:'rgba(242,244,248,0.7)', borderRadius:20, padding:'1rem 1.2rem', position:'relative' }}>
-              <div style={{ fontSize:'0.85rem', color:'var(--text-muted)', marginBottom:4 }}>Sell</div>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <div className="bg-obsidian-850 rounded-[20px] p-4 relative border border-white/5">
+              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-2">Sell</div>
+              <div className="flex items-center justify-between">
                 <input
                   type="number"
                   placeholder="0"
                   value={swapAmount}
                   onChange={e => setSwapAmount(e.target.value)}
-                  style={{
-                    border:'none', background:'transparent', outline:'none',
-                    fontSize:'2.2rem', fontWeight:600, color:'#141827', width:'100%', padding:0
-                  }}
+                  className="border-none bg-transparent outline-none text-3xl font-mono font-bold text-white w-full p-0 focus:ring-0 placeholder-slate-700"
                 />
                 
-                <div style={{ position:'relative', zIndex:20 }}>
+                <div className="relative z-20">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowSellDropdown(!showSellDropdown);
                       setShowBuyDropdown(false);
                     }}
-                    style={{
-                      display:'flex', alignItems:'center', gap:6, background:'#fff', borderRadius:99,
-                      padding:'4px 10px 4px 4px', border:'1px solid rgba(0,0,0,0.05)', boxShadow:'0 2px 8px rgba(0,0,0,0.04)',
-                      cursor:'pointer', transition:'all 0.2s'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'}
-                    onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                    className="flex items-center gap-1.5 bg-obsidian-950 rounded-full py-1 pr-2.5 pl-1 border border-white/10 hover:border-mint/30 transition-all shadow-sm"
                   >
-                    <span style={{ width:24, height:24, borderRadius:'50%', background:'#627EEA', display:'grid', placeItems:'center' }}>
+                    <span className="w-6 h-6 rounded-full bg-[#627EEA] grid place-items-center">
                       <svg viewBox="0 0 32 32" width="14" height="14">
                         <path d="M15.925 23.969L15.875 24.02l-9.819-5.799L15.925 32l9.897-13.78-9.897 5.749z" fill="#fff" opacity="0.6"/>
                         <path d="M16.075 23.969l9.897-5.749-9.897-4.426v10.175z" fill="#fff" opacity="0.4"/>
@@ -605,146 +615,112 @@ function ConnectedDashboard() {
                         <path d="M15.925 20.858l-9.869-4.373L15.925 0v20.858z" fill="#fff" opacity="0.4"/>
                       </svg>
                     </span>
-                    <span style={{ fontSize:'0.9rem', fontWeight:700, color:'#141827' }}>{nativeToken}</span>
-                    <ChevronDown size={16} color="#64748b" />
+                    <span className="text-sm font-bold text-white">{nativeToken}</span>
+                    <ChevronDown size={14} className="text-slate-500" />
                   </button>
 
                   {/* Sell Dropdown */}
                   {showSellDropdown && (
-                    <div style={{
-                      position:'absolute', top:'100%', right:0, marginTop:8, background:'#fff',
-                      border:'1px solid rgba(0,0,0,0.08)', borderRadius:12, padding:'0.5rem',
-                      width:220, boxShadow:'0 10px 25px rgba(0,0,0,0.1)', zIndex:30
-                    }}>
-                      <div style={{
-                        display:'flex', alignItems:'center', gap:8, padding:'0.5rem',
-                        borderRadius:8, background:'rgba(22, 163, 74,0.06)', cursor:'pointer'
-                      }}>
-                        <span style={{ width:24, height:24, borderRadius:'50%', background:'#627EEA', display:'grid', placeItems:'center' }}>
+                    <div className="absolute top-full right-0 mt-2 bg-obsidian-900 border border-white/10 rounded-xl p-2 w-[220px] shadow-card-glass z-30">
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-white/5 cursor-pointer hover:bg-white/10 transition-colors">
+                        <span className="w-6 h-6 rounded-full bg-[#627EEA] grid place-items-center">
                           <svg viewBox="0 0 32 32" width="14" height="14">
                             <path d="M15.925 0L6.056 16.485l9.869 4.373V0z" fill="#fff"/>
                             <path d="M16.075 0v20.858l9.897-4.373L16.075 0z" fill="#fff" opacity="0.6"/>
                           </svg>
                         </span>
-                        <span style={{ fontWeight:700, color:'#141827' }}>{nativeToken}</span>
+                        <span className="font-bold text-white">{nativeToken}</span>
                       </div>
-                      <div style={{ marginTop:4, paddingTop:6, borderTop:'1px solid rgba(0,0,0,0.05)', textAlign:'center', fontSize:'0.7rem', color:'var(--text-muted)' }}>
+                      <div className="mt-2 pt-2 border-t border-white/5 text-center text-xs text-slate-500">
                         More currencies coming soon
                       </div>
                     </div>
                   )}
                 </div>
               </div>
-              <div style={{ fontSize:'0.8rem', color:'var(--text-muted)' }}>
+              <div className="text-xs text-slate-500 font-mono mt-1">
                 ${(parseFloat(swapAmount || 0) * ethPrice).toFixed(2)}
               </div>
             </div>
 
             {/* Overlapping Arrow */}
-            <div style={{ height:4, display:'flex', justifyContent:'center', position:'relative', zIndex:10 }}>
-              <div style={{
-                position:'absolute', top:-16, width:36, height:36, background:'#fff',
-                borderRadius:12, display:'grid', placeItems:'center', border:'4px solid #fff'
-              }}>
-                <div style={{
-                  width:'100%', height:'100%', background:'rgba(242,244,248,1)', borderRadius:8,
-                  display:'grid', placeItems:'center', color:'#64748b'
-                }}>
-                  <ArrowDown size={16} />
-                </div>
+            <div className="h-1 flex justify-center relative z-10">
+              <div className="absolute -top-4 w-9 h-9 bg-obsidian-950 rounded-xl grid place-items-center border-[4px] border-obsidian-900 text-slate-400">
+                <ArrowDown size={14} />
               </div>
             </div>
 
             {/* Buy Card */}
-            <div style={{ background:'rgba(242,244,248,0.7)', borderRadius:20, padding:'1rem 1.2rem', marginTop:0 }}>
-              <div style={{ fontSize:'0.85rem', color:'var(--text-muted)', marginBottom:4 }}>Buy</div>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <div className="bg-obsidian-850 rounded-[20px] p-4 relative border border-white/5">
+              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-2">Buy</div>
+              <div className="flex items-center justify-between">
                 {isEstimatingOutput ? (
-                  <div style={{ fontSize:'2.2rem', fontWeight:600, color:'#aaa' }}>...</div>
+                  <div className="text-3xl font-mono font-bold text-slate-700 animate-pulse">...</div>
                 ) : (
                   <input
                     type="number"
                     readOnly
                     value={parseFloat(estimatedUsdcOutput || 0).toFixed(2)}
-                    style={{
-                      border:'none', background:'transparent', outline:'none',
-                      fontSize:'2.2rem', fontWeight:600, color:'#141827', width:'100%', padding:0
-                    }}
+                    className="border-none bg-transparent outline-none text-3xl font-mono font-bold text-white w-full p-0 focus:ring-0"
                   />
                 )}
                 
-                <div style={{ position:'relative', zIndex:15 }}>
+                <div className="relative z-15">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       setShowBuyDropdown(!showBuyDropdown);
                       setShowSellDropdown(false);
                     }}
-                    style={{
-                      display:'flex', alignItems:'center', gap:6, background:'#fff', borderRadius:99,
-                      padding:'4px 10px 4px 4px', border:'1px solid rgba(0,0,0,0.05)', boxShadow:'0 2px 8px rgba(0,0,0,0.04)',
-                      cursor:'pointer', transition:'all 0.2s'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'}
-                    onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                    className="flex items-center gap-1.5 bg-obsidian-950 rounded-full py-1 pr-2.5 pl-1 border border-white/10 hover:border-cyan-400/30 transition-all shadow-sm"
                   >
-                    <span style={{ width:24, height:24, borderRadius:'50%', background:'#2775CA', display:'grid', placeItems:'center' }}>
-                      <svg viewBox="0 0 32 32" width="16" height="16">
+                    <span className="w-6 h-6 rounded-full bg-[#2775CA] grid place-items-center">
+                      <svg viewBox="0 0 32 32" width="14" height="14">
                         <circle cx="16" cy="16" r="16" fill="#fff" opacity="0.15"/>
                         <path d="M20.25 18.91c0-1.84-1.25-2.73-3.92-3.14-1.92-.3-2.31-.77-2.31-1.5 0-.74.67-1.35 2-1.35 1.25 0 2.22.42 2.65.88l1.35-2.07c-.77-.77-2-1.35-3.35-1.5v-2.7h-2.31v2.7c-2 .23-3.65 1.42-3.65 3.35 0 1.92 1.42 2.65 3.85 3.08 2 .35 2.38.92 2.38 1.62 0 .88-.81 1.46-2.08 1.46-1.54 0-2.81-.62-3.42-1.23l-1.42 2.15c.88.92 2.31 1.65 3.96 1.88v2.73h2.31v-2.73c2.08-.27 3.96-1.5 3.96-3.65z" fill="#FFF"/>
                       </svg>
                     </span>
-                    <span style={{ fontSize:'0.9rem', fontWeight:700, color:'#141827' }}>USDC</span>
-                    <ChevronDown size={16} color="#64748b" />
+                    <span className="text-sm font-bold text-white">USDC</span>
+                    <ChevronDown size={14} className="text-slate-500" />
                   </button>
 
                   {/* Buy Dropdown */}
                   {showBuyDropdown && (
-                    <div style={{
-                      position:'absolute', top:'100%', right:0, marginTop:8, background:'#fff',
-                      border:'1px solid rgba(0,0,0,0.08)', borderRadius:12, padding:'0.5rem',
-                      width:220, boxShadow:'0 10px 25px rgba(0,0,0,0.1)', zIndex:30
-                    }}>
-                      <div style={{
-                        display:'flex', alignItems:'center', gap:8, padding:'0.5rem',
-                        borderRadius:8, background:'rgba(22, 163, 74,0.06)', cursor:'pointer'
-                      }}>
-                        <span style={{ width:24, height:24, borderRadius:'50%', background:'#2775CA', display:'grid', placeItems:'center' }}>
-                          <svg viewBox="0 0 32 32" width="16" height="16">
+                    <div className="absolute top-full right-0 mt-2 bg-obsidian-900 border border-white/10 rounded-xl p-2 w-[220px] shadow-card-glass z-30">
+                      <div className="flex items-center gap-2 p-2 rounded-lg bg-white/5 cursor-pointer hover:bg-white/10 transition-colors">
+                        <span className="w-6 h-6 rounded-full bg-[#2775CA] grid place-items-center">
+                          <svg viewBox="0 0 32 32" width="14" height="14">
                             <path d="M20.25 18.91c0-1.84-1.25-2.73-3.92-3.14-1.92-.3-2.31-.77-2.31-1.5 0-.74.67-1.35 2-1.35 1.25 0 2.22.42 2.65.88l1.35-2.07c-.77-.77-2-1.35-3.35-1.5v-2.7h-2.31v2.7c-2 .23-3.65 1.42-3.65 3.35 0 1.92 1.42 2.65 3.85 3.08 2 .35 2.38.92 2.38 1.62 0 .88-.81 1.46-2.08 1.46-1.54 0-2.81-.62-3.42-1.23l-1.42 2.15c.88.92 2.31 1.65 3.96 1.88v2.73h2.31v-2.73c2.08-.27 3.96-1.5 3.96-3.65z" fill="#FFF"/>
                           </svg>
                         </span>
-                        <span style={{ fontWeight:700, color:'#141827' }}>USDC</span>
+                        <span className="font-bold text-white">USDC</span>
                       </div>
-                      <div style={{ marginTop:4, paddingTop:6, borderTop:'1px solid rgba(0,0,0,0.05)', textAlign:'center', fontSize:'0.7rem', color:'var(--text-muted)' }}>
+                      <div className="mt-2 pt-2 border-t border-white/5 text-center text-xs text-slate-500">
                         More currencies coming soon
                       </div>
                     </div>
                   )}
                 </div>
               </div>
-              <div style={{ fontSize:'0.8rem', color:'var(--text-muted)' }}>
+              <div className="text-xs text-slate-500 font-mono mt-1">
                 ≈ ${parseFloat(estimatedUsdcOutput || 0).toFixed(2)}
               </div>
             </div>
 
             {/* Paymaster Toggle */}
-            <div style={{
-              display:'flex', flexDirection:'column', gap:8, margin:'1rem 0',
-              padding:'0.85rem 1rem', background:'rgba(22, 163, 74,0.05)', borderRadius:16, border:'1px solid rgba(22, 163, 74,0.1)'
-            }}>
-              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                <input type="checkbox" id="pmSwapModalToggle" checked={usePmForSwap} onChange={e => setUsePmForSwap(e.target.checked)} style={{ accentColor:'var(--primary)', width:16, height:16 }} />
-                <label htmlFor="pmSwapModalToggle" style={{ fontSize:'0.85rem', color:'#141827', cursor:'pointer', flex:1, fontWeight:600 }}>
+            <div className="flex flex-col gap-2 my-4 p-3 bg-mint/5 rounded-xl border border-mint/20">
+              <div className="flex items-center gap-2.5">
+                <input type="checkbox" id="pmSwapModalToggle" checked={usePmForSwap} onChange={e => setUsePmForSwap(e.target.checked)} className="accent-mint w-4 h-4 rounded border-white/10 bg-obsidian-950 text-mint focus:ring-mint focus:ring-offset-obsidian-900 cursor-pointer" />
+                <label htmlFor="pmSwapModalToggle" className="text-sm text-slate-200 cursor-pointer flex-1 font-semibold">
                   Sponsor gas with Paymaster
                 </label>
-                <span className="gasless-pill" style={{ opacity: usePmForSwap ? 1 : 0, transition: 'opacity 0.2s', pointerEvents: usePmForSwap ? 'auto' : 'none' }}>Gasless</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-mint/20 text-mint border border-mint/30 transition-opacity ${usePmForSwap ? 'opacity-100' : 'opacity-0'}`}>Gasless</span>
               </div>
               {usePmForSwap && (
-                <div style={{ display:'flex', alignItems:'center', gap:10, paddingLeft:26 }}>
-                  <label style={{ fontSize:'0.8rem', color:'var(--text-muted)' }}>Gas Token</label>
+                <div className="flex items-center gap-2.5 pl-7 mt-1">
+                  <label className="text-xs text-slate-400">Gas Token</label>
                   <select 
-                    style={{ background:'rgba(0,0,0,0.05)', border:'none', borderRadius:8, padding:'4px 8px', fontSize:'0.8rem', outline:'none' }}
+                    className="bg-obsidian-950 border border-white/10 rounded-lg py-1 px-2 text-xs text-slate-200 outline-none focus:border-mint/50"
                     value={selectedGasToken} 
                     onChange={(e) => setSelectedGasToken(e.target.value)}
                   >
@@ -758,12 +734,7 @@ function ConnectedDashboard() {
 
             {/* Swap CTA */}
             <button
-              className="btn btn-primary"
-              style={{
-                width:'100%', fontWeight:700, fontSize:'1.1rem', padding:'1rem', borderRadius:16,
-                cursor:swapping ? 'not-allowed' : 'pointer', transition:'all 0.2s',
-                opacity: swapping ? 0.7 : 1
-              }}
+              className="w-full font-bold text-lg py-3.5 rounded-xl transition-all shadow-[0_0_15px_-3px_rgba(0,245,155,0.3)] bg-mint text-obsidian-950 hover:bg-mint-400 disabled:opacity-50 disabled:cursor-not-allowed"
               onClick={async () => {
                 await handleQuickSwap();
                 if (!swapping) {
@@ -776,7 +747,7 @@ function ConnectedDashboard() {
             >
               {swapping ? 'Swapping...' : 'Swap'}
             </button>
-            <div style={{ textAlign:'center', marginTop:12, fontSize:'0.7rem', color:'var(--text-muted)' }}>
+            <div className="text-center mt-3 text-xs text-slate-500 font-mono">
               Via Smart Account → Uniswap V3 Router
             </div>
           </div>
@@ -795,10 +766,105 @@ function LandingPage() {
   const { connectWallet, isConnecting } = useAppContext();
   const [mockPopupState, setMockPopupState] = useState('hidden'); // hidden, showing, signing, confirmed
   const [mockTxConfirmed, setMockTxConfirmed] = useState(false);
-  const [mockAmount, setMockAmount] = useState('500');
-  const [mockIsAdjusting, setMockIsAdjusting] = useState(false);
-  const [mockInputValue, setMockInputValue] = useState('500');
-  const [mockTxError, setMockTxError] = useState(null);
+  const [activeTab, setActiveTab] = useState('agent');
+  const [logs, setLogs] = useState([]);
+
+  useEffect(() => {
+    const getRandomHash = () => "0x" + Math.random().toString(16).slice(2, 6) + "..." + Math.random().toString(16).slice(2, 6);
+
+    const getAgentPatterns = () => {
+      const aId = getRandomHash();
+      const sKey = getRandomHash();
+      return [
+        `${aId} executed swap on uniswap using ${sKey}`,
+        `${aId} blocked for usdc transfer (reason - policy reached)`,
+        `${aId} executed deposit on aave yield - +200$`,
+        `${aId} executed 45$ transfer .`
+      ];
+    };
+    
+    const getSessionPatterns = () => {
+      const aId = getRandomHash();
+      const sKey = getRandomHash();
+      return [
+        `session key activated for agent ${aId}`,
+        `session key revoked`,
+        `agent ${aId} executed deposit in aave yield using session key ${sKey}`,
+        `agent ${aId} executed swap on uniswap using session key ${sKey}`
+      ];
+    };
+    
+    const getAccountPatterns = () => {
+      const aId = getRandomHash();
+      const eoa = getRandomHash();
+      return [
+        `smart account created using eoa ${eoa}`,
+        `smart account approved agent ${aId}`,
+        `smart account revoked agent ${aId}`
+      ];
+    };
+
+    const interval = setInterval(() => {
+      let patterns = [];
+      if (activeTab === 'agent') patterns = getAgentPatterns();
+      else if (activeTab === 'session') patterns = getSessionPatterns();
+      else if (activeTab === 'account') patterns = getAccountPatterns();
+
+      const randomLog = patterns[Math.floor(Math.random() * patterns.length)];
+      setLogs(prev => {
+        const newLogs = [...prev, { id: Date.now(), text: randomLog }];
+        if (newLogs.length > 10) return newLogs.slice(newLogs.length - 10);
+        return newLogs;
+      });
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [activeTab]);
+
+  useEffect(() => {
+    setLogs([]);
+  }, [activeTab]);
+  const activeChains = getSupportedChains();
+  const viewOnlyChains = getSupportedChains({ includeViewOnly: true }).filter((chain) => !chain.isActive);
+  const chainNames = activeChains.map((chain) => chain.name);
+  const chainLabel = chainNames.length > 1 ? chainNames.join(', ') : (chainNames[0] || 'supported testnets');
+
+  const features = [
+    {
+      title: 'Smart account dashboard',
+      body: 'See your signer wallet, predicted smart account, deployed status, owner, EntryPoint deposit, and token balances in one place.',
+      example: 'EOA + Smart Vault balances',
+    },
+    {
+      title: 'Agentic session keys',
+      body: 'Activate a scoped session key module so the agent can prepare routine actions without exposing your owner key.',
+      example: 'ERC-7579 SessionKeyValidator',
+    },
+    {
+      title: 'USDC paymaster flows',
+      body: 'Route UserOps through the paymaster path and test gas sponsorship or ERC-20 gas payment from the app.',
+      example: 'Gas sponsored by Paymaster',
+    },
+    {
+      title: 'Swap, Aave, and portfolio tools',
+      body: 'Use Uniswap V3 quotes, Aave V3 USDC actions, Chainlink pricing, UserOp history, batch sends, and minting utilities.',
+      example: 'Swap ETH to USDC',
+    },
+  ];
+
+  const guardrails = [
+    ['SK', 'Scoped keys', 'The agent demo uses a limited key concept instead of asking for your owner key on every move.'],
+    ['PM', 'Paymaster aware', 'Sponsored or token-paid gas stays visible before the UserOperation is sent.'],
+    ['4337', 'Bundler path', 'Actions are packed as ERC-4337 UserOps and tracked after submission.'],
+    ['HIST', 'Audit trail', 'Submitted operations can be followed from the History view after you connect.'],
+  ];
+
+  const faqs = [
+    ['What kind of product is this?', 'This app is an account abstraction wallet interface. It focuses on smart accounts, modules, paymasters, swaps, Aave actions, balances, and UserOp history.'],
+    ['Which chains are active right now?', `The active chain registry currently includes ${chainLabel}. Additional view-only chains appear as roadmap entries until they are activated.`],
+    ['Does the agent hold funds?', 'No. Funds stay in your smart account. The agent flow demonstrates scoped permissions and still shows the proposed move before confirmation.'],
+    ['What happens after I connect?', 'The existing HomeView dashboard takes over: wallet cards, smart account activation, portfolio widgets, paymaster data, swap modal, and quick navigation all remain intact.'],
+  ];
 
   const handleDemoConfirm = () => {
     if (mockTxConfirmed) return;
@@ -830,48 +896,43 @@ function LandingPage() {
     <div className="new-landing-wrap animate-fade-in relative">
       {/* Mock MetaMask Popup */}
       {mockPopupState !== 'hidden' && (
-        <div style={{
-          position: 'fixed', top: 24, right: 24, width: 340, background: '#fff', 
-          borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.15)', border: '1px solid #e5e7eb',
-          zIndex: 9999, overflow: 'hidden',
-          animation: 'slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
-        }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 28, height: 28, background: '#F6851B', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>M</div>
-            <span style={{ fontWeight: 600, color: '#111827', fontSize: '1.1rem' }}>MetaMask</span>
+        <div className="new-wallet-popover">
+          <div className="new-wallet-popover__top">
+            <div className="new-wallet-mark">M</div>
+            <span>MetaMask</span>
           </div>
           
-          <div style={{ padding: '24px 20px', textAlign: 'center' }}>
+          <div className="new-wallet-popover__body">
             {mockPopupState === 'showing' && (
               <>
-                <h3 style={{ fontSize: '1.25rem', marginBottom: '8px', color: '#111827', fontWeight: 600 }}>Signature Request</h3>
-                <p style={{ color: '#6B7280', fontSize: '0.9rem', marginBottom: '24px' }}>
-                  Wallet Copilot is requesting you to sign a session key approval.
+                <h3>Signature Request</h3>
+                <p>
+                  WalletCopilot is requesting a session key approval for the demo move.
                 </p>
-                <div style={{ background: '#f9fafb', padding: '12px', borderRadius: 8, fontSize: '0.85rem', fontFamily: 'monospace', color: '#374151', wordBreak: 'break-all', marginBottom: '24px' }}>
+                <div className="new-wallet-request">
                   Action: Allow up to $1,000 daily spend<br/>
                   Target: 0x4a1…F2c9
                 </div>
-                <div style={{ display: 'flex', gap: 12 }}>
-                  <button onClick={() => setMockPopupState('hidden')} style={{ flex: 1, padding: '10px', borderRadius: 99, border: '1px solid #d1d5db', background: 'white', color: '#374151', fontWeight: 600 }}>Reject</button>
-                  <button onClick={handleMockSign} style={{ flex: 1, padding: '10px', borderRadius: 99, background: '#037DD6', color: 'white', border: 'none', fontWeight: 600 }}>Sign</button>
+                <div className="new-wallet-actions">
+                  <button onClick={() => setMockPopupState('hidden')}>Reject</button>
+                  <button onClick={handleMockSign}>Sign</button>
                 </div>
               </>
             )}
             
             {mockPopupState === 'signing' && (
-              <div style={{ padding: '30px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-                <div className="global-loader-spinner" style={{ width: 32, height: 32, borderColor: '#037DD6', borderRightColor: 'transparent' }}></div>
-                <span style={{ color: '#374151', fontWeight: 500 }}>Signing transaction...</span>
+              <div className="new-wallet-state">
+                <div className="global-loader-spinner"></div>
+                <span>Signing approval...</span>
               </div>
             )}
 
             {mockPopupState === 'confirmed' && (
-              <div style={{ padding: '30px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-                <div style={{ width: 48, height: 48, background: '#10B981', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+              <div className="new-wallet-state">
+                <div className="new-wallet-success">
                   <Check size={24} />
                 </div>
-                <span style={{ color: '#111827', fontWeight: 600, fontSize: '1.1rem' }}>Confirmed!</span>
+                <span>Confirmed</span>
               </div>
             )}
           </div>
@@ -879,201 +940,244 @@ function LandingPage() {
       )}
       <header className="new-header">
         <div className="new-bar">
-          <div className="new-word">Wallet<span>Copilot</span></div>
+          <a className="new-brand" href="#">
+            <span className="new-brand-mark" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </span>
+            <span className="new-word">wallet<span>copilot</span></span>
+          </a>
+          <nav className="new-nav" aria-label="Landing navigation">
+            <a href="#chains">Chains</a>
+            <a href="#agent-demo">Agent Demo</a>
+            <a href="#security">Security</a>
+            <a href="#faq">FAQ</a>
+          </nav>
+          <div className="new-header-actions">
+            <button className="new-icon-button" type="button" aria-label="Dark mode active">
+              <span aria-hidden="true">◐</span>
+            </button>
+            <button className="new-btn new-btn-ghost" type="button" onClick={connectWallet} disabled={isConnecting}>
+              Sign In
+            </button>
+            <button className="new-btn new-btn-mint" type="button" onClick={connectWallet} disabled={isConnecting}>
+              {isConnecting ? 'Connecting...' : 'Launch App'}
+            </button>
+          </div>
         </div>
       </header>
       
       <main className="new-main-wrap">
-        <section className="new-phero">
+        <section className="new-hero" id="agent-demo">
           <div className="new-phero-inner">
-            <h1>
-              <span className="text-gradient">One account. Every chain.</span>
-              <br className="hidden sm:block" />
-              <span style={{ color: 'var(--text-main)' }}> Nothing to configure.</span>
-            </h1>
-            <p className="new-lede">A single wallet built on modular smart accounts — the same address across Ethereum, Base, Arbitrum, Polygon, and all other EVM chains. Gas, signing, and recovery are handled underneath, so you never deal with the chain layer directly.</p>
-            <div className="new-chain-row">
-              <span>Ethereum</span><span>Arbitrum</span><span>Base</span><span>Polygon</span>
+            <div className="new-badge-row">
+              <a href="#security" className="new-badge">MODULAR SMART ACCOUNTS <ArrowUpRight size={13} /></a>
+              <a href="#architecture" className="new-badge"><span className="new-live-dot"></span> ERC-4337 + ERC-7579</a>
+              <a href="#agent-demo" className="new-badge"><span className="new-live-pill">LIVE</span> AGENT DEMO</a>
             </div>
-          </div>
-        </section>
-
-        <section className="new-hero" id="demo">
-          <div>
-            <h1>Say the move.<br/>It handles the chain.</h1>
-            <p className="new-lede">An agent that sends your crypto, finds yield, and reads your portfolio back to you in plain English — across all supported EVM networks. You set what it's allowed to do; it never does more.</p>
+            <h1>
+              Say the move.
+              <span> It handles the UserOp.</span>
+            </h1>
+            <p className="new-lede">A smart account wallet for the flows this platform already ships: deterministic account setup, session-key activation, paymaster-aware gas, USDC tools, swaps, Aave actions, portfolio widgets, and UserOperation history.</p>
             <div className="new-cta-row">
-              <button className="new-btn new-btn-gold" onClick={connectWallet} disabled={isConnecting}>
+              <button className="new-btn new-btn-mint" onClick={connectWallet} disabled={isConnecting}>
                 {isConnecting ? 'Connecting...' : 'Try Wallet Copilot'}
               </button>
-              <a className="new-btn new-btn-ghost" href="#how">See how it works</a>
+              <a className="new-btn new-btn-panel" href="#how">
+                <ArrowRight size={16} /> See how it works
+              </a>
+            </div>
+            <div className="new-chain-row" id="chains">
+              {activeChains.map((chain) => (
+                <span key={chain.chainId}><span className="new-chip-dot"></span>{chain.name}</span>
+              ))}
+              {viewOnlyChains.slice(0, 3).map((chain) => (
+                <span className="new-chip-muted" key={chain.chainId}>{chain.name} view-only</span>
+              ))}
             </div>
           </div>
 
-          <div className="new-terminal">
-            <div className="new-terminal-top">
-              <div className="new-dot"></div><div className="new-dot"></div><div className="new-dot"></div>
-              <span>agent session · active</span>
+          <div className="new-agent-shell">
+            <div className="new-agent-top">
+              <div className="new-window-dots"><span></span><span></span><span></span></div>
+              <div className="new-agent-status"><span></span> agent demo active</div>
+              <div className="new-agent-meta">Sepolia / Amoy / Arbitrum Sepolia</div>
             </div>
-            <div className="new-terminal-body">
-              <div className="new-msg new-msg-user">Move {mockAmount} USDC from Base to wherever it earns the most right now.</div>
-              <div className="new-msg new-msg-agent">Checked Aave, Compound, and two LPs. Aave v3 on Base is paying the best rate with no lockup.</div>
-              <div className="new-msg">
-                <div className="new-card">
-                  <div className="new-card-title">
-                    {mockIsAdjusting ? (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        Supply <input type="number" value={mockInputValue} onChange={(e) => setMockInputValue(e.target.value)} style={{ width: '70px', padding: '2px 6px', borderRadius: '4px', border: '1px solid #d1d5db', background: '#fff', color: '#111827', fontSize: '0.85rem' }} autoFocus /> USDC → Aave v3
-                      </span>
-                    ) : (
-                      <>Supply {mockAmount} USDC → Aave v3 <span className="new-tag">4.8% APY</span></>
-                    )}
-                  </div>
-                  <div className="new-card-row">Session key <b className="new-mono">0x4a1…F2c9</b></div>
-                  <div className="new-card-row">Daily limit remaining <b>$500 of $1,000</b></div>
-                  <div className="new-card-row">Blocked actions <b>approve, ownership transfer</b></div>
-                  <div className="new-confirm">
-                    {mockIsAdjusting ? (
-                      <>
-                        <button className="new-btn new-btn-gold" onClick={() => { setMockAmount(mockInputValue); setMockIsAdjusting(false); }}>Save</button>
-                        <button className="new-btn new-btn-ghost" onClick={() => { setMockInputValue(mockAmount); setMockIsAdjusting(false); }}>Cancel</button>
-                      </>
-                    ) : (
-                      <>
-                        <button 
-                          className="new-btn new-btn-gold" 
-                          onClick={handleDemoConfirm}
-                          disabled={mockTxConfirmed}
-                          style={{ opacity: mockTxConfirmed ? 0.8 : 1, cursor: mockTxConfirmed ? 'default' : 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '6px' }}
-                        >
-                          {mockTxConfirmed ? <><Check size={16}/> Confirmed</> : 'Confirm'}
-                        </button>
-                        {!mockTxConfirmed && <button className="new-btn new-btn-ghost" onClick={() => { setMockInputValue(mockAmount); setMockIsAdjusting(true); setMockTxError(null); }}>Adjust</button>}
-                      </>
-                    )}
-                  </div>
+            <div className="new-agent-grid">
+              <aside className="new-agent-sidebar">
+                <div>
+                  <div className="new-sidebar-label">Workspace</div>
+                  <button type="button" style={{ width: '100%', textAlign: 'left', border: 'none', background: 'none' }} className={`new-side-tab ${activeTab === 'agent' ? 'new-side-tab--active' : ''}`} onClick={() => setActiveTab('agent')}><Activity size={15} /> Agent stream</button>
+                  <button type="button" style={{ width: '100%', textAlign: 'left', border: 'none', background: 'none' }} className={`new-side-tab ${activeTab === 'session' ? 'new-side-tab--active' : ''}`} onClick={() => setActiveTab('session')}><Key size={15} /> Session key</button>
+                  <button type="button" style={{ width: '100%', textAlign: 'left', border: 'none', background: 'none' }} className={`new-side-tab ${activeTab === 'account' ? 'new-side-tab--active' : ''}`} onClick={() => setActiveTab('account')}><Box size={15} /> Smart account</button>
                 </div>
-              </div>
-              {mockTxError && (
-                <div className="new-msg new-msg-agent" style={{ animation: 'rise 0.4s ease forwards', marginTop: '4px' }}>
-                  <span style={{ color: '#EF4444', fontWeight: 600 }}>✕ {mockTxError}</span>
+
+              </aside>
+              <section className="new-agent-main">
+                <div className="new-metrics">
+                  <div><strong>4337</strong><span>UserOps</span></div>
+                  <div><strong>3</strong><span>Active chains</span></div>
+                  <div><strong>USDC</strong><span>Gas token path</span></div>
+                  <div><strong>Aave</strong><span>Widget enabled</span></div>
                 </div>
-              )}
-              {mockTxConfirmed && (
-                <div className="new-msg new-msg-agent" style={{ animation: 'rise 0.4s ease forwards', marginTop: '4px' }}>
-                  <span style={{ color: 'var(--primary)', fontWeight: 600 }}>✓ Transaction successful.</span> {mockAmount} USDC has been supplied to Aave v3 on Base.
+                <div className="new-stream-head">
+                  <span>{activeTab === 'agent' ? 'Execution Stream' : activeTab === 'session' ? 'Session Key Logs' : 'Smart Account Logs'}</span>
+                  <span><span className="new-live-dot"></span> live activity parser</span>
                 </div>
-              )}
+                <div className="new-chat-stack" style={{ height: '250px', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: '8px' }}>
+                  {logs.map((log) => (
+                    <div key={log.id} className="new-chat-line new-chat-line--agent">
+                      <span style={{ fontSize: '10px', color: '#00f59b' }}>LOG</span>
+                      <p style={{ fontFamily: 'monospace', fontSize: '12px' }}>{log.text}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="new-terminal-hint">
+                  Protected by session-key boundaries and the existing smart account flow from HomeView.
+                </div>
+              </section>
             </div>
+          </div>
+
+          <div style={{ maxWidth: '750px', margin: '5rem auto 3rem', textAlign: 'center', padding: '0 20px' }}>
+            <h3 style={{ fontSize: '1.8rem', marginBottom: '1rem', color: '#fff', fontWeight: '600' }}>Experience the Smart Wallet AI</h3>
+            <p style={{ color: '#9ca3af', lineHeight: '1.7', fontSize: '1.1rem' }}>
+              Imagine having a personal financial assistant that can securely execute trades and transfers for you, day or night. 
+              Our smart wallet platform makes this a reality by letting you grant strict, temporary spending limits to an AI agent. 
+              You remain entirely in control of your funds, while the AI does the heavy lifting.
+              <br/><br/>
+              The interactive demo below shows exactly how this feels. Go ahead and try it out—configure an agent, set a limit, and chat with it!
+            </p>
+          </div>
+
+          <div className="new-agent-shell">
+            <div className="new-agent-top">
+              <div className="new-window-dots"><span></span><span></span><span></span></div>
+              <div className="new-agent-status"><span></span> agent demo execution</div>
+              <div className="new-agent-meta">Interactive Demo</div>
+            </div>
+            <AgentDemoView />
           </div>
         </section>
 
         <section id="how" className="new-section">
-          <div className="new-head">
-            <h2>Three things to set up. Then just talk to it.</h2>
+          <div className="new-head new-head--center">
+            <span className="new-section-kicker">Simple onboarding</span>
+            <h2>Three things to set up. Then use the actual dashboard.</h2>
+            <p>Connecting still drops you into the existing platform experience. The landing page only changes how the product is introduced.</p>
           </div>
           <div className="new-steps">
             <div className="new-step">
               <div className="new-num new-mono">01</div>
               <h3>Connect your wallet</h3>
-              <p>Link MetaMask or any wallet you already use. Nothing custodial, nothing new to remember — your keys never leave it.</p>
+              <p>Use the same connect flow already in AppContext. Your EOA remains the owner-side signer.</p>
             </div>
             <div className="new-step">
               <div className="new-num new-mono">02</div>
-              <h3>Set your agent's limits</h3>
-              <p>Choose what it can touch, how much it can move per day, and what's always off-limits. You set this once, and can change it anytime.</p>
+              <h3>Activate the Smart Vault</h3>
+              <p>Fund the predicted smart account, deploy when needed, and install the session key validator module.</p>
             </div>
             <div className="new-step">
               <div className="new-num new-mono">03</div>
-              <h3>Talk to it</h3>
-              <p>Ask for a transfer, a swap, or where your money should sit this week. It proposes the move; you give the final word.</p>
+              <h3>Run UserOps</h3>
+              <p>Swap, batch-send, mint test USDC, use paymaster gas, open the agent, and track every submitted UserOperation.</p>
             </div>
           </div>
         </section>
 
         <section className="new-section">
-          <div className="new-head">
-            <h2>What it actually does for you</h2>
-            <p>Not a chatbot bolted onto a wallet — a layer that executes, with your rules built into every step.</p>
+          <div className="new-head new-head--center">
+            <span className="new-section-kicker">Capabilities</span>
+            <h2>What this platform actually does</h2>
+            <p>No generic enterprise copy. This is the account abstraction surface already wired into the app.</p>
           </div>
           <div className="new-cap-grid">
-            <div className="new-cap">
-              <h3>Transfers, in plain language</h3>
-              <p>Native and stablecoin sends, resolved from a name or address, checked against your balance before anything moves.</p>
-              <div className="new-ex new-mono">"send 200 usdc to maria"</div>
-            </div>
-            <div className="new-cap">
-              <h3>DeFi, executed correctly</h3>
-              <p>Swaps routed through Uniswap, lending through Aave — priced live, with the quote shown before you approve.</p>
-              <div className="new-ex new-mono">"swap 0.2 eth for usdc, best rate"</div>
-            </div>
-            <div className="new-cap">
-              <h3>A portfolio you can read</h3>
-              <p>Live pricing across everything you hold, explained the way you'd explain it to a friend — not a wall of tickers.</p>
-              <div className="new-ex new-mono">"how's my portfolio doing this week"</div>
-            </div>
-            <div className="new-cap">
-              <h3>A second opinion before you move</h3>
-              <p>Ask what a trade would cost, what idle cash could be earning, or whether a position is worth holding. Get an answer, not a dashboard.</p>
-              <div className="new-ex new-mono">"is it worth moving this to aave"</div>
-            </div>
+            {features.map((feature) => (
+              <div className="new-cap" key={feature.title}>
+                <h3>{feature.title}</h3>
+                <p>{feature.body}</p>
+                <div className="new-ex new-mono">{feature.example}</div>
+              </div>
+            ))}
           </div>
         </section>
 
-        <section className="new-section">
-          <div className="new-head">
-            <h2>You set the boundaries. It can't cross them.</h2>
-            <p>The agent holds a limited key of its own — never your real one — and everything it can do is bounded before it ever reaches the chain.</p>
+        <section className="new-section" id="security">
+          <div className="new-head new-head--center">
+            <span className="new-section-kicker">Security by design</span>
+            <h2>You keep the keys. The platform handles the AA plumbing.</h2>
+            <p>Security copy is grounded in the existing app flows: scoped modules, EntryPoint/UserOp submission, paymaster visibility, and tracked operation history.</p>
           </div>
           <div className="new-sec-grid">
-            <div className="new-sec-item">
-              <div className="new-sec-mark">SK</div>
-              <div><h3>Scoped session keys</h3><p>Your agent signs with its own limited key, not your wallet's. Revoke it instantly, anytime, with nothing else affected.</p></div>
-            </div>
-            <div className="new-sec-item">
-              <div className="new-sec-mark">$</div>
-              <div><h3>Spending limits you set</h3><p>Cap what it can move per day or per action. It stops the moment it reaches the ceiling — no exceptions, no override.</p></div>
-            </div>
-            <div className="new-sec-item">
-              <div className="new-sec-mark">✕</div>
-              <div><h3>Risky actions, blocked</h3><p>Approvals, ownership changes, and anything that could hand away control are refused before they reach your wallet.</p></div>
-            </div>
-            <div className="new-sec-item">
-              <div className="new-sec-mark">◇</div>
-              <div><h3>Nothing custodial</h3><p>Your funds sit in a smart account you control. The agent proposes moves; it never holds your assets.</p></div>
+            {guardrails.map(([mark, title, body]) => (
+              <div className="new-sec-item" key={title}>
+                <div className="new-sec-mark">{mark}</div>
+                <div><h3>{title}</h3><p>{body}</p></div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="new-section" id="architecture">
+          <div className="new-head new-head--center">
+            <span className="new-section-kicker">Infrastructure</span>
+            <h2>The stack already under the dashboard</h2>
+            <p>A compact map of the pieces users meet after they connect.</p>
+          </div>
+          <div className="new-arch-stack">
+            <details open>
+              <summary><span>01</span> ERC-4337 Smart Account</summary>
+              <p>Predicted and deployed smart accounts, owner metadata, EntryPoint deposits, balances, and module status are surfaced in HomeView.</p>
+            </details>
+            <details>
+              <summary><span>02</span> Bundler + UserOperation Tracker</summary>
+              <p>The app builds, estimates, signs, sends, and tracks UserOps through the bundler utilities and History view.</p>
+            </details>
+            <details>
+              <summary><span>03</span> ERC-20 Paymaster</summary>
+              <p>Paymaster screens expose deposits, token balances, and sponsored or token-paid gas paths for smart-account actions.</p>
+            </details>
+            <details>
+              <summary><span>04</span> Session Key Validator</summary>
+              <p>The agent activation flow installs a session key validator so automation can be scoped without changing smart account ownership.</p>
+            </details>
+          </div>
+        </section>
+
+        <section className="new-section" id="faq">
+          <div className="new-head new-head--center">
+            <span className="new-section-kicker">FAQs</span>
+            <h2>Questions people actually ask</h2>
+          </div>
+          <div className="new-faq-grid">
+            <div className="new-faq-panel">
+              {faqs.map(([question, answer], index) => (
+                <details open={index === 0} className="new-details" id={`faq-${index}`} key={question}>
+                  <summary className="new-summary">{question} <span className="new-plus">+</span></summary>
+                  <p>{answer}</p>
+                </details>
+              ))}
             </div>
           </div>
         </section>
 
-        <section className="new-section">
-          <div className="new-head"><h2>Questions people actually ask</h2></div>
-          <div>
-            <details open className="new-details">
-              <summary className="new-summary">Can it move my money without me knowing? <span className="new-plus">+</span></summary>
-              <p>No. Every action stays inside the daily limit you set, and anything above a small threshold waits for your confirmation. You can review or revoke its access at any time.</p>
-            </details>
-            <details className="new-details">
-              <summary className="new-summary">What if I want to stop it? <span className="new-plus">+</span></summary>
-              <p>Revoke the session key from your dashboard and it loses the ability to sign anything, immediately. Your funds were never in its custody to begin with.</p>
-            </details>
-            <details className="new-details">
-              <summary className="new-summary">Which chains does it work on? <span className="new-plus">+</span></summary>
-              <p>Ethereum, Base, Arbitrum, Polygon, and other EVM chains, through one account — you don't manage separate wallets or bridges by hand.</p>
-            </details>
-            <details className="new-details">
-              <summary className="new-summary">Is this custodial? <span className="new-plus">+</span></summary>
-              <p>No. You connect a wallet you already hold the keys to. The agent operates through a scoped, revocable permission — it never takes possession of your assets.</p>
-            </details>
-            <details className="new-details">
-              <summary className="new-summary">How is this built, under the hood? <span className="new-plus">+</span></summary>
-              <p>On a modular smart account (ERC-4337/ERC-7579). The agent's permissions live in a session-key validator module, checked on-chain — not just promised in an app.</p>
-            </details>
+        <section className="new-final-cta">
+          <h2>Connect once. Build your Smart Vault. Run the agent demo for real.</h2>
+          <p>The connected dashboard, modules, paymaster, history, mint, and unified agent views stay exactly where users expect them.</p>
+          <div className="new-cta-row">
+            <button className="new-btn new-btn-mint" onClick={connectWallet} disabled={isConnecting}>
+              {isConnecting ? 'Connecting...' : 'Launch WalletCopilot'}
+            </button>
+            <a className="new-btn new-btn-panel" href="#agent-demo">Replay demo</a>
           </div>
         </section>
 
         <footer className="new-footer">
-          <div>Wallet<span style={{color: "var(--primary)"}}>Copilot</span></div>
-          <div>Non-custodial · You hold the keys · Revoke anytime</div>
+          <div className="new-brand">
+            <span className="new-brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+            <span className="new-word">wallet<span>copilot</span></span>
+          </div>
+          <div>Non-custodial · Smart accounts · Paymaster-aware UserOps</div>
         </footer>
       </main>
     </div>

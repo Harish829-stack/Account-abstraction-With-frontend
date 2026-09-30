@@ -4,69 +4,47 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
-    <!-- Tailwind CSS CDN with forms and container queries plugins -->
+    <title>WalletCopilot | Smart Account Dashboard</title>
+    <!-- Tailwind CSS CDN with plugins -->
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <!-- Google Fonts: Inter -->
+    <!-- Google Fonts: Inter & JetBrains Mono -->
     <link href="https://fonts.googleapis.com" rel="preconnect">
     <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
-    <!-- Tailwind Configuration -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
+        darkMode: 'class',
         theme: {
           extend: {
+            fontFamily: {
+              sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+              mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
+            },
             colors: {
-              brand: {
-                cream: '#fbf9f4',
-                card: '#ffffff',
-                border: '#e7e5e4',
-                borderDark: '#d6d3d1',
-                textPrimary: '#0f172a',
-                textSecondary: '#64748b',
-                emerald: '#10b981',
-                emeraldHover: '#059669',
-                emeraldLight: '#ecfdf5',
-                grayBg: '#f5f3ee'
+              obsidian: {
+                950: 'var(--bg-dark)',
+                900: 'var(--bg-card)',
+                850: 'var(--bg-card-hover)',
+                800: '#161f2e',
+              },
+              mint: {
+                DEFAULT: 'var(--primary-accent)',
+                400: '#2bf8ab',
+                500: 'var(--primary-accent)',
+                600: '#00cc7d',
               }
             },
-            fontFamily: {
-              sans: ['Inter', 'system-ui', 'sans-serif'],
-              mono: ['"JetBrains Mono"', 'monospace']
-            },
             boxShadow: {
-              card: '0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px 0 rgba(0, 0, 0, 0.02)',
-              cardHover: '0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -1px rgba(0, 0, 0, 0.04)',
-              pill: '0 1px 2px rgba(0, 0, 0, 0.05)'
+              'mint-sm': '0 0 12px -2px rgba(0, 245, 155, 0.3)',
+              'mint-glow': '0 0 25px -5px rgba(0, 245, 155, 0.35)',
+              'card-glass': '0 8px 32px 0 rgba(0, 0, 0, 0.45)'
             }
           }
         }
       }
     </script>
-    <!-- Custom Typography & Layout Tweaks -->
-    <style data-purpose="custom-styling">
-      body {
-        background-color: #f8f6f0;
-        color: #0f172a;
-        font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-      }
-      .custom-scrollbar::-webkit-scrollbar {
-        width: 5px;
-        height: 5px;
-      }
-      .custom-scrollbar::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: #d6d3d1;
-        border-radius: 4px;
-      }
-      .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-        background: #a8a29e;
-      }
-    </style>
   </head>
-  <body>
+  <body class="selection:bg-[#00f59b] selection:text-black">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
