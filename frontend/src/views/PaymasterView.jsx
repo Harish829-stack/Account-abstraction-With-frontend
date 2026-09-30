@@ -5,35 +5,43 @@ import { IEntryPointABI, ERC20_ABI } from '../utils/abis';
 import { toHex, packUserOp, encodeERC7579Single } from '../utils/helpers';
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import { useToast } from '../context/ToastContext';
-import { Fuel, ShieldCheck, Zap, Info, ArrowUpRight, CheckCircle2, Lock } from 'lucide-react';
+import { Fuel, ShieldCheck, Zap, Info, ArrowUpRight, CheckCircle2, Lock, RefreshCw } from 'lucide-react';
+import { getFriendlyErrorMessage } from '../utils/errors';
 
 export default function PaymasterView() {
   const { 
     provider, signer, smartAccountAddress, paymasterAddress, env,
     saETHBalance, saEntryPointDeposit,
-    trackOp, setCurrentView, setGlobalLoading, chainId, nativeToken, refreshTrigger
+    trackOp, setCurrentView, setGlobalLoading, chainId, nativeToken,
+    sharedDataCache, refreshPaymasterAllowance, refreshAllData
   } = useAppContext();
   const toast = useToast();
 
   const [approveAmount, setApproveAmount] = useState('10');
   const [approving, setApproving] = useState(false);
-  const [currentAllowance, setCurrentAllowance] = useState('0.00');
+  const [refreshingPaymasterData, setRefreshingPaymasterData] = useState(false);
+  const allowanceKey = smartAccountAddress && chainId ? `${chainId}:${smartAccountAddress.toLowerCase()}` : null;
+  const allowanceEntry = allowanceKey ? sharedDataCache.paymasterAllowance?.[allowanceKey] : null;
+  const currentAllowance = allowanceEntry?.data || '0.00';
+  const allowanceLoading = Boolean(allowanceEntry?.loading);
 
   useEffect(() => {
-    let active = true;
-    const fetchAllowance = async () => {
-      if (!provider || !smartAccountAddress || !paymasterAddress || !env.USDC_TOKEN) return;
-      try {
-        const usdc = new ethers.Contract(env.USDC_TOKEN, ["function allowance(address, address) view returns (uint256)"], provider);
-        const allowance = await usdc.allowance(smartAccountAddress, paymasterAddress);
-        if (active) setCurrentAllowance(ethers.formatUnits(allowance, 6));
-      } catch (err) {
-        console.warn("Failed to fetch USDC allowance:", err);
-      }
-    };
-    fetchAllowance();
-    return () => { active = false; };
-  }, [provider, smartAccountAddress, paymasterAddress, env.USDC_TOKEN, refreshTrigger]);
+    if (!allowanceEntry?.data && !allowanceEntry?.loading) {
+      void refreshPaymasterAllowance();
+    }
+  }, [allowanceEntry?.data, allowanceEntry?.loading, refreshPaymasterAllowance]);
+
+  const handleRefreshPaymasterData = async () => {
+    setRefreshingPaymasterData(true);
+    try {
+      await Promise.allSettled([
+        refreshAllData({ force: true }),
+        refreshPaymasterAllowance({ force: true }),
+      ]);
+    } finally {
+      setRefreshingPaymasterData(false);
+    }
+  };
 
   const handleApprovePaymaster = async () => {
     const targetToken = env.USDC_TOKEN;
@@ -115,8 +123,9 @@ export default function PaymasterView() {
         'info'
       );
     } catch (err) {
+      console.error("Paymaster approval failed:", err);
       if (err.code === 4001) toast.error("Transaction rejected by user");
-      else toast.error(err.reason || err.message || "Failed to approve Gas Sponsorship");
+      else toast.error(getFriendlyErrorMessage(err, "We could not approve gas sponsorship. Please check balances and try again."));
     } finally {
       setApproving(false);
       setGlobalLoading(false);
@@ -125,7 +134,7 @@ export default function PaymasterView() {
 
   return (
     <div className="w-full min-h-[calc(100vh-140px)] bg-[#07090e] text-gray-100 font-sans px-4 sm:px-6 lg:px-8 py-6 pb-16 overflow-y-auto">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="w-full space-y-6">
         
         {/* Header Breadcrumb & Status */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-white/5">
@@ -169,6 +178,15 @@ export default function PaymasterView() {
               <p className="text-gray-400 leading-relaxed font-normal">
                 Enable <span className="text-white font-medium">Gas Sponsorship</span> to sponsor transaction fees directly using <span className="text-[#00f59b] font-medium font-mono">USDC</span> instead of holding native <span className="text-white font-mono">{nativeToken || 'ETH'}</span>. Granting an allowance lets the Paymaster deduct exact fee equivalents atomically per UserOperation with zero gas markups.
               </p>
+              <button
+                type="button"
+                onClick={handleRefreshPaymasterData}
+                disabled={refreshingPaymasterData || allowanceLoading}
+                className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#00f59b]/10 border border-[#00f59b]/30 text-[#00f59b] text-xs font-mono font-semibold hover:bg-[#00f59b]/15 disabled:opacity-50 transition"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${refreshingPaymasterData || allowanceLoading ? 'animate-spin' : ''}`} />
+                <span>{refreshingPaymasterData || allowanceLoading ? 'Refreshing data...' : 'Refresh gas data'}</span>
+              </button>
             </div>
           </div>
         </div>

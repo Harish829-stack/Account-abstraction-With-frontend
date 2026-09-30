@@ -88,7 +88,7 @@ export default function Navbar() {
             {/* Chain Selector Pill */}
             <div className="relative">
               <select 
-                className="appearance-none flex items-center gap-2 px-4 py-2 pl-9 pr-7 rounded-full text-sm font-semibold bg-emerald-950/40 border border-mint/25 text-mint hover:bg-mint/10 hover:border-mint/50 transition-all cursor-pointer focus:outline-none"
+                className="appearance-none flex items-center gap-2 px-4 py-2 pl-10 pr-7 rounded-full text-sm font-semibold bg-emerald-950/40 border border-mint/25 text-mint hover:bg-mint/10 hover:border-mint/50 transition-all cursor-pointer focus:outline-none"
                 value={chainId ? chainId.toString() : String(defaultChainId)}
                 onChange={(e) => switchNetwork(Number(e.target.value))}
               >

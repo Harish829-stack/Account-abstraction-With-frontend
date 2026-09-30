@@ -30,8 +30,9 @@ import {
   Gauge,
 } from 'lucide-react';
 import { MultisigABI, ERC20PaymasterABI, StakeableABI } from '../utils/abis';
+import { getFriendlyErrorMessage } from '../utils/errors';
 
-const CONTRACT_FIELDS = ['paymaster', 'usdcToken', 'priceFeed', 'multisigProxy'];
+const CONTRACT_FIELDS = ['paymaster', 'usdcToken', 'wethToken', 'priceFeed', 'multisigProxy', 'aavePool', 'uniswapRouter', 'uniswapQuoter'];
 const SHARED_CONTRACT_FIELDS = [
   'ENTRY_POINT',
   'FACTORY',
@@ -156,7 +157,8 @@ export default function AdminView() {
       setOpsSummary(summary);
       setDebugOps(Array.isArray(dropped) ? dropped : []);
     } catch (error) {
-      setAdminNotice(`Operations load failed: ${error.message}`);
+      console.error("Operations load failed:", error);
+      setAdminNotice(getFriendlyErrorMessage(error, 'We could not load operations right now.'));
     } finally {
       setOpsLoading(false);
     }
@@ -175,7 +177,8 @@ export default function AdminView() {
       }
       setSharedForm(toContractForm(config?.sharedContracts || {}, SHARED_CONTRACT_FIELDS));
     } catch (error) {
-      setAdminNotice(`Config load failed: ${error.message}`);
+      console.error("Admin config load failed:", error);
+      setAdminNotice(getFriendlyErrorMessage(error, 'We could not load admin config right now.'));
     } finally {
       setConfigLoading(false);
     }
@@ -241,7 +244,8 @@ export default function AdminView() {
       }
       await refreshConfigAfterSave('Chain config saved and app config cache invalidated.');
     } catch (error) {
-      setAdminNotice(`Chain save failed: ${error.message}`);
+      console.error("Chain config save failed:", error);
+      setAdminNotice(getFriendlyErrorMessage(error, 'We could not save this chain config.'));
     }
   };
 
@@ -254,7 +258,8 @@ export default function AdminView() {
       await updateAdminChainContracts(Number(chainForm.chainId), contractForm);
       await refreshConfigAfterSave('Chain contract addresses saved.');
     } catch (error) {
-      setAdminNotice(`Contract save failed: ${error.message}`);
+      console.error("Chain contract save failed:", error);
+      setAdminNotice(getFriendlyErrorMessage(error, 'We could not save these contract addresses.'));
     }
   };
 
@@ -263,7 +268,8 @@ export default function AdminView() {
       await updateSharedContracts(sharedForm);
       await refreshConfigAfterSave('Shared contract addresses saved.');
     } catch (error) {
-      setAdminNotice(`Shared contract save failed: ${error.message}`);
+      console.error("Shared contract save failed:", error);
+      setAdminNotice(getFriendlyErrorMessage(error, 'We could not save shared contract addresses.'));
     }
   };
 
@@ -273,7 +279,8 @@ export default function AdminView() {
       setAdminNotice(`Receipt poll scanned ${result?.scanned || 0} pending op(s).`);
       await loadOperations();
     } catch (error) {
-      setAdminNotice(`Receipt poll failed: ${error.message}`);
+      console.error("Receipt poll failed:", error);
+      setAdminNotice(getFriendlyErrorMessage(error, 'We could not run the receipt poll.'));
     }
   };
 
@@ -283,7 +290,8 @@ export default function AdminView() {
       setAdminNotice(`Indexer scanned ${result?.scannedChains || 0} chain(s), indexed ${result?.indexedOps || 0} op(s).`);
       await loadOperations();
     } catch (error) {
-      setAdminNotice(`Indexer poll failed: ${error.message}`);
+      console.error("Indexer poll failed:", error);
+      setAdminNotice(getFriendlyErrorMessage(error, 'We could not run the indexer poll.'));
     }
   };
 
@@ -383,7 +391,7 @@ export default function AdminView() {
       alert("Hash approved on-chain!");
     } catch (error) {
       console.error("Error approving hash:", error);
-      alert("Failed to approve hash.");
+      alert(getFriendlyErrorMessage(error, "We could not approve this hash. Please try again."));
     }
   };
 
@@ -432,7 +440,7 @@ export default function AdminView() {
       calculateTxHash();
     } catch (error) {
       console.error("Error executing tx:", error);
-      alert("Execution failed. See console for details.");
+      alert(getFriendlyErrorMessage(error, "We could not execute this admin transaction."));
     }
   };
 

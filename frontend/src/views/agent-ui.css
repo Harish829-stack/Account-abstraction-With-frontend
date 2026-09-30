@@ -17,6 +17,7 @@
 /* ---------- stage ---------- */
 .stage {
   width: 100%;
+  min-height: calc(100vh - 140px);
   padding: 0;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   color: #f3f4f6;
@@ -24,7 +25,7 @@
 
 .shell {
   width: 100%;
-  max-width: 1000px;
+  max-width: 100%;
   margin: 0 auto;
 }
 

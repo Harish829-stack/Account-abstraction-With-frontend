@@ -44,7 +44,7 @@ const CHAIN_CONFIGS = {
     bundlerUrl: process.env.ETHEREUM_SEPOLIA_BUNDLER_URL,
 
     entryPointAddress:         '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-    sessionKeyValidatorAddress: '0xC578bF1899fF9E49d0FC65BE5b1a0A26EB11aF44',
+    sessionKeyValidatorAddress: '0x9B7Fd296B6b332b525Bd6AD65f621D25C0060323',
 
     // ── Tokens ─────────────────────────────────────────────────────────────────
     // Canonical MockUSDC — 6 decimals, used by both Uniswap router and Aave pool.
@@ -84,7 +84,7 @@ const CHAIN_CONFIGS = {
     bundlerUrl: process.env.ARBITRUM_SEPOLIA_BUNDLER_URL,
 
     entryPointAddress:         '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-    sessionKeyValidatorAddress: '0xC578bF1899fF9E49d0FC65BE5b1a0A26EB11aF44',
+    sessionKeyValidatorAddress: '0x9B7Fd296B6b332b525Bd6AD65f621D25C0060323',
 
     // Canonical MockUSDC — same CREATE3 salt as Sepolia, same address on all chains.
     usdcAddress: '0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E',
@@ -119,7 +119,7 @@ const CHAIN_CONFIGS = {
     bundlerUrl: process.env.POLYGON_AMOY_BUNDLER_URL,
 
     entryPointAddress:         '0x0000000071727De22E5E9d8BAf0edAc6f37da032',
-    sessionKeyValidatorAddress: '0xC578bF1899fF9E49d0FC65BE5b1a0A26EB11aF44',
+    sessionKeyValidatorAddress: '0x9B7Fd296B6b332b525Bd6AD65f621D25C0060323',
 
     usdcAddress:     '0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E',
     aaveUsdcAddress: undefined,

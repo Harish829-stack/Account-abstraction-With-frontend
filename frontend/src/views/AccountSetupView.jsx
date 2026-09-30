@@ -4,6 +4,7 @@ import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { shortenAddress, formatNum, encodeERC7579Single, buildAndSendAccountOp } from '../utils/helpers';
 import { K1ValidatorFactoryABI, SmartAccountABI, K1ValidatorABI } from '../utils/abis';
+import { getFriendlyErrorMessage } from '../utils/errors';
 import { PlusCircle, Link as LinkIcon, AlertTriangle, ArrowRight, Shield, Download, RotateCcw, Coins, Landmark, ChevronRight, ArrowDownCircle } from 'lucide-react';
 import Stepper from '../components/Stepper';
 
@@ -20,6 +21,7 @@ export default function AccountSetupView() {
     saUSDCBalance,
 
     saEntryPointDeposit,
+    loadSmartAccountDetails,
     refreshAllData,
     env,
     setGlobalLoading,
@@ -95,9 +97,10 @@ export default function AccountSetupView() {
         const predicted = await factory.getFunction("computeAccountAddress")(eoaAddress, salt, [], 0);
         if (active) setPredictedAddress(predicted);
       } catch (err) {
+        console.error("Smart account prediction failed:", err);
         if (active) {
           setPredictedAddress('');
-          setPredictionError(err.message || err.toString());
+          setPredictionError(getFriendlyErrorMessage(err, 'We could not predict the smart account address. Check the salt and network.'));
         }
       }
     };
@@ -120,10 +123,12 @@ export default function AccountSetupView() {
       await tx.wait();
       const deployedAddress = await factory.getFunction("computeAccountAddress")(eoaAddress, salt, [], 0);
       setSmartAccountAddress(deployedAddress);
+      await loadSmartAccountDetails(deployedAddress, provider, { includeContractDetails: true });
       toast.success("Smart Account deployed successfully!");
     } catch (err) {
+      console.error("Smart account deploy failed:", err);
       if (err.code === 4001) toast.error("Transaction rejected by user");
-      else toast.error(err.reason || err.message || "Failed to deploy");
+      else toast.error(getFriendlyErrorMessage(err, "We could not deploy your smart account. Please try again."));
     } finally {
       setDeploying(false);
       setGlobalLoading(false);
@@ -143,7 +148,8 @@ export default function AccountSetupView() {
         setConnectAddress('');
       }
     } catch (err) {
-      toast.error("Error connecting: " + err.message);
+      console.error("Smart account connect failed:", err);
+      toast.error(getFriendlyErrorMessage(err, "We could not connect this smart account."));
     } finally {
       setConnecting(false);
     }
@@ -184,8 +190,9 @@ export default function AccountSetupView() {
       await refreshAllData();
       toast.success("ETH deposited to Smart Account!");
     } catch (err) {
+      console.error("Smart account funding failed:", err);
       if (err.code === 4001) toast.error("Transaction rejected by user");
-      else toast.error(err.reason || err.message || "Failed to deposit");
+      else toast.error(getFriendlyErrorMessage(err, `We could not deposit ${nativeToken} into your smart account.`));
     } finally {
       setPendingSDeposit(false);
       setGlobalLoading(false);
@@ -204,8 +211,9 @@ export default function AccountSetupView() {
       await refreshAllData();
       toast.success("ETH deposited to EntryPoint!");
     } catch (err) {
+      console.error("EntryPoint deposit failed:", err);
       if (err.code === 4001) toast.error("Transaction rejected by user");
-      else toast.error(err.reason || err.message || "Failed to deposit to EntryPoint");
+      else toast.error(getFriendlyErrorMessage(err, `We could not deposit ${nativeToken} to the EntryPoint.`));
     } finally {
       setPendingEPDeposit(false);
       setGlobalLoading(false);
@@ -229,8 +237,9 @@ export default function AccountSetupView() {
       await refreshAllData();
       toast.success(`Deposit successfully withdrawn from EntryPoint! OpHash: ${shortenAddress(opHash)}`);
     } catch (err) {
+      console.error("EntryPoint withdrawal failed:", err);
       if (err.code === 4001) toast.error("Transaction rejected by user");
-      else toast.error(err.reason || err.message || "Failed to withdraw");
+      else toast.error(getFriendlyErrorMessage(err, "We could not withdraw from the EntryPoint."));
     } finally {
       setPendingEPWithdraw(false);
       setGlobalLoading(false);
@@ -262,8 +271,9 @@ export default function AccountSetupView() {
       await refreshAllData();
       toast.success(`Ownership transferred successfully! OpHash: ${shortenAddress(opHash)}`);
     } catch (err) {
+      console.error("Ownership transfer failed:", err);
       if (err.code === 4001) toast.error("Transaction rejected by user");
-      else toast.error(err.reason || err.message || "Failed to transfer ownership");
+      else toast.error(getFriendlyErrorMessage(err, "We could not transfer ownership. Please check the new owner address."));
     } finally {
       setPendingOwnerXfer(false);
       setGlobalLoading(false);
@@ -283,8 +293,9 @@ export default function AccountSetupView() {
       toast.success(`${symbol} pulled to Smart Account successfully!`);
       setSetupStep(4);
     } catch (err) {
+      console.error("Token pull failed:", err);
       if (err.code === 4001) toast.error("Transaction rejected by user");
-      else toast.error(err.reason || err.message || "Failed to pull token");
+      else toast.error(getFriendlyErrorMessage(err, "We could not move the token into your smart account."));
     } finally {
       setApproving(false);
       setGlobalLoading(false);

@@ -8,6 +8,7 @@ import { SmartAccountABI, IEntryPointABI, SocialRecoveryValidatorABI, K1Validato
 import { estimateUserOperationGas, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import SessionKeyView from './SessionKeyView';
 import WebAuthnView from './WebAuthnView';
+import { getFriendlyErrorMessage } from '../utils/errors';
 
 export default function ProfileView() {
   const { eoaAddress, smartAccountAddress, signer, provider, env, refreshAllData, refreshTrigger, setGlobalLoading, chainId, trackOp } = useAppContext();
@@ -100,7 +101,7 @@ export default function ProfileView() {
       await checkRecoveryModule();
     } catch (err) {
       console.error(err);
-      toast.error(err.reason || err.message || "Failed to install module");
+      toast.error(getFriendlyErrorMessage(err, "We could not install the recovery module. Please check the guardian addresses and try again."));
     } finally {
       setIsInstalling(false);
       setGlobalLoading(false);
@@ -162,7 +163,8 @@ export default function ProfileView() {
         await checkRecoveryModule();
         setShowRecovery(false); // Close the view on success
     } catch (err) {
-        toast.error("Uninstall failed: " + (err.reason || err.message));
+        console.error("Recovery module uninstall failed:", err);
+        toast.error(getFriendlyErrorMessage(err, "We could not uninstall the recovery module. Please try again."));
     } finally {
         setGlobalLoading(false);
     }
@@ -190,7 +192,7 @@ export default function ProfileView() {
         toast.success(`Approval successful!`);
     } catch (err) {
         console.error(err);
-        toast.error("Approval failed: " + (err.reason || err.message));
+        toast.error(getFriendlyErrorMessage(err, "We could not approve this recovery request. Please try again."));
     } finally {
         setGlobalLoading(false);
     }
@@ -211,7 +213,7 @@ export default function ProfileView() {
         toast.success(`Revoked successfully!`);
     } catch (err) {
         console.error(err);
-        toast.error("Revoke failed: " + (err.reason || err.message));
+        toast.error(getFriendlyErrorMessage(err, "We could not revoke this recovery approval. Please try again."));
     } finally {
         setGlobalLoading(false);
     }
@@ -307,7 +309,7 @@ export default function ProfileView() {
           setNewOwner("");
       } catch (err) {
           console.error(err);
-          toast.error(err.message || "Failed to execute recovery");
+          toast.error(getFriendlyErrorMessage(err, "We could not execute recovery. Check approvals and try again."));
       } finally {
           setIsExecuting(false);
           setGlobalLoading(false);

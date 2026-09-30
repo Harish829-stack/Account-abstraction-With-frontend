@@ -6,61 +6,33 @@ import { useToast } from '../context/ToastContext';
 import { shortenAddress, toHex, getEthPriceInUsd, packUserOp, encodeERC7579Single, buildAndSendAccountOp } from '../utils/helpers';
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import { IEntryPointABI, SmartAccountABI, K1ValidatorFactoryABI } from '../utils/abis';
-import { getDashboardSummary } from '../utils/backendApi';
 import { getSupportedChains } from '../config/chains';
+import { getFriendlyErrorMessage } from '../utils/errors';
 import {
   CheckCircle2, XCircle, ArrowRight, ArrowUpRight,
   RefreshCw, TrendingUp, Activity, Wallet, Box, BarChart3,
   ChevronDown, ArrowDown, Puzzle, Fuel, MapPin, Key, Users,
-  Fingerprint, Check, ChevronRight, Copy
+  Fingerprint, Check, ChevronRight, Copy, MoreVertical
 } from 'lucide-react';
 
 import './new-landing.css';
 import { SmartVaultPortfolioWidget, ChainlinkPricesWidget, AaveV3Widget } from '../components/DashboardFinancialWidgets';
 import AgentDemoView from '../components/AgentDemoView';
-const UNISWAP_ROUTER = '0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F';
-const WETH_SEPOLIA = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
 
 // ─── Connected Dashboard ──────────────────────────────────────────────────────
 function ConnectedDashboard() {
   const {
     eoaAddress, eoaETHBalance, eoaUSDCBalance,
-    smartAccountAddress, smartAccountStatus, isSmartAccountDeployed, saETHBalance, saUSDCBalance, saEntryPointDeposit, saOwner,
+    smartAccountAddress, smartAccountStatus, isSmartAccountDeployed, saETHBalance, saUSDCBalance,
     paymasterAddress,
     setCurrentView, refreshAllData, signer, provider, env, chainId, nativeToken, isAmoy,
-    trackOp, setGlobalLoading, refreshTrigger
+    trackOp, setGlobalLoading
   } = useAppContext();
   const toast = useToast();
+  const uniswapRouter = env.UNISWAP_ROUTER || '';
+  const uniswapQuoter = env.UNISWAP_QUOTER || '';
+  const wethToken = env.WETH_TOKEN || '';
   const [refreshing, setRefreshing] = useState(false);
-  const [, setDashboardSummary] = useState(null);
-  const [, setLoadingDashboardSummary] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadDashboardSummary = async () => {
-      if (!smartAccountAddress || !chainId) {
-        setDashboardSummary(null);
-        return;
-      }
-
-      setLoadingDashboardSummary(true);
-      try {
-        const summary = await getDashboardSummary({ smartAccountAddress, chainId });
-        if (!cancelled) setDashboardSummary(summary);
-      } catch (err) {
-        console.warn("Failed to load dashboard summary:", err);
-        if (!cancelled) setDashboardSummary(null);
-      } finally {
-        if (!cancelled) setLoadingDashboardSummary(false);
-      }
-    };
-
-    loadDashboardSummary();
-    return () => {
-      cancelled = true;
-    };
-  }, [smartAccountAddress, chainId, refreshTrigger]);
 
 
   // Swap state
@@ -94,9 +66,11 @@ function ConnectedDashboard() {
       }
       setIsEstimatingOutput(true);
       try {
-        const QUOTER_V2 = "0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3";
+        if (!uniswapQuoter || !wethToken || !env.USDC_TOKEN) {
+          throw new Error("Swap quote addresses are missing from chain config.");
+        }
         const quoter = new ethers.Contract(
-          QUOTER_V2,
+          uniswapQuoter,
           [
             "function quoteExactInputSingle((address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96)) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)"
           ],
@@ -104,8 +78,8 @@ function ConnectedDashboard() {
         );
         const amountIn = ethers.parseEther(swapAmount);
         const params = {
-          tokenIn: WETH_SEPOLIA,
-          tokenOut: env.VITE_USDC_TOKEN,
+          tokenIn: wethToken,
+          tokenOut: env.USDC_TOKEN,
           amountIn: amountIn,
           fee: 3000,
           sqrtPriceLimitX96: 0
@@ -126,7 +100,7 @@ function ConnectedDashboard() {
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [swapAmount, provider, ethPrice]);
+  }, [swapAmount, provider, ethPrice, env.USDC_TOKEN, uniswapQuoter, wethToken]);
 
   // Stats derived from balances
   const eoaUSDC = parseFloat(ethers.formatUnits(eoaUSDCBalance || '0', 6));
@@ -135,7 +109,6 @@ function ConnectedDashboard() {
   const saETH = parseFloat(ethers.formatEther(saETHBalance || '0'));
   const eoaValueUsd = eoaETH * ethPrice + eoaUSDC;
   const smartValueUsd = saETH * ethPrice + saUSDC;
-  const entryPointDeposit = parseFloat(ethers.formatEther(saEntryPointDeposit || '0'));
   const agentIsReady = smartAccountStatus === "agent_ready";
   const smartStatusLabel = agentIsReady ? "Agent Ready" : (isSmartAccountDeployed ? "Needs Session Key" : "Predicted");
   const chainLabel = isAmoy ? "Amoy Testnet" : "Sepolia Testnet";
@@ -143,7 +116,7 @@ function ConnectedDashboard() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await refreshAllData();
+    await refreshAllData({ force: true });
     setRefreshing(false);
   };
 
@@ -208,10 +181,9 @@ function ConnectedDashboard() {
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId, initCodeObj);
       trackOp(opHash, 'Activate Agentic Wallet', { calldata: callData });
       toast.success(`Agentic Wallet Activating! OpHash: ${shortenAddress(opHash)}...`);
-      setTimeout(() => refreshAllData(), 4000);
     } catch (err) {
-      console.error(err);
-      toast.error(err.reason || err.message || "Failed to activate Agentic AI");
+      console.error("Failed to activate Agentic AI:", err);
+      toast.error(getFriendlyErrorMessage(err, "We could not activate the agent. Please check your wallet and try again."));
     } finally {
       setGlobalLoading(false);
     }
@@ -241,6 +213,9 @@ function ConnectedDashboard() {
     setSwapping(true);
     setGlobalLoading(true, `Swapping ${nativeToken} to USDC...`);
     try {
+      if (!uniswapRouter || !wethToken || !env.USDC_TOKEN) {
+        throw new Error("Swap token/router addresses are missing from chain config.");
+      }
       const amtIn = ethers.parseEther(swapAmount || "0.001");
 
       // Uniswap V3 exactInputSingle interface
@@ -249,8 +224,8 @@ function ConnectedDashboard() {
       ]);
 
       const params = {
-        tokenIn: WETH_SEPOLIA,
-        tokenOut: env.VITE_USDC_TOKEN,
+        tokenIn: wethToken,
+        tokenOut: env.USDC_TOKEN,
         fee: 3000,
         recipient: smartAccountAddress,
         amountIn: amtIn,
@@ -262,7 +237,7 @@ function ConnectedDashboard() {
         [params.tokenIn, params.tokenOut, params.fee, params.recipient, params.amountIn, params.amountOutMinimum, params.sqrtPriceLimitX96]
       ]);
 
-      const callData = encodeERC7579Single(UNISWAP_ROUTER, amtIn, innerCallData);
+      const callData = encodeERC7579Single(uniswapRouter, amtIn, innerCallData);
 
       const entryPoint = new ethers.Contract(env.ENTRY_POINT, IEntryPointABI, provider);
       const nonce = await entryPoint.getNonce(smartAccountAddress, 0);
@@ -320,9 +295,10 @@ function ConnectedDashboard() {
       );
 
     } catch (err) {
+      console.error("Quick swap failed:", err);
       toast.error("Bundler rejected the transaction!");
       if (err.code === 4001) toast.error("Transaction rejected by user");
-      else toast.error(err.reason || err.message || "Failed to execute swap");
+      else toast.error(getFriendlyErrorMessage(err, "We could not submit the swap. Please check balances and try again."));
     } finally {
       setSwapping(false);
       setGlobalLoading(false);
@@ -364,90 +340,105 @@ function ConnectedDashboard() {
       </section>
 
       {/* BEGIN: Top Overview Cards */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        
+      <section className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
         {/* Card 1: Signer Wallet (Connected EOA) */}
-        <article className="wallet-card p-5 sm:p-6 relative overflow-hidden group">
+        <div className="w-full p-5 sm:p-6 bg-[#16171a] border border-white/10 rounded-3xl shadow-2xl text-white font-sans relative group transition-all duration-300 hover:border-[#00f59b] hover:shadow-[0_0_24px_rgba(0,245,155,0.15)]">
           <div className="absolute -right-12 -top-12 w-36 h-36 bg-slate-700/10 rounded-full blur-2xl pointer-events-none group-hover:bg-mint/5 transition-all"></div>
-          <div className="flex items-center justify-between pb-4 border-b border-white/5">
+
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6 border-b border-white/5 pb-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-obsidian-900 border border-white/10 flex items-center justify-center text-slate-300">
                 <Wallet size={20} />
               </div>
-              <div>
-                <p className="text-xs text-slate-400 font-medium">Signer Wallet (Connected)</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="font-mono text-sm font-semibold text-slate-100">{shortenAddress(eoaAddress)}</span>
-                  <button 
-                    className="text-slate-500 hover:text-mint" 
-                    onClick={() => {
-                      navigator.clipboard.writeText(eoaAddress);
-                      toast.success("Signer EOA Copied!");
-                    }}
-                  >
-                    <Copy size={14} />
-                  </button>
-                </div>
-              </div>
+              <h2 className="text-lg font-bold tracking-tight text-white">Signer Wallet</h2>
             </div>
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700">
-              EOA Signer
+            <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Connected
             </span>
           </div>
-          <div className="grid grid-cols-2 gap-4 pt-5 pb-2">
-            <div>
-              <span className="text-xs font-mono uppercase tracking-wider text-slate-400">{nativeToken}</span>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-2xl sm:text-3xl font-bold font-mono text-white tracking-tight">{eoaETH.toFixed(4)}</span>
-                <span className="hidden sm:inline text-xs text-slate-500">≈ {fmtUsdShort(eoaETH * ethPrice)}</span>
+
+          {/* 2x2 Currency Grid */}
+          <div className="grid grid-cols-2 gap-3.5 mb-5">
+            {/* ETH Card */}
+            <div className="group relative p-4 rounded-2xl transition-all duration-200 bg-[#1b1c20] hover:bg-[#1f2025] border border-white/5 hover:border-white/10">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg w-7 h-7 rounded-full bg-neutral-800 flex items-center justify-center border border-white/10 overflow-hidden shadow-inner font-bold text-white text-[10px]">
+                    Ξ
+                  </span>
+                  <span className="text-sm font-semibold text-neutral-200 tracking-wide uppercase">
+                    {nativeToken}
+                  </span>
+                </div>
+                <button type="button" className="p-1 -mr-1 rounded-lg text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition"><MoreVertical className="w-4 h-4" /></button>
+              </div>
+              <div className="mb-1">
+                <span className="text-lg font-bold tracking-tight text-white font-mono">
+                  {eoaETH.toFixed(4)}
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-400 leading-tight mb-3">
+                ≈ {fmtUsdShort(eoaETH * ethPrice)}
+              </p>
+              <div className="flex items-center">
+                <span className="text-xs font-semibold text-neutral-500">Native Asset</span>
               </div>
             </div>
-            <div>
-              <span className="text-xs font-mono uppercase tracking-wider text-slate-400">USDC</span>
-              <div className="mt-1 flex items-baseline gap-2">
-                <span className="text-2xl sm:text-3xl font-bold font-mono text-white tracking-tight">{eoaUSDC.toFixed(2)}</span>
-                <span className="hidden sm:inline text-xs text-slate-500">{fmtUsdShort(eoaUSDC)}</span>
+
+            {/* USDC Card */}
+            <div className="group relative p-4 rounded-2xl transition-all duration-200 bg-[#1b1c20] hover:bg-[#1f2025] border border-white/5 hover:border-white/10">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg w-7 h-7 rounded-full bg-neutral-800 flex items-center justify-center border border-white/10 overflow-hidden shadow-inner font-bold text-blue-400 text-[10px]">
+                    $
+                  </span>
+                  <span className="text-sm font-semibold text-neutral-200 tracking-wide">
+                    USDC
+                  </span>
+                </div>
+                <button type="button" className="p-1 -mr-1 rounded-lg text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition"><MoreVertical className="w-4 h-4" /></button>
+              </div>
+              <div className="mb-1">
+                <span className="text-lg font-bold tracking-tight text-white font-mono">
+                  {eoaUSDC.toFixed(2)}
+                </span>
+              </div>
+              <p className="text-[11px] text-neutral-400 leading-tight mb-3">
+                {fmtUsdShort(eoaUSDC)}
+              </p>
+              <div className="flex items-center">
+                <span className="text-xs font-semibold text-neutral-500">ERC20 Token</span>
               </div>
             </div>
           </div>
-          <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-500 font-mono">
-            <span>Signer total</span>
-            <span className="text-slate-300">{fmtUsdShort(eoaValueUsd)}</span>
+
+          {/* Footer Info */}
+          <div className="pt-4 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-neutral-400">
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-neutral-500" />
+              <span className="font-mono text-xs font-medium text-slate-300">{shortenAddress(eoaAddress)}</span>
+              <button className="text-slate-500 hover:text-mint" onClick={() => { navigator.clipboard.writeText(eoaAddress); toast.success("Signer EOA Copied!"); }}><Copy size={12} /></button>
+            </div>
+            <span className="text-neutral-300 font-medium font-mono">
+              Est. ~{fmtUsdShort(eoaValueUsd)}
+            </span>
           </div>
-        </article>
+        </div>
 
         {/* Card 2: Smart Vault */}
-        <article className={`wallet-card p-5 sm:p-6 relative overflow-hidden transition-all duration-300 ${smartAccountAddress ? 'hover:border-[#00f59b] hover:shadow-[0_0_24px_rgba(0,245,155,0.15)] group' : 'opacity-80'}`}>
+        <div className={`w-full p-5 sm:p-6 bg-[#16171a] border border-white/10 rounded-3xl shadow-2xl text-white font-sans relative transition-all duration-300 ${smartAccountAddress ? 'hover:border-[#00f59b] hover:shadow-[0_0_24px_rgba(0,245,155,0.15)] group' : 'opacity-80'}`}>
           {smartAccountAddress && <div className="absolute -right-12 -top-12 w-36 h-36 bg-mint/10 rounded-full blur-2xl pointer-events-none group-hover:bg-mint/15 transition-all"></div>}
-          <div className="flex items-center justify-between pb-4 border-b border-white/5">
+
+          {/* Header */}
+          <div className="flex flex-wrap items-center justify-between mb-6 border-b border-white/5 pb-4 gap-2">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-mint/15 border border-mint/40 flex items-center justify-center text-mint shadow-mint-sm">
                 <Box size={20} />
               </div>
-              <div>
-                <p className="text-xs text-slate-400 font-medium">Smart Vault (Modular Account)</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  {smartAccountAddress ? (
-                    <>
-                      <span className="font-mono text-sm font-bold text-mint">{shortenAddress(smartAccountAddress)}</span>
-                      <button 
-                        className="text-slate-400 hover:text-white" 
-                        onClick={() => {
-                          navigator.clipboard.writeText(smartAccountAddress);
-                          toast.success("Smart Vault Address Copied!");
-                        }}
-                      >
-                        <Copy size={14} />
-                      </button>
-                      {isSmartAccountDeployed && saOwner && (
-                        <span className="text-[10px] text-slate-500 font-mono hidden sm:inline">Owner: {shortenAddress(saOwner)}</span>
-                      )}
-                    </>
-                  ) : (
-                    <span className="text-slate-500">Loading...</span>
-                  )}
-                </div>
-              </div>
+              <h2 className="text-lg font-bold tracking-tight text-white">Smart Vault</h2>
             </div>
             
             {agentIsReady ? (
@@ -464,33 +455,64 @@ function ConnectedDashboard() {
               </button>
             )}
           </div>
-          
+
+          {/* Inner Content based on Deployment */}
           {isSmartAccountDeployed ? (
-            <div className="grid grid-cols-3 gap-2 sm:gap-4 pt-5 pb-2">
-              <div>
-                <span className="text-xs font-mono uppercase tracking-wider text-slate-400">{nativeToken}</span>
-                <div className="mt-1">
-                  <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">{saETH.toFixed(4)}</span>
-                  <p className="text-[11px] text-slate-500 hidden sm:block">≈ {fmtUsdShort(saETH * ethPrice)}</p>
+            <div className="grid grid-cols-2 gap-3.5 mb-5">
+              {/* ETH Card */}
+              <div className="group relative p-4 rounded-2xl transition-all duration-200 bg-[#1b1c20] hover:bg-[#1f2025] border border-white/5 hover:border-white/10">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg w-7 h-7 rounded-full bg-neutral-800 flex items-center justify-center border border-white/10 overflow-hidden shadow-inner font-bold text-white text-[10px]">
+                      Ξ
+                    </span>
+                    <span className="text-sm font-semibold text-neutral-200 tracking-wide uppercase">
+                      {nativeToken}
+                    </span>
+                  </div>
+                  <button type="button" className="p-1 -mr-1 rounded-lg text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition"><MoreVertical className="w-4 h-4" /></button>
+                </div>
+                <div className="mb-1">
+                  <span className="text-lg font-bold tracking-tight text-white font-mono">
+                    {saETH.toFixed(4)}
+                  </span>
+                </div>
+                <p className="text-[11px] text-neutral-400 leading-tight mb-3">
+                  ≈ {fmtUsdShort(saETH * ethPrice)}
+                </p>
+                <div className="flex items-center">
+                  <span className="text-xs font-semibold text-neutral-500">Native Asset</span>
                 </div>
               </div>
-              <div>
-                <span className="text-xs font-mono uppercase tracking-wider text-slate-400">USDC</span>
-                <div className="mt-1">
-                  <span className="text-xl sm:text-2xl font-bold font-mono text-white tracking-tight">{saUSDC.toFixed(2)}</span>
-                  <p className="text-[11px] text-slate-500 hidden sm:block">{fmtUsdShort(saUSDC)}</p>
+
+              {/* USDC Card */}
+              <div className="group relative p-4 rounded-2xl transition-all duration-200 bg-[#1b1c20] hover:bg-[#1f2025] border border-white/5 hover:border-white/10">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg w-7 h-7 rounded-full bg-neutral-800 flex items-center justify-center border border-white/10 overflow-hidden shadow-inner font-bold text-blue-400 text-[10px]">
+                      $
+                    </span>
+                    <span className="text-sm font-semibold text-neutral-200 tracking-wide">
+                      USDC
+                    </span>
+                  </div>
+                  <button type="button" className="p-1 -mr-1 rounded-lg text-neutral-500 hover:text-neutral-300 hover:bg-white/5 transition"><MoreVertical className="w-4 h-4" /></button>
                 </div>
-              </div>
-              <div>
-                <span className="text-xs font-mono uppercase tracking-wider text-slate-400">EP Deposit</span>
-                <div className="mt-1">
-                  <span className="text-xl sm:text-2xl font-bold font-mono text-mint tracking-tight">{entryPointDeposit.toFixed(4)}</span>
-                  <p className="text-[11px] text-slate-500 font-mono hidden sm:block">Gas Tank</p>
+                <div className="mb-1">
+                  <span className="text-lg font-bold tracking-tight text-white font-mono">
+                    {saUSDC.toFixed(2)}
+                  </span>
+                </div>
+                <p className="text-[11px] text-neutral-400 leading-tight mb-3">
+                  {fmtUsdShort(saUSDC)}
+                </p>
+                <div className="flex items-center">
+                  <span className="text-xs font-semibold text-neutral-500">ERC20 Token</span>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="pt-5 pb-2">
+            <div className="mb-5 p-4 rounded-2xl border border-white/5 bg-[#1b1c20]">
               <p className="text-sm text-slate-400 mb-2">Predicted address. Fund it with {nativeToken} to pre-load gas, then activate.</p>
               {saETH > 0 && (
                 <div className="mt-2">
@@ -500,14 +522,25 @@ function ConnectedDashboard() {
               )}
             </div>
           )}
-          <div className="mt-3 pt-3 border-t border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-[11px] text-slate-500 font-mono">
-            <span className="inline-flex items-center gap-2">
-              <span className={`w-1.5 h-1.5 rounded-full ${agentIsReady ? 'bg-mint' : 'bg-slate-600'}`}></span>
-              Session Keys: <b className={agentIsReady ? 'text-mint' : 'text-slate-300'}>{agentIsReady ? '1 Active' : 'Not active'}</b>
+
+          {/* Footer Info */}
+          <div className="pt-4 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-neutral-400">
+            <div className="flex items-center gap-2 mt-0.5 min-w-0">
+              <span className={`w-1.5 h-1.5 rounded-full ${agentIsReady ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}></span>
+              {smartAccountAddress ? (
+                <>
+                  <span className="font-mono text-xs font-medium text-slate-300 truncate">{shortenAddress(smartAccountAddress)}</span>
+                  <button className="text-slate-500 hover:text-mint shrink-0" onClick={() => { navigator.clipboard.writeText(smartAccountAddress); toast.success("Smart Vault Address Copied!"); }}><Copy size={12} /></button>
+                </>
+              ) : (
+                <span className="text-slate-500">Loading...</span>
+              )}
+            </div>
+            <span className="text-neutral-300 font-medium font-mono shrink-0">
+              Est. ~{fmtUsdShort(smartValueUsd)}
             </span>
-            <span className="text-slate-300">Vault total {fmtUsdShort(smartValueUsd)}</span>
           </div>
-        </article>
+        </div>
       </section>
 
       <section className="wallet-card p-4 sm:p-5 relative overflow-hidden transition-all duration-300 hover:border-[#00f59b] hover:shadow-[0_0_24px_rgba(0,245,155,0.15)] group">
@@ -852,6 +885,27 @@ function LandingPage() {
     },
   ];
 
+  const upcomingFeatures = [
+    {
+      marker: '01',
+      title: 'Prebuilt Agent Policies',
+      body: 'Launch with ready-made policy templates for swaps, transfers, yield moves, and payment agents instead of configuring every permission from scratch.',
+      status: 'Policy templates',
+    },
+    {
+      marker: '02',
+      title: 'Scheduled Agent Payments',
+      body: 'Let agents handle recurring transfers, treasury routines, and subscription-style payments while staying inside user-defined limits.',
+      status: 'Time-based automation',
+    },
+    {
+      marker: '03',
+      title: 'Cross-Chain Agent Actions',
+      body: 'Give an authorized agent controlled permissions across supported chains, with chain-specific limits, gas paths, and UserOp tracking.',
+      status: 'Multichain execution',
+    },
+  ];
+
   const guardrails = [
     ['SK', 'Scoped keys', 'The agent demo uses a limited key concept instead of asking for your owner key on every move.'],
     ['PM', 'Paymaster aware', 'Sponsored or token-paid gas stays visible before the UserOperation is sent.'],
@@ -949,6 +1003,7 @@ function LandingPage() {
           <nav className="new-nav" aria-label="Landing navigation">
             <a href="#chains">Chains</a>
             <a href="#agent-demo">Agent Demo</a>
+            <a href="#upcoming">Upcoming</a>
             <a href="#security">Security</a>
             <a href="#faq">FAQ</a>
           </nav>
@@ -1097,6 +1152,27 @@ function LandingPage() {
                 <h3>{feature.title}</h3>
                 <p>{feature.body}</p>
                 <div className="new-ex new-mono">{feature.example}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="new-section" id="upcoming">
+          <div className="new-head new-head--center">
+            <span className="new-section-kicker">Upcoming features</span>
+            <h2>Bounded autonomy is just getting started.</h2>
+            <p>These planned upgrades extend the same agent-centric wallet model: more reusable policies, more automation, and more chain coverage without loosening user control.</p>
+          </div>
+          <div className="new-upcoming-grid">
+            {upcomingFeatures.map((feature) => (
+              <div className="new-upcoming-card" key={feature.title}>
+                <div className="new-upcoming-top">
+                  <span className="new-upcoming-marker new-mono">{feature.marker}</span>
+                  <span className="new-upcoming-status new-mono">Upcoming</span>
+                </div>
+                <h3>{feature.title}</h3>
+                <p>{feature.body}</p>
+                <div className="new-ex new-mono">{feature.status}</div>
               </div>
             ))}
           </div>

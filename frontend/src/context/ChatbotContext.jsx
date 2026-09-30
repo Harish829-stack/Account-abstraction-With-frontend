@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import axios from "axios";
 import { useAppContext } from "./AppContext";
 import { getDefaultChainId } from "../config/chains";
+import { getFriendlyErrorMessage } from "../utils/errors";
 
 const ChatbotContext = createContext();
 const CHATBOT_API_URL = import.meta.env.VITE_CHATBOT_API_URL || "";
@@ -251,7 +252,11 @@ export const ChatbotProvider = ({ children }) => {
             
             setAgentMessages(activeAgentAddress, (prev) => [...prev, aiMsg]);
         } catch (e) {
-            setAgentMessages(activeAgentAddress, (prev) => [...prev, { role: "agent", content: "Sorry, I encountered an error: " + (e.response?.data?.error || e.message) }]);
+            console.error("Agent chat request failed:", e);
+            setAgentMessages(activeAgentAddress, (prev) => [...prev, {
+                role: "agent",
+                content: getFriendlyErrorMessage(e, "Sorry, I could not complete that request. Please try again.")
+            }]);
         } finally {
             setIsChatLoading(false);
         }

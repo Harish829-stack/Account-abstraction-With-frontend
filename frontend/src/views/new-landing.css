@@ -750,6 +750,7 @@
 
 .new-step,
 .new-cap,
+.new-upcoming-card,
 .new-sec-item,
 .new-arch-stack details,
 .new-faq-panel,
@@ -761,6 +762,7 @@
 }
 
 .new-cap:hover,
+.new-upcoming-card:hover,
 .new-sec-item:hover,
 .new-arch-stack details:hover,
 .new-faq-panel:hover,
@@ -795,6 +797,7 @@
 
 .new-step h3,
 .new-cap h3,
+.new-upcoming-card h3,
 .new-sec-item h3 {
   margin: 0;
   color: #fff;
@@ -803,6 +806,7 @@
 
 .new-step p,
 .new-cap p,
+.new-upcoming-card p,
 .new-sec-item p {
   margin: 12px 0 0;
   color: var(--muted);
@@ -821,6 +825,55 @@
 .new-cap {
   min-height: 240px;
   padding: 28px;
+}
+
+.new-upcoming-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.new-upcoming-card {
+  min-height: 285px;
+  padding: 24px;
+  background:
+    linear-gradient(180deg, rgba(85, 212, 155, 0.08), rgba(13, 17, 24, 0.95) 36%),
+    var(--surface-850);
+}
+
+.new-upcoming-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 26px;
+}
+
+.new-upcoming-marker {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(85, 212, 155, 0.12);
+  color: var(--mint);
+  font-size: 0.78rem;
+  font-weight: 800;
+  border: 1px solid rgba(85, 212, 155, 0.25);
+}
+
+.new-upcoming-status {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(85, 212, 155, 0.24);
+  background: rgba(85, 212, 155, 0.08);
+  color: var(--mint);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .new-ex {
@@ -1122,6 +1175,7 @@
 
   .new-metrics,
   .new-steps,
+  .new-upcoming-grid,
   .new-sec-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1156,12 +1210,14 @@
   .new-action-meta,
   .new-steps,
   .new-cap-grid,
+  .new-upcoming-grid,
   .new-sec-grid {
     grid-template-columns: 1fr;
   }
 
   .new-step,
   .new-cap,
+  .new-upcoming-card,
   .new-sec-item {
     min-height: auto;
   }
@@ -1198,4 +1254,3 @@
   border-color: rgba(0, 245, 155, 0.35) !important;
   transition: all 0.3s ease !important;
 }
-

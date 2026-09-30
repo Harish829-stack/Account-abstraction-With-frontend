@@ -1,6 +1,10 @@
 export type ChainContractKey =
+  | "aavePool"
   | "paymaster"
   | "usdcToken"
+  | "wethToken"
+  | "uniswapQuoter"
+  | "uniswapRouter"
   | "priceFeed"
   | "multisigProxy"
   | "eurcToken";

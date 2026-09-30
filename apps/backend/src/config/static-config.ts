@@ -1,6 +1,13 @@
 import type { AppConfigResponse, SerializedChainConfig } from "./config.types";
 
 const env = process.env;
+const CANONICAL_MOCK_USDC = "0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E";
+const SEPOLIA_MOCK_WETH = "0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c";
+const ARBITRUM_SEPOLIA_WETH = "0x980B3b374e3c40ffBf522c74C3470D4E01B7c773";
+const AAVE_YIELD_POOL_V2 = "0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A";
+const MOCK_UNISWAP_ROUTER = "0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F";
+const SEPOLIA_UNISWAP_QUOTER = "0xedEa35800073054Fe6b994d240C0303756Bd0453";
+const ARBITRUM_SEPOLIA_UNISWAP_QUOTER = "0x27f9712A3d0335c49ae639e1F1C1c52E58c28f2A";
 
 export const SHARED_CONTRACT_SEED: Record<string, string> = {
   ENTRY_POINT: env.ENTRY_POINT || "",
@@ -33,10 +40,14 @@ export const CHAIN_CONFIG_SEED: SerializedChainConfig[] = [
     minFeeWei: "5000000000",
     contracts: {
       paymaster: env.PAYMASTER || "",
-      usdcToken: env.USDC_TOKEN || "",
+      usdcToken: env.USDC_TOKEN || CANONICAL_MOCK_USDC,
+      wethToken: env.WETH_TOKEN || SEPOLIA_MOCK_WETH,
       eurcToken: "0x08210f9170f89ab7658f0b5e3ff39b0e03c594d4",
       priceFeed: env.SEPOLIA_PRICE_FEED || "0x694AA1769357215DE4FAC081bf1f309aDC325306",
-      multisigProxy: env.MULTISIG_PROXY || ""
+      multisigProxy: env.MULTISIG_PROXY || "",
+      aavePool: env.AAVE_YIELD_POOL || AAVE_YIELD_POOL_V2,
+      uniswapRouter: env.UNISWAP_ROUTER || MOCK_UNISWAP_ROUTER,
+      uniswapQuoter: env.UNISWAP_QUOTER || SEPOLIA_UNISWAP_QUOTER
     }
   },
   {
@@ -55,7 +66,7 @@ export const CHAIN_CONFIG_SEED: SerializedChainConfig[] = [
     minFeeWei: "35000000000",
     contracts: {
       paymaster: env.PAYMASTER || "",
-      usdcToken: "0xA0C3907b1fc323AdB95dA27e08e289deaE87BD8C",
+      usdcToken: CANONICAL_MOCK_USDC,
       priceFeed: env.MOCK_AGGREGATOR || "",
       multisigProxy: env.MULTISIG_PROXY || ""
     }
@@ -124,9 +135,13 @@ export const CHAIN_CONFIG_SEED: SerializedChainConfig[] = [
     minFeeWei: "500000000",
     contracts: {
       paymaster: env.PAYMASTER || "",
-      usdcToken: env.USDC_TOKEN || "",
+      usdcToken: env.USDC_TOKEN || CANONICAL_MOCK_USDC,
+      wethToken: env.WETH_TOKEN || ARBITRUM_SEPOLIA_WETH,
       priceFeed: env.ARBITRUM_SEPOLIA_PRICE_FEED || "0xd30e2101a97dcbAeBCBC04F14C3f624E67A35165",
-      multisigProxy: env.MULTISIG_PROXY || ""
+      multisigProxy: env.MULTISIG_PROXY || "",
+      aavePool: env.AAVE_YIELD_POOL || AAVE_YIELD_POOL_V2,
+      uniswapRouter: env.UNISWAP_ROUTER || MOCK_UNISWAP_ROUTER,
+      uniswapQuoter: env.UNISWAP_QUOTER || ARBITRUM_SEPOLIA_UNISWAP_QUOTER
     }
   }
 ];

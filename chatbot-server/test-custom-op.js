@@ -29,7 +29,7 @@ async function main() {
     
     // encodeERC7579Single
     const mode = "0x0100000000000000000000000000000000000000000000000000000000000000"; // CallType.SINGLE (0x01)
-    const SESSION_KEY_VALIDATOR = "0xC578bF1899fF9E49d0FC65BE5b1a0A26EB11aF44";
+    const SESSION_KEY_VALIDATOR = "0x9B7Fd296B6b332b525Bd6AD65f621D25C0060323";
     // wait, encodeERC7579Single in the frontend uses mode = 0x01...
     // Let's just look at how it's encoded in the frontend
 }

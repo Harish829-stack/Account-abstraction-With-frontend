@@ -1,124 +1,200 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { buildAndSendAccountOp, encodeERC7579Batch } from '../utils/helpers';
 import { getDefaultChainId } from '../config/chains';
-
-const FINANCIAL_API = (import.meta.env.VITE_FINANCIAL_AGENT_URL || 'http://127.0.0.1:3003').replace(/\/$/, '');
-const AAVE_POOL = import.meta.env.VITE_AAVE_YIELD_POOL;
+import { getFriendlyErrorMessage } from '../utils/errors';
 
 const fmt = (n, dec = 2) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 const fmtUsd = (n) => '$' + fmt(n, 2);
 const truncAddr = (a) => a ? `${a.slice(0, 6)}...${a.slice(-4)}` : '';
 
-export function SmartVaultPortfolioWidget() {
-  const { smartAccountAddress, chainId, refreshTrigger } = useAppContext();
-  const resolvedChainId = Number(chainId) || getDefaultChainId();
-  const [portfolio, setPortfolio] = useState(null);
-  const [isLoadingPortfolio, setIsLoadingPortfolio] = useState(false);
+const CHART_COLORS = ['#00f59b', '#38bdf8'];
+const getAssetValue = (asset) => Number(asset?.valueUsd || 0);
+const getPortfolioAssets = (portfolio) => (portfolio?.assets || [])
+  .filter((asset) => !asset.tokenAddress || String(asset.symbol || '').toUpperCase().includes('USDC'))
+  .map((asset) => ({ ...asset, isEth: !asset.tokenAddress, valueUsd: getAssetValue(asset) }));
 
-  const loadPortfolio = useCallback(async () => {
+const buildDonutSegments = (assets) => {
+  const total = assets.reduce((sum, asset) => sum + asset.valueUsd, 0);
+  let offset = 0;
+  return assets.map((asset, index) => {
+    const percentage = total ? (asset.valueUsd / total) * 100 : 0;
+    const segment = { ...asset, percentage, offset, color: CHART_COLORS[index % CHART_COLORS.length] };
+    offset += percentage;
+    return segment;
+  });
+};
+
+const buildSparklinePoints = (values, width = 300, height = 100) => {
+  if (!values.length) return '';
+  const min = Math.min(...values);
+  const range = Math.max(...values) - min || 1;
+  return values.map((value, index) => {
+    const x = values.length === 1 ? width / 2 : (index / (values.length - 1)) * width;
+    const y = height - 12 - ((value - min) / range) * (height - 24);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+};
+
+function DonutChart({ segments, totalValue, ethEquivalent }) {
+  const circumference = 2 * Math.PI * 62;
+  return (
+    <div className="relative w-48 h-48 flex items-center justify-center">
+      <svg className="w-full h-full -rotate-90" viewBox="0 0 160 160" role="img" aria-label="Portfolio allocation chart">
+        <circle cx="80" cy="80" r="62" fill="none" stroke="#1c2333" strokeWidth="18" />
+        {segments.map((segment) => (
+          <circle key={segment.symbol} cx="80" cy="80" r="62" fill="none" stroke={segment.color} strokeWidth="18" strokeDasharray={`${(segment.percentage / 100) * circumference} ${circumference}`} strokeDashoffset={-(segment.offset / 100) * circumference} />
+        ))}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none px-9">
+        <span className="max-w-full text-[15px] font-bold font-mono text-white leading-none whitespace-nowrap tracking-normal">{fmtUsd(totalValue)}</span>
+        <span className="text-[10px] font-mono text-emerald-400 mt-1">≈ {fmt(ethEquivalent, 4)} ETH</span>
+        <span className="text-[10px] text-slate-500 mt-1">Smart Vault TVL</span>
+      </div>
+    </div>
+  );
+}
+
+function Sparkline({ values }) {
+  const points = buildSparklinePoints(values);
+  const areaPoints = points ? `0,100 ${points} 300,100` : '';
+  return (
+    <div className="relative w-full h-24 mt-2">
+      <div className="absolute inset-0 flex flex-col justify-between opacity-15 pointer-events-none"><div className="border-b border-white" /><div className="border-b border-white" /><div className="border-b border-white" /></div>
+      <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 300 100" role="img" aria-label="Current Chainlink feed snapshot">
+        <defs><linearGradient id="chainlinkFeedGradient" x1="0%" x2="0%" y1="0%" y2="100%"><stop offset="0%" stopColor="#00f59b" stopOpacity="0.3" /><stop offset="100%" stopColor="#00f59b" stopOpacity="0" /></linearGradient></defs>
+        {areaPoints && <polygon points={areaPoints} fill="url(#chainlinkFeedGradient)" />}
+        {points && <polyline points={points} fill="none" stroke="#00f59b" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" />}
+      </svg>
+    </div>
+  );
+}
+
+function AavePricePulse() {
+  return (
+    <div className="absolute right-3 top-20 w-36 h-28 opacity-35 pointer-events-none select-none overflow-hidden">
+      <div className="absolute inset-x-8 bottom-1 h-10 rounded-[50%] bg-[#00f59b]/15 blur-sm animate-pulse" />
+      <svg className="absolute inset-0 w-full h-full" viewBox="0 0 150 120" fill="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="aavePulseLine" x1="0" y1="90" x2="125" y2="20" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#38bdf8" />
+            <stop offset="0.45" stopColor="#00f59b" />
+            <stop offset="1" stopColor="#7cffc4" />
+          </linearGradient>
+          <linearGradient id="aavePulseDisc" x1="35" y1="82" x2="115" y2="82" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#38bdf8" stopOpacity="0.05" />
+            <stop offset="1" stopColor="#00f59b" stopOpacity="0.28" />
+          </linearGradient>
+          <filter id="aavePulseGlow" x="-20" y="-20" width="180" height="150" filterUnits="userSpaceOnUse">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        <path d="M20 88C40 72 63 72 85 86C105 98 124 93 141 78" stroke="#00f59b" strokeOpacity="0.22" strokeWidth="1" />
+        <ellipse cx="82" cy="92" rx="48" ry="12" fill="url(#aavePulseDisc)" stroke="#00f59b" strokeOpacity="0.3" />
+        <path d="M2 82L34 50L62 70L116 24" stroke="url(#aavePulseLine)" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" filter="url(#aavePulseGlow)" />
+        <path d="M109 18L133 9L126 35Z" fill="#00f59b" filter="url(#aavePulseGlow)" />
+        <circle cx="28" cy="18" r="1.5" fill="#38bdf8" opacity="0.65" />
+        <circle cx="66" cy="11" r="2" fill="#00f59b" opacity="0.7" />
+        <circle cx="116" cy="53" r="1.4" fill="#38bdf8" opacity="0.55" />
+      </svg>
+    </div>
+  );
+}
+
+function RefreshIcon({ spinning = false }) {
+  return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-3.5 h-3.5 ${spinning ? 'animate-spin' : ''}`}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg>;
+}
+
+export function SmartVaultPortfolioWidget() {
+  const { smartAccountAddress, chainId, sharedDataCache, refreshFinancialPortfolio } = useAppContext();
+  const resolvedChainId = Number(chainId) || getDefaultChainId();
+  const portfolioKey = smartAccountAddress && resolvedChainId ? `${resolvedChainId}:${smartAccountAddress.toLowerCase()}` : null;
+  const portfolioEntry = portfolioKey ? sharedDataCache.portfolio?.[portfolioKey] : null;
+  const portfolio = portfolioEntry?.data || null;
+  const isLoadingPortfolio = Boolean(portfolioEntry?.loading);
+
+  const loadPortfolio = useCallback(async ({ force = false } = {}) => {
     if (!smartAccountAddress) return;
-    setIsLoadingPortfolio(true);
     try {
-      const { data } = await axios.get(`${FINANCIAL_API}/api/financial/portfolio/${resolvedChainId}/${smartAccountAddress}`);
-      setPortfolio(data);
+      await refreshFinancialPortfolio({ force });
     } catch {
-      setPortfolio(null);
-    } finally {
-      setIsLoadingPortfolio(false);
+      // Full error is logged by the shared loader; keep the card on its last good value.
     }
-  }, [smartAccountAddress, resolvedChainId]);
+  }, [smartAccountAddress, refreshFinancialPortfolio]);
 
   useEffect(() => {
-    if (smartAccountAddress) loadPortfolio();
-  }, [smartAccountAddress, loadPortfolio, refreshTrigger]);
+    if (smartAccountAddress && !portfolioEntry?.data && !portfolioEntry?.loading) loadPortfolio();
+  }, [smartAccountAddress, loadPortfolio, portfolioEntry?.data, portfolioEntry?.loading]);
+
+  const assets = getPortfolioAssets(portfolio);
+  const totalValue = assets.reduce((sum, asset) => sum + asset.valueUsd, 0);
+  const ethAsset = assets.find((asset) => asset.isEth);
+  const ethEquivalent = ethAsset?.priceUsd > 0 ? totalValue / Number(ethAsset.priceUsd) : 0;
+  const segments = buildDonutSegments(assets);
 
   return (
     <div className="wallet-card flex flex-col gap-4 p-5 h-full transition-all duration-300 hover:border-[#00f59b] hover:shadow-[0_0_24px_rgba(0,245,155,0.15)]">
       <div className="flex items-center justify-between flex-shrink-0 border-b border-white/5 pb-3">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-obsidian-900 border border-white/10 text-mint flex items-center justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"></path><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"></path></svg>
           </div>
           <h3 className="text-sm font-bold text-white">Smart Vault Portfolio</h3>
+          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-500/20">USDC + ETH</span>
         </div>
-        <span className="text-[10px] font-mono text-slate-500">{smartAccountAddress ? truncAddr(smartAccountAddress) : '0xb9d7...fe9d'}</span>
-      </div>
-      
-      <div className="flex-shrink-0">
-        <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Total Value</div>
-        <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-bold font-mono text-white tracking-tight">{portfolio ? fmtUsd(portfolio.totalValueUsd) : (isLoadingPortfolio ? 'Loading...' : '$0.00')}</span>
-          <span className="text-xs font-mono text-mint font-medium">≈ {(portfolio && portfolio.assets.find(a => !a.tokenAddress)?.priceUsd && portfolio.assets.find(a => !a.tokenAddress)?.priceUsd > 0) ? fmt(portfolio.totalValueUsd / portfolio.assets.find(a => !a.tokenAddress).priceUsd, 4) : '0.00'} ETH</span>
-        </div>
+        <span className="text-[10px] font-mono text-slate-500">{smartAccountAddress ? truncAddr(smartAccountAddress) : 'Not connected'}</span>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar space-y-2 pr-1 mt-2" style={{ maxHeight: '180px' }}>
-        {portfolio && portfolio.assets && portfolio.assets.length > 0 ? (
-          portfolio.assets.map((asset, i) => {
-            const isEth = !asset.tokenAddress;
-            return (
-              <div key={i} className="p-3 bg-obsidian-900/50 border border-white/5 rounded-xl flex items-center justify-between hover:bg-obsidian-850 transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs ${isEth ? 'bg-slate-800 text-white border border-slate-700' : 'bg-mint/10 text-mint border border-mint/20'}`}>
-                    {asset.symbol.slice(0, 1)}
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-200">{asset.symbol}</div>
-                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">{fmt(asset.balanceFormatted, isEth ? 5 : 2)} {asset.symbol}</div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs font-bold text-white font-mono">{fmtUsd(asset.valueUsd)}</div>
-                  <div className="text-[10px] text-mint font-semibold mt-0.5 bg-mint/10 px-1.5 rounded inline-block">{fmt(asset.allocationPercentage, 1)}%</div>
-                </div>
+      {assets.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+          <div className="md:col-span-5 flex justify-center"><DonutChart segments={segments} totalValue={totalValue} ethEquivalent={ethEquivalent} /></div>
+          <div className="md:col-span-7 flex flex-col gap-2.5">
+            <div className="flex items-center justify-between bg-[#171d29] border border-white/5 rounded-xl p-3"><div><p className="text-[11px] text-slate-400 font-medium">Portfolio contribution</p><p className="text-lg font-bold font-mono text-white">ETH + USDC</p></div><span className="text-[11px] font-mono text-slate-400 border border-white/10 px-2 py-0.5 rounded bg-black/20">{fmtUsd(totalValue)}</span></div>
+            {assets.map((asset, index) => (
+              <div key={`${asset.symbol}-${asset.tokenAddress || 'native'}`} className="flex items-center justify-between bg-white/[0.02] hover:bg-white/[0.04] p-2.5 rounded-lg border border-white/[0.04] transition">
+                <div className="flex items-center gap-2.5"><div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold" style={{ color: CHART_COLORS[index % CHART_COLORS.length], backgroundColor: `${CHART_COLORS[index % CHART_COLORS.length]}20`, border: `1px solid ${CHART_COLORS[index % CHART_COLORS.length]}66` }}>{asset.isEth ? 'Ξ' : '$'}</div><div><p className="text-xs font-semibold text-white leading-tight">{asset.symbol}</p><p className="text-[10px] font-mono text-slate-400">{fmt(asset.balanceFormatted, asset.isEth ? 5 : 2)} {asset.symbol}</p></div></div>
+                <div className="text-right flex items-center gap-2"><div><p className="text-xs font-bold font-mono text-white leading-tight">{fmtUsd(asset.valueUsd)}</p><p className="text-[10px] text-slate-500">USD value</p></div><span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded" style={{ color: CHART_COLORS[index % CHART_COLORS.length], backgroundColor: `${CHART_COLORS[index % CHART_COLORS.length]}20` }}>{fmt((asset.valueUsd / totalValue) * 100, 1)}%</span></div>
               </div>
-            )
-          })
-        ) : (
-          <div className="text-xs text-slate-500 text-center py-6 bg-obsidian-900/30 rounded-xl border border-white/5 border-dashed">
-            {isLoadingPortfolio ? 'Loading portfolio...' : 'No assets found.'}
+            ))}
           </div>
-        )}
-      </div>
+        </div>
+      ) : <div className="text-xs text-slate-500 text-center py-12 bg-obsidian-900/30 rounded-xl border border-white/5 border-dashed">{isLoadingPortfolio ? 'Loading portfolio...' : 'No USDC or ETH balances found.'}</div>}
 
-      <button 
-        onClick={loadPortfolio} 
-        disabled={isLoadingPortfolio} 
-        className="w-full py-2 bg-obsidian-900 hover:bg-obsidian-800 border border-white/10 text-slate-300 hover:text-mint text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-2 mt-auto"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-3.5 h-3.5 ${isLoadingPortfolio ? 'animate-spin' : ''}`}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path></svg>
-        <span>{isLoadingPortfolio ? 'Loading...' : 'Refresh Portfolio'}</span>
-      </button>
+      <div className="pt-3 border-t border-white/[0.06] flex items-center justify-between mt-auto"><span className="text-[10px] text-slate-500 font-mono">Live smart vault balance</span><button onClick={() => loadPortfolio({ force: true })} disabled={isLoadingPortfolio} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#171d29] hover:bg-[#1f2736] text-xs font-medium text-emerald-400 border border-emerald-500/30 rounded-lg transition active:scale-[0.98]"><RefreshIcon spinning={isLoadingPortfolio} /><span>{isLoadingPortfolio ? 'Loading...' : 'Refresh Portfolio'}</span></button></div>
     </div>
   );
 }
 
 
 export function ChainlinkPricesWidget() {
-  const { chainId } = useAppContext();
+  const { chainId, sharedDataCache, refreshMarketPrices } = useAppContext();
   const resolvedChainId = Number(chainId) || getDefaultChainId();
-  const [prices, setPrices] = useState(null);
-  const [isLoadingPrices, setIsLoadingPrices] = useState(false);
+  const pricesKey = String(resolvedChainId);
+  const pricesEntry = sharedDataCache.prices?.[pricesKey];
+  const prices = pricesEntry?.data || null;
+  const isLoadingPrices = Boolean(pricesEntry?.loading);
 
-  const loadPrices = useCallback(async () => {
-    setIsLoadingPrices(true);
+  const loadPrices = useCallback(async ({ force = false } = {}) => {
     try {
-      const { data } = await axios.get(`${FINANCIAL_API}/api/financial/market/prices?chainId=${resolvedChainId}`);
-      setPrices(data.prices);
+      await refreshMarketPrices({ force });
     } catch {
-      setPrices(null);
-    } finally {
-      setIsLoadingPrices(false);
+      // Full error is logged by the shared loader; keep the card on its last good value.
     }
-  }, [resolvedChainId]);
+  }, [refreshMarketPrices]);
 
   useEffect(() => {
-    loadPrices();
-  }, [loadPrices]);
+    if (!pricesEntry?.data && !pricesEntry?.loading) loadPrices();
+  }, [loadPrices, pricesEntry?.data, pricesEntry?.loading]);
+
+  const priceEntries = Object.entries(prices || {}).filter(([, data]) => Number.isFinite(Number(data?.priceUsd)));
+  const primaryEntry = priceEntries.find(([symbol]) => symbol.includes('ETH')) || priceEntries[0];
+  const graphValues = priceEntries.map(([, data]) => Number(data.priceUsd));
 
   return (
     <div className="wallet-card flex flex-col gap-4 p-5 h-full transition-all duration-300 hover:border-[#00f59b] hover:shadow-[0_0_24px_rgba(0,245,155,0.15)]">
@@ -127,10 +203,7 @@ export function ChainlinkPricesWidget() {
           <div className="w-8 h-8 rounded-xl bg-obsidian-900 border border-white/10 text-cyan-400 flex items-center justify-center shadow-[0_0_12px_-2px_rgba(0,242,254,0.3)]">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M16 7h6v6"></path><path d="m22 7-8.5 8.5-5-5L2 17"></path></svg>
           </div>
-          <div>
-            <h3 className="text-sm font-bold text-white">Chainlink Oracles</h3>
-            <div className="text-[10px] text-slate-500 font-mono mt-0.5">On-chain Feeds</div>
-          </div>
+          <div><h3 className="text-sm font-bold text-white">Chainlink Prices</h3><div className="text-[10px] text-slate-500 font-mono mt-0.5">Decentralized feed snapshot</div></div>
         </div>
         <div className="flex items-center gap-1.5 px-2 py-1 bg-cyan-400/10 border border-cyan-400/20 rounded-full">
           <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
@@ -138,127 +211,63 @@ export function ChainlinkPricesWidget() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto custom-scrollbar mt-1">
-        {prices ? (
-          Object.entries(prices).map(([symbol, data]) => (
-            <div key={symbol} className="p-3 bg-obsidian-900/40 border border-white/5 rounded-xl hover:bg-obsidian-850 transition-colors">
-              <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wider">{symbol.replace('_USD', '')} / USD</div>
-              <div className="text-sm font-bold text-white mt-1.5 font-mono tracking-tight">{fmtUsd(data.priceUsd)}</div>
-              <div className={`text-[9px] flex items-center gap-1 mt-2 font-mono uppercase tracking-wide ${data.isStale ? 'text-rose-400' : 'text-cyan-400'}`}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3"><path d="M20 6 9 17l-5-5"></path></svg>
-                <span>{data.isStale ? 'Stale' : (symbol.includes('USDC') ? 'Peg 1:1' : 'Synced')}</span>
-              </div>
-            </div>
-          ))
-        ) : (
-          <>
-            <div className="p-3 bg-obsidian-900/40 border border-white/5 rounded-xl">
-              <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wider">ETH / USD</div>
-              <div className="text-sm font-bold text-white mt-1.5 font-mono tracking-tight">$2,712.92</div>
-              <div className="text-[9px] text-cyan-400 flex items-center gap-1 mt-2 font-mono uppercase tracking-wide">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3"><path d="M20 6 9 17l-5-5"></path></svg>
-                <span>Synced</span>
-              </div>
-            </div>
-            <div className="p-3 bg-obsidian-900/40 border border-white/5 rounded-xl">
-              <div className="text-[10px] uppercase font-semibold text-slate-500 tracking-wider">USDC / USD</div>
-              <div className="text-sm font-bold text-white mt-1.5 font-mono tracking-tight">$1.0001</div>
-              <div className="text-[9px] text-cyan-400 flex items-center gap-1 mt-2 font-mono uppercase tracking-wide">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3"><path d="M20 6 9 17l-5-5"></path></svg>
-                <span>Peg 1:1</span>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+      {priceEntries.length > 0 ? <><div className="grid grid-cols-2 gap-2 pb-2.5 border-b border-white/[0.06]">{priceEntries.slice(0, 4).map(([symbol, data]) => <div key={symbol} className="bg-[#171d29] border border-white/5 rounded-lg p-2"><div className="flex items-center justify-between mb-1 gap-1"><span className="text-[10px] text-slate-400 font-medium flex items-center gap-1 truncate"><span className={`w-1.5 h-1.5 rounded-full ${data.isStale ? 'bg-rose-400' : 'bg-[#00f59b]'}`} />{symbol.replace('_USD', '')} / USD</span><span className={`text-[9px] font-mono px-1 rounded ${data.isStale ? 'text-rose-400 bg-rose-950/50' : 'text-emerald-400 bg-emerald-950/80'}`}>{data.isStale ? 'Stale' : 'Live'}</span></div><p className="text-xs font-bold font-mono text-white">{fmtUsd(data.priceUsd)}</p></div>)}</div><div><div className="flex items-center justify-between"><div><h3 className="text-sm font-semibold text-white">Live feed view</h3><p className="text-xs text-slate-500 mt-0.5">One point per returned Chainlink feed</p></div>{primaryEntry && <span className="text-sm font-bold text-white font-mono">{fmtUsd(primaryEntry[1].priceUsd)}</span>}</div><Sparkline values={graphValues} /></div></> : <div className="text-xs text-slate-500 text-center py-12 bg-obsidian-900/30 rounded-xl border border-white/5 border-dashed">{isLoadingPrices ? 'Loading price feeds...' : 'Price feeds unavailable.'}</div>}
 
-      <button 
-        onClick={loadPrices} 
-        disabled={isLoadingPrices} 
-        className="w-full py-2 bg-obsidian-900 hover:bg-obsidian-800 border border-white/10 text-slate-300 hover:text-cyan-400 text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-2 mt-auto"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-3.5 h-3.5 ${isLoadingPrices ? 'animate-spin' : ''}`}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path></svg>
-        <span>{isLoadingPrices ? 'Loading...' : 'Refresh Prices'}</span>
-      </button>
+      <div className="pt-2.5 mt-auto border-t border-white/[0.06] flex items-center justify-between"><span className="text-[10px] text-slate-500 font-mono">Chainlink decentralized feeds</span><button onClick={() => loadPrices({ force: true })} disabled={isLoadingPrices} className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-emerald-400 transition"><RefreshIcon spinning={isLoadingPrices} /><span>{isLoadingPrices ? 'Loading...' : 'Refresh Prices'}</span></button></div>
     </div>
   );
 }
 
 
 export function AaveV3Widget() {
-  const { smartAccountAddress, chainId, env, provider, signer, refreshTrigger, trackOp } = useAppContext();
+  const { smartAccountAddress, chainId, env, provider, signer, sharedDataCache, refreshAaveData, trackOp } = useAppContext();
   const { error } = useToast();
   const resolvedChainId = Number(chainId) || getDefaultChainId();
-  const usdcAddress = env?.VITE_USDC_TOKEN || '0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E';
-
-  const [aaveMarket, setAaveMarket] = useState(null);
-  const [isLoadingAave, setIsLoadingAave] = useState(false);
-  const [aaveError, setAaveError] = useState(null);
-  const [aaveEarnings, setAaveEarnings] = useState('0');
-  const [aavePrincipal, setAavePrincipal] = useState('0');
-  const [aaveTotalBalance, setAaveTotalBalance] = useState('0');
+  const usdcAddress = env?.USDC_TOKEN || '';
+  const aaveKey = smartAccountAddress && resolvedChainId ? `${resolvedChainId}:${smartAccountAddress.toLowerCase()}` : null;
+  const aaveEntry = aaveKey ? sharedDataCache.aave?.[aaveKey] : null;
+  const aaveMarket = aaveEntry?.data?.market || null;
+  const aavePoolAddress = aaveMarket?.poolAddress || env?.AAVE_POOL || '';
+  const aaveError = aaveEntry?.error || null;
+  const aaveEarnings = aaveEntry?.data?.position?.earnings || '0';
+  const aavePrincipal = aaveEntry?.data?.position?.principal || '0';
+  const aaveTotalBalance = aaveEntry?.data?.position?.totalBalance || '0';
+  const isLoadingAave = Boolean(aaveEntry?.loading);
   
   const [depositAmount, setDepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [isOpPending, setIsOpPending] = useState(false);
 
-  const loadAave = useCallback(async () => {
-    setIsLoadingAave(true);
-    setAaveError(null);
+  const loadAave = useCallback(async ({ force = false } = {}) => {
     try {
-      const { data } = await axios.get(`${FINANCIAL_API}/api/financial/aave/${resolvedChainId}/usdc`);
-      if (data.error) throw new Error(data.error);
-
-      data.supplyCap = "12000000000"; // Override supplyCap with hardcoded 12 billion
-      setAaveMarket(data);
-
-      if (smartAccountAddress && window.ethereum && data.poolAddress) {
-        const _provider = new ethers.BrowserProvider(window.ethereum);
-        const pool = new ethers.Contract(data.poolAddress, [
-          'function earned(address) view returns (uint256)',
-          'function positions(address) view returns (uint256 amount, uint256 lastUpdateTime, uint256 rewards)'
-        ], _provider);
-        const earnedRaw = await pool.earned(smartAccountAddress);
-        const position = await pool.positions(smartAccountAddress);
-        
-        const earningsStr = parseFloat(ethers.formatUnits(earnedRaw, 6)).toFixed(6);
-        const principalStr = parseFloat(ethers.formatUnits(position.amount, 6)).toFixed(6);
-        const totalStr = (parseFloat(earningsStr) + parseFloat(principalStr)).toFixed(6);
-
-        setAaveEarnings(earningsStr);
-        setAavePrincipal(principalStr);
-        setAaveTotalBalance(totalStr);
-      } else {
-        setAaveEarnings('0');
-        setAavePrincipal('0');
-        setAaveTotalBalance('0');
-      }
+      await refreshAaveData({ force });
     } catch (e) {
-      const msg = e.response?.data?.error || e.message || 'Unknown error';
-      setAaveError(msg);
-    } finally {
-      setIsLoadingAave(false);
+      console.error("Aave market load failed:", e);
     }
-  }, [resolvedChainId, smartAccountAddress]);
+  }, [refreshAaveData]);
 
   useEffect(() => {
-    if (smartAccountAddress) loadAave();
-  }, [smartAccountAddress, loadAave, refreshTrigger]);
+    if (smartAccountAddress && !aaveEntry?.data && !aaveEntry?.loading) loadAave();
+  }, [smartAccountAddress, loadAave, aaveEntry?.data, aaveEntry?.loading]);
 
   const handleAaveDepositOp = async () => {
     if (!depositAmount || isNaN(depositAmount) || parseFloat(depositAmount) <= 0) {
       error('Please enter a valid amount');
       return;
     }
+    if (!usdcAddress || !aavePoolAddress) {
+      error('USDC or Aave pool address is missing from chain config.');
+      return;
+    }
     try {
       setIsOpPending(true);
       const amountToDeposit = ethers.parseUnits(depositAmount.toString(), 6);
       const mockToken = new ethers.Contract(usdcAddress, ['function approve(address spender, uint256 amount) external returns (bool)'], signer);
-      const pool = new ethers.Contract(AAVE_POOL, ['function deposit(uint256 _amount) external'], signer);
-      const approveData = mockToken.interface.encodeFunctionData('approve', [AAVE_POOL, amountToDeposit]);
+      const pool = new ethers.Contract(aavePoolAddress, ['function deposit(uint256 _amount) external'], signer);
+      const approveData = mockToken.interface.encodeFunctionData('approve', [aavePoolAddress, amountToDeposit]);
       const depositData = pool.interface.encodeFunctionData('deposit', [amountToDeposit]);
       const callData = encodeERC7579Batch(
-        [usdcAddress, AAVE_POOL],
+        [usdcAddress, aavePoolAddress],
         [0n, 0n],
         [approveData, depositData]
       );
@@ -266,7 +275,8 @@ export function AaveV3Widget() {
       trackOp(opHash, "Aave Deposit");
       setDepositAmount('');
     } catch (err) {
-      error(err.reason || err.message || 'Failed Batched Aave Deposit');
+      console.error("Dashboard Aave deposit failed:", err);
+      error(getFriendlyErrorMessage(err, 'We could not submit the Aave deposit. Please check your USDC balance and try again.'));
     } finally {
       setIsOpPending(false);
     }
@@ -277,14 +287,18 @@ export function AaveV3Widget() {
       error('Please enter a valid amount');
       return;
     }
+    if (!aavePoolAddress) {
+      error('Aave pool address is missing from chain config.');
+      return;
+    }
     try {
       setIsOpPending(true);
       const amountToWithdraw = ethers.parseUnits(withdrawAmount.toString(), 6);
-      const pool = new ethers.Contract(AAVE_POOL, ['function withdraw(uint256 _amount) external', 'function claimReward() external'], signer);
+      const pool = new ethers.Contract(aavePoolAddress, ['function withdraw(uint256 _amount) external', 'function claimReward() external'], signer);
       const withdrawData = pool.interface.encodeFunctionData('withdraw', [amountToWithdraw]);
       const claimData = pool.interface.encodeFunctionData('claimReward', []);
       const callData = encodeERC7579Batch(
-        [AAVE_POOL, AAVE_POOL],
+        [aavePoolAddress, aavePoolAddress],
         [0n, 0n],
         [claimData, withdrawData]
       );
@@ -292,84 +306,31 @@ export function AaveV3Widget() {
       trackOp(opHash, "Aave Claim & Withdraw");
       setWithdrawAmount('');
     } catch (err) {
-      error(err.reason || err.message || 'Failed Batched Withdraw & Claim');
+      console.error("Dashboard Aave withdraw failed:", err);
+      error(getFriendlyErrorMessage(err, 'We could not submit the Aave withdrawal. Please check your position and try again.'));
     } finally {
       setIsOpPending(false);
     }
   };
 
+  const supplyApy = Number(aaveMarket?.supplyApyPercentage || 0);
+  const availableLiquidity = Number(aaveMarket?.availableLiquidity || 0);
+  const supplyCap = Number(aaveMarket?.supplyCap || 0);
+  const liquidityPercent = supplyCap > 0 ? Math.min((availableLiquidity / supplyCap) * 100, 100) : 0;
+  const principal = Number(aavePrincipal || 0);
+  const earnings = Number(aaveEarnings || 0);
+  const totalBalance = Number(aaveTotalBalance || 0);
+  const principalPercent = totalBalance > 0 ? (principal / totalBalance) * 100 : 100;
+
   return (
-    <div className="wallet-card flex flex-col gap-4 p-5 h-full transition-all duration-300 hover:border-[#00f59b] hover:shadow-[0_0_24px_rgba(0,245,155,0.15)]">
-      <div className="flex items-center justify-between border-b border-white/5 pb-3">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-obsidian-900 border border-white/10 text-[#B6509E] flex items-center justify-center shadow-[0_0_12px_-2px_rgba(182,80,158,0.3)]">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"></path><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"></path><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"></path></svg>
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-white">Aave V3 — USDC</h3>
-            <div className="text-[10px] text-slate-500 font-mono mt-0.5">{resolvedChainId === 421614 ? 'Arbitrum Sepolia' : 'Sepolia testnet'}</div>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 px-2 py-1 bg-[#B6509E]/10 border border-[#B6509E]/20 rounded-full">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#B6509E] animate-pulse"></span>
-          <span className="text-[9px] font-mono font-bold text-[#B6509E] tracking-wider">ACTIVE</span>
-        </div>
-      </div>
-
-      {aaveError && (
-        <div className="text-xs p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 mt-2">{aaveError}</div>
-      )}
-
-          <div className="flex-shrink-0">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Current Supply APY</div>
-            <div className="text-2xl font-extrabold text-[#B6509E] font-mono tracking-tight">
-              {aaveMarket ? `${aaveMarket.supplyApyPercentage}%` : (isLoadingAave ? '--%' : 'N/A')}
-            </div>
-          </div>
-          <div className="space-y-2.5 text-xs flex-shrink-0 mt-2">
-            <div className="flex justify-between py-1 border-b border-white/5">
-              <span className="text-slate-400">Available Liquidity</span>
-              <span className="font-mono font-medium text-slate-200">
-                {aaveMarket ? fmt(aaveMarket.availableLiquidity, 0) : '—'} USDC
-              </span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-white/5">
-              <span className="text-slate-400">Total Balance</span>
-              <span className="font-mono font-bold text-white">{aaveTotalBalance} USDC</span>
-            </div>
-            <div className="flex justify-between py-1 border-b border-white/5">
-              <span className="text-slate-400">Principal</span>
-              <span className="font-mono font-medium text-slate-200">{aavePrincipal} USDC</span>
-            </div>
-            <div className="flex justify-between items-center py-2 px-3 mt-2 bg-gradient-to-r from-[#B6509E]/20 to-transparent border-l-2 border-[#B6509E] rounded-r-lg font-semibold">
-              <span className="text-[#B6509E]">Accrued Earnings</span>
-              <span className="font-mono text-white">+{aaveEarnings} USDC</span>
-            </div>
-          </div>
-          
-          <div className="space-y-2 flex-shrink-0 mt-4">
-            <div className="flex gap-2">
-              <input type="number" placeholder="Deposit Amt" className="w-full px-3 py-2 text-xs bg-obsidian-900 border border-white/10 rounded-xl font-mono focus:outline-none focus:border-[#B6509E]/50 text-white placeholder-slate-600 transition-colors" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} disabled={isOpPending || !aaveMarket} />
-              <button onClick={handleAaveDepositOp} disabled={isOpPending || !aaveMarket} className="px-4 py-2 bg-[#B6509E] text-white rounded-xl text-xs font-bold whitespace-nowrap hover:bg-[#9E4589] disabled:opacity-50 transition-all shadow-sm">
-                Deposit
-              </button>
-            </div>
-            <div className="flex gap-2">
-              <input type="number" placeholder="Withdraw Amt" className="w-full px-3 py-2 text-xs bg-obsidian-900 border border-white/10 rounded-xl font-mono focus:outline-none focus:border-slate-500 text-white placeholder-slate-600 transition-colors" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)} disabled={isOpPending || !aaveMarket} />
-              <button onClick={handleAaveWithdrawClaimOp} disabled={isOpPending || !aaveMarket} className="px-4 py-2 bg-slate-800 text-slate-300 border border-slate-700 rounded-xl text-xs font-bold whitespace-nowrap hover:bg-slate-700 hover:text-white disabled:opacity-50 transition-all shadow-sm">
-                Withdraw
-              </button>
-            </div>
-          </div>
-
-      <button 
-        onClick={loadAave} 
-        disabled={isLoadingAave} 
-        className="w-full py-2 bg-obsidian-900 hover:bg-obsidian-800 border border-white/10 text-slate-300 hover:text-[#B6509E] text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-2 mt-auto"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-3.5 h-3.5 ${isLoadingAave ? 'animate-spin' : ''}`}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path></svg>
-        <span>{isLoadingAave ? 'Loading...' : 'Refresh Aave Market'}</span>
-      </button>
+    <div className="wallet-card relative overflow-hidden flex flex-col gap-4 p-5 h-full transition-all duration-300 border-[#00f59b]/25 hover:border-[#00f59b] hover:shadow-[0_0_24px_rgba(0,245,155,0.15)]">
+      <AavePricePulse />
+      <div className="relative z-10 flex items-center justify-between border-b border-white/5 pb-3"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl bg-obsidian-900 border border-white/10 text-[#00f59b] flex items-center justify-center shadow-[0_0_12px_-2px_rgba(0,245,155,0.35)]"><span className="text-sm font-bold">A</span></div><div><h3 className="text-sm font-bold text-white">Aave V3 Yield Pool</h3><div className="text-[10px] text-slate-500 font-mono mt-0.5">USDC · {resolvedChainId === 421614 ? 'Arbitrum Sepolia' : 'Sepolia testnet'}</div></div></div><div className="flex items-center gap-1.5 px-2 py-1 bg-[#00f59b]/10 border border-[#00f59b]/20 rounded-full"><span className="w-1.5 h-1.5 rounded-full bg-[#00f59b] animate-pulse" /><span className="text-[9px] font-mono font-bold text-[#00f59b] tracking-wider">ACTIVE</span></div></div>
+      {aaveError && <div className="relative z-10 text-xs p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400">{aaveError}</div>}
+      <div className="relative z-10 grid grid-cols-[auto_1fr] gap-4 items-center"><div className="relative w-24 h-24 flex items-center justify-center"><svg className="w-full h-full -rotate-90" viewBox="0 0 100 100"><circle cx="50" cy="50" r="38" fill="none" stroke="#1c2333" strokeWidth="10" /><circle cx="50" cy="50" r="38" fill="none" stroke="#00f59b" strokeWidth="10" strokeDasharray={`${Math.min(supplyApy, 100) * 2.387} 238.7`} strokeLinecap="round" /></svg><span className="absolute text-sm font-bold font-mono text-white">{aaveMarket ? `${fmt(supplyApy, 2)}%` : '--'}</span></div><div><p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Current supply APY</p><p className="text-2xl font-extrabold text-[#00f59b] font-mono">{aaveMarket ? `${fmt(supplyApy, 4)}%` : isLoadingAave ? 'Loading' : 'N/A'}</p><p className="text-[10px] text-slate-500">Live Aave market data</p></div></div>
+      <div className="relative z-10 space-y-3 text-xs"><div className="flex justify-between"><span className="text-slate-400">Available liquidity</span><span className="font-mono text-slate-200">{aaveMarket ? `${fmt(availableLiquidity, 0)} USDC` : '—'}</span></div><div className="h-1.5 bg-white/10 rounded-full overflow-hidden"><div className="h-full bg-[#00f59b] rounded-full transition-all" style={{ width: `${liquidityPercent}%` }} /></div><div className="flex justify-between"><span className="text-slate-400">Total position</span><span className="font-mono font-bold text-white">{fmt(totalBalance, 6)} USDC</span></div><div className="h-2 bg-white/10 rounded-full overflow-hidden flex"><div className="h-full bg-[#00f59b]" style={{ width: `${principalPercent}%` }} /><div className="h-full bg-cyan-400" style={{ width: `${100 - principalPercent}%` }} /></div><div className="flex justify-between py-2 px-3 bg-gradient-to-r from-[#00f59b]/20 to-transparent border-l-2 border-[#00f59b] rounded-r-lg"><span className="text-[#00f59b]">Principal / earnings</span><span className="font-mono text-white">{fmt(principal, 6)} / +{fmt(earnings, 6)}</span></div></div>
+      <div className="relative z-10 space-y-2 mt-auto"><div className="flex gap-2"><input type="number" placeholder="Deposit amount" className="w-full px-3 py-2 text-xs bg-obsidian-900 border border-white/10 rounded-xl font-mono focus:outline-none focus:border-[#00f59b]/50 text-white placeholder-slate-600" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} disabled={isOpPending || !aaveMarket} /><button onClick={handleAaveDepositOp} disabled={isOpPending || !aaveMarket} className="px-4 py-2 bg-[#00f59b] text-obsidian-950 rounded-xl text-xs font-bold whitespace-nowrap hover:bg-[#1affab] disabled:opacity-50">Deposit</button></div><div className="flex gap-2"><input type="number" placeholder="Withdraw amount" className="w-full px-3 py-2 text-xs bg-obsidian-900 border border-white/10 rounded-xl font-mono focus:outline-none focus:border-slate-500 text-white placeholder-slate-600" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} disabled={isOpPending || !aaveMarket} /><button onClick={handleAaveWithdrawClaimOp} disabled={isOpPending || !aaveMarket} className="px-4 py-2 bg-slate-800 text-slate-300 border border-slate-700 rounded-xl text-xs font-bold whitespace-nowrap hover:bg-slate-700 disabled:opacity-50">Withdraw</button></div></div>
+      <button onClick={() => loadAave({ force: true })} disabled={isLoadingAave} className="relative z-10 w-full py-2 bg-obsidian-900 hover:bg-obsidian-800 border border-white/10 text-slate-300 hover:text-[#00f59b] text-xs font-semibold rounded-xl transition-all flex items-center justify-center gap-2"><RefreshIcon spinning={isLoadingAave} /><span>{isLoadingAave ? 'Loading...' : 'Refresh Aave Market'}</span></button>
     </div>
   );
 }

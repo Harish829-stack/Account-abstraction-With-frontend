@@ -7,6 +7,7 @@ import { useToast } from '../context/ToastContext';
 import { Key, PlusCircle, Zap, Settings, ChevronRight, XCircle } from 'lucide-react';
 import { SmartAccountABI, IEntryPointABI, SessionKeyValidatorABI } from '../utils/abis';
 import { revokeAllPersistedAgents, revokePersistedAgent } from '../utils/backendApi';
+import { getFriendlyErrorMessage } from '../utils/errors';
 
 export default function SessionKeyView() {
   const { smartAccountAddress, signer, provider, env, setGlobalLoading, chainId, refreshTrigger, nativeToken, installedModules, refreshInstalledModules, trackOp } = useAppContext();
@@ -235,7 +236,7 @@ export default function SessionKeyView() {
           await queryAllSessionKeys();
       } catch (err) {
           console.error(err);
-          toast.error(err.reason || err.message || "Failed to revoke key");
+          toast.error(getFriendlyErrorMessage(err, "We could not revoke this session key. Please try again."));
       } finally {
           setGlobalLoading(false);
       }
@@ -293,7 +294,7 @@ export default function SessionKeyView() {
           await refreshInstalledModules();
       } catch (err) {
           console.error(err);
-          toast.error(err.reason || err.message || "Failed to uninstall module");
+          toast.error(getFriendlyErrorMessage(err, "We could not uninstall the session key module. Please try again."));
       } finally {
           setGlobalLoading(false);
       }
@@ -378,7 +379,7 @@ export default function SessionKeyView() {
       }
     } catch (err) {
       console.error(err);
-      toast.error(err.reason || err.message || "Failed to add session key");
+      toast.error(getFriendlyErrorMessage(err, "We could not add this session key. Please check the limits and try again."));
     } finally {
       setGlobalLoading(false);
     }
@@ -455,7 +456,7 @@ export default function SessionKeyView() {
           toast.success(`Bundler executing! OpHash: ${shortenAddress(opHash)}...`);
       } catch (err) {
           console.error(err);
-          toast.error(err.reason || err.message || "Execution failed");
+          toast.error(getFriendlyErrorMessage(err, "We could not execute with this session key. Please check the key permissions."));
       } finally {
           setGlobalLoading(false);
       }

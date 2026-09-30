@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { getExplorerTxUrl } from '../config/chains';
 import { buildAndSendAccountOp, encodeERC7579Batch } from '../utils/helpers';
+import { getFriendlyErrorMessage } from '../utils/errors';
 
 const MOCK_USDC_ABI = [
   "function mint(address to, uint256 amount) public",
@@ -43,8 +44,8 @@ export default function MintUSDCView() {
 
   const { success, error, info } = useToast();
 
-  const usdcAddress = env.VITE_USDC_TOKEN || '0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E';
-  const AAVE_POOL = import.meta.env.VITE_AAVE_YIELD_POOL;
+  const usdcAddress = env.USDC_TOKEN || '';
+  const aavePoolAddress = env.AAVE_POOL || '';
 
   if (!smartAccountAddress) {
     return (
@@ -83,6 +84,7 @@ export default function MintUSDCView() {
     try {
       setPending(true);
       setTxHash(null);
+      if (!usdcAddress) throw new Error("USDC token address is missing from chain config.");
 
       const usdcContract = new ethers.Contract(usdcAddress, MOCK_USDC_ABI, signer);
       const amountToMint = ethers.parseUnits(amount.toString(), 6);
@@ -96,8 +98,8 @@ export default function MintUSDCView() {
       success(`Successfully minted ${amount} USDC`);
       setAmount('');
     } catch (err) {
-      console.error(err);
-      error(err.reason || err.message || 'Failed to mint USDC');
+      console.error("USDC mint failed:", err);
+      error(getFriendlyErrorMessage(err, 'We could not mint USDC. Please check your wallet and try again.'));
     } finally {
       setPending(false);
     }
@@ -112,17 +114,18 @@ export default function MintUSDCView() {
     try {
       setIsAavePending(true);
       setAaveStatus('Preparing batched UserOp...');
+      if (!usdcAddress || !aavePoolAddress) throw new Error("USDC or Aave pool address is missing from chain config.");
       
       const amountToDeposit = ethers.parseUnits(aaveAmount.toString(), 6);
       
       const mockToken = new ethers.Contract(usdcAddress, ['function approve(address spender, uint256 amount) external returns (bool)'], signer);
-      const pool = new ethers.Contract(AAVE_POOL, ['function deposit(uint256 _amount) external'], signer);
+      const pool = new ethers.Contract(aavePoolAddress, ['function deposit(uint256 _amount) external'], signer);
       
-      const approveData = mockToken.interface.encodeFunctionData('approve', [AAVE_POOL, amountToDeposit]);
+      const approveData = mockToken.interface.encodeFunctionData('approve', [aavePoolAddress, amountToDeposit]);
       const depositData = pool.interface.encodeFunctionData('deposit', [amountToDeposit]);
       
       const callData = encodeERC7579Batch(
-        [usdcAddress, AAVE_POOL],
+        [usdcAddress, aavePoolAddress],
         [0n, 0n],
         [approveData, depositData]
       );
@@ -144,9 +147,9 @@ export default function MintUSDCView() {
       setAaveAmount('');
       setTimeout(() => setAaveStatus(''), 5000);
     } catch (err) {
-      console.error(err);
-      const msg = err.reason || err.message || 'Failed Batched Aave Deposit';
-      setAaveStatus('❌ Error: ' + msg.slice(0, 50));
+      console.error("Batched Aave deposit failed:", err);
+      const msg = getFriendlyErrorMessage(err, 'We could not submit the Aave deposit. Please check your USDC balance and try again.');
+      setAaveStatus('Error: ' + msg.slice(0, 80));
       error(msg);
     } finally {
       setIsAavePending(false);
@@ -209,7 +212,7 @@ export default function MintUSDCView() {
 
   return (
     <div className="w-full min-h-[calc(100vh-140px)] bg-[#07090e] text-gray-100 font-sans px-4 sm:px-6 lg:px-8 py-6 pb-16 overflow-y-auto">
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="w-full space-y-6">
         
         {/* Header Breadcrumb & Status */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-white/5">

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import { useChatbotContext } from '../context/ChatbotContext';
@@ -8,6 +8,7 @@ import { SessionKeyValidatorABI, SmartAccountABI } from '../utils/abis';
 import { buildAndSendAccountOp, encodeERC7579Single, encodeERC7579Batch, getActiveSessionKeysOnChain, getPrevValidator } from '../utils/helpers';
 import { estimateUserOperationGas, sendUserOperation, getUserOpReceipt, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import { getDefaultChainId } from '../config/chains';
+import { getFriendlyErrorMessage } from '../utils/errors';
 import "./agent-ui.css";
 
 /* ---------- icons ---------- */
@@ -103,6 +104,7 @@ const TABS = [
 
 const DEFAULT_AGENT_VALIDITY_DAYS = "30";
 const SECONDS_PER_DAY = 86400;
+const FINANCIAL_CONTEXT_TTL_MS = 15000;
 
 const getRemainingValidityDays = (validUntil) => {
   const timestamp = Number(validUntil || 0);
@@ -283,13 +285,17 @@ function AgentWorkspace({
   onDeleteAgent,
   isDeleting,
   onRevokeAll,
-  isRevokingAll
+  isRevokingAll,
+  isFinancialContextRefreshing = false,
+  financialContextUpdatedAt = null,
+  financialContextError = "",
+  onRefreshFinancialContext
 }) {
   const [value, setValue] = useState("");
   const scrollRef = useRef(null);
 
   useEffect(() => {
-      scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+      scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages, isChatLoading]);
 
   const submit = (e) => {
@@ -345,6 +351,23 @@ function AgentWorkspace({
         </div>
 
         <div className="ws__pills">
+          {activeAgentAddress === 'financial' && (
+            <>
+              <span className="pill">
+                Balances: {financialContextUpdatedAt ? new Date(financialContextUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Not synced"}
+              </span>
+              {financialContextError && <span className="pill pill--danger">Sync issue</span>}
+              <button
+                className="pill pill--action"
+                type="button"
+                disabled={isFinancialContextRefreshing}
+                onClick={onRefreshFinancialContext}
+                title="Refresh portfolio, prices, and Aave context for the financial agent"
+              >
+                {isFinancialContextRefreshing ? "Refreshing..." : "Refresh Balances"}
+              </button>
+            </>
+          )}
           {activeAgentAddress && activeAgentAddress !== 'financial' && (
             <>
               <span className="pill">{scope.name.toUpperCase()}</span>
@@ -484,7 +507,7 @@ export default function UnifiedAgentView() {
     } = useChatbotContext();
     const { 
         smartAccountAddress, provider, signer, eoaAddress, env, chainId, 
-        refreshInstalledModules, trackOp,
+        refreshInstalledModules, trackOp, refreshLightData, refreshTrigger,
         financeAgentMessages, setFinanceAgentMessages, 
         financeAgentHistory, setFinanceAgentHistory
     } = useAppContext();
@@ -506,42 +529,87 @@ export default function UnifiedAgentView() {
     const [portfolio, setPortfolio] = useState(null);
     const [prices, setPrices] = useState(null);
     const [aaveMarket, setAaveMarket] = useState(null);
+    const [isFinancialContextRefreshing, setIsFinancialContextRefreshing] = useState(false);
+    const [financialContextUpdatedAt, setFinancialContextUpdatedAt] = useState(null);
+    const [financialContextError, setFinancialContextError] = useState("");
+    const financialContextRef = useRef({ portfolio: null, prices: null, aaveMarket: null });
+    const financialContextInFlightRef = useRef(null);
+    const financialContextFetchedAtRef = useRef(0);
+    const refreshLightDataRef = useRef(refreshLightData);
 
     useEffect(() => {
+        financialContextRef.current = { portfolio, prices, aaveMarket };
+    }, [portfolio, prices, aaveMarket]);
+
+    useEffect(() => {
+        refreshLightDataRef.current = refreshLightData;
+    }, [refreshLightData]);
+
+    const loadFinancialContext = useCallback(async ({ force = false, includePlatformRefresh = false } = {}) => {
+        const now = Date.now();
+        if (!smartAccountAddress) return financialContextRef.current;
+        if (financialContextInFlightRef.current) return financialContextInFlightRef.current;
+        if (!force && now - financialContextFetchedAtRef.current < FINANCIAL_CONTEXT_TTL_MS) {
+            return financialContextRef.current;
+        }
+
         const resolvedChainId = Number(chainId) || getDefaultChainId();
-        (async () => {
+        financialContextInFlightRef.current = (async () => {
+            setIsFinancialContextRefreshing(true);
+            setFinancialContextError("");
+
+            if (includePlatformRefresh && refreshLightDataRef.current) {
+                await refreshLightDataRef.current({ force: true }).catch((error) => {
+                    console.warn("Platform balance refresh failed before financial context sync:", error);
+                });
+            }
+
+            const next = { ...financialContextRef.current };
             try {
-                const { data } = await axios.get(`${FINANCIAL_API}/api/financial/market/prices?chainId=${resolvedChainId}`);
-                setPrices(data.prices);
-            } catch {
-                setPrices(null);
+                const [portfolioRes, pricesRes, aaveRes] = await Promise.allSettled([
+                    axios.get(`${FINANCIAL_API}/api/financial/portfolio/${resolvedChainId}/${smartAccountAddress}`),
+                    axios.get(`${FINANCIAL_API}/api/financial/market/prices?chainId=${resolvedChainId}`),
+                    axios.get(`${FINANCIAL_API}/api/financial/aave/${resolvedChainId}/usdc`)
+                ]);
+
+                if (portfolioRes.status === "fulfilled") {
+                    next.portfolio = portfolioRes.value.data;
+                    setPortfolio(next.portfolio);
+                }
+
+                if (pricesRes.status === "fulfilled") {
+                    next.prices = pricesRes.value.data.prices;
+                    setPrices(next.prices);
+                }
+
+                if (aaveRes.status === "fulfilled" && aaveRes.value.data && !aaveRes.value.data.error) {
+                    next.aaveMarket = { ...aaveRes.value.data, supplyCap: "12000000000" };
+                    setAaveMarket(next.aaveMarket);
+                }
+
+                const failed = [portfolioRes, pricesRes, aaveRes].some((result) => result.status === "rejected");
+                if (failed) {
+                    setFinancialContextError("Some financial data could not be refreshed.");
+                }
+
+                const refreshedAt = Date.now();
+                financialContextFetchedAtRef.current = refreshedAt;
+                setFinancialContextUpdatedAt(refreshedAt);
+                financialContextRef.current = next;
+                return next;
+            } finally {
+                setIsFinancialContextRefreshing(false);
+                financialContextInFlightRef.current = null;
             }
         })();
-    }, [chainId, FINANCIAL_API]);
+
+        return financialContextInFlightRef.current;
+    }, [FINANCIAL_API, chainId, smartAccountAddress]);
 
     useEffect(() => {
         if (!smartAccountAddress) return;
-        const resolvedChainId = Number(chainId) || getDefaultChainId();
-        (async () => {
-            try {
-                const { data } = await axios.get(`${FINANCIAL_API}/api/financial/portfolio/${resolvedChainId}/${smartAccountAddress}`);
-                setPortfolio(data);
-            } catch {
-                setPortfolio(null);
-            }
-        })();
-        (async () => {
-            try {
-                const { data } = await axios.get(`${FINANCIAL_API}/api/financial/aave/${resolvedChainId}/usdc`);
-                if (data && !data.error) {
-                    data.supplyCap = "12000000000";
-                    setAaveMarket(data);
-                }
-            } catch {
-                setAaveMarket(null);
-            }
-        })();
-    }, [smartAccountAddress, chainId, FINANCIAL_API]);
+        void loadFinancialContext({ force: true });
+    }, [smartAccountAddress, chainId, refreshTrigger, loadFinancialContext]);
 
     const sendFinancialMessage = async (text) => {
         const userMsg = { id: Date.now(), role: 'user', content: text, time: fmtTime(), toolCalls: [] };
@@ -549,6 +617,10 @@ export default function UnifiedAgentView() {
         setIsFinancialLoading(true);
         const newHistory = [...financeAgentHistory, { role: 'user', content: text }];
         try {
+            const latestContext = await loadFinancialContext();
+            const latestPortfolio = latestContext.portfolio || portfolio;
+            const latestPrices = latestContext.prices || prices;
+            const latestAaveMarket = latestContext.aaveMarket || aaveMarket;
             const { data } = await axios.post(`${FINANCIAL_API}/api/financial/chat`, {
                 message: text,
                 smartAccountAddress,
@@ -557,12 +629,12 @@ export default function UnifiedAgentView() {
                 conversationHistory: newHistory.slice(-10),
                 liveContext: {
                     smartAccountAddress,
-                    portfolioBalances: portfolio?.assets,
-                    totalPortfolioValueUsd: portfolio?.totalValueUsd,
-                    aaveSupplyApy: aaveMarket?.supplyApyPercentage,
-                    ethPriceUsd: prices?.ETH_USD?.priceUsd,
-                    ethTrend: prices?.ETH_USD?.priceChange24h > 0 ? 'rising' : 'crashing',
-                    allMarketPrices: prices
+                    portfolioBalances: latestPortfolio?.assets,
+                    totalPortfolioValueUsd: latestPortfolio?.totalValueUsd,
+                    aaveSupplyApy: latestAaveMarket?.supplyApyPercentage,
+                    ethPriceUsd: latestPrices?.ETH_USD?.priceUsd,
+                    ethTrend: latestPrices?.ETH_USD?.priceChange24h > 0 ? 'rising' : 'crashing',
+                    allMarketPrices: latestPrices
                 }
             });
             const agentMsg = {
@@ -578,8 +650,14 @@ export default function UnifiedAgentView() {
             if (data.portfolio) setPortfolio(data.portfolio);
             if (data.marketPrices) setPrices(data.marketPrices);
             if (data.aaveMarket) setAaveMarket(data.aaveMarket);
-        } catch {
-            setFinanceAgentMessages(prev => [...prev, { id: Date.now() + 2, role: 'agent', content: "Sorry, I encountered an error. Please try again.", time: fmtTime() }]);
+        } catch (error) {
+            console.error("Financial agent request failed:", error);
+            setFinanceAgentMessages(prev => [...prev, {
+                id: Date.now() + 2,
+                role: 'agent',
+                content: getFriendlyErrorMessage(error, "Sorry, I could not refresh the latest financial context. Please try again."),
+                time: fmtTime()
+            }]);
         } finally {
             setIsFinancialLoading(false);
         }
@@ -591,6 +669,10 @@ export default function UnifiedAgentView() {
         } else {
             await sendChatbotMessage(text);
         }
+    };
+
+    const handleRefreshFinancialContext = async () => {
+        await loadFinancialContext({ force: true, includePlatformRefresh: true });
     };
 
     const [tab, setTab] = useState("setup");
@@ -790,10 +872,11 @@ export default function UnifiedAgentView() {
                 }
                 go("workspace");
             } else {
-                alert("Assistant creation failed or timed out.");
+                alert("Assistant creation failed or timed out. Please try again.");
             }
         } catch (e) {
-            alert("Error creating assistant: " + e.message);
+            console.error("Assistant creation failed:", e);
+            alert(getFriendlyErrorMessage(e, "We could not create the assistant. Please check your wallet and try again."));
         } finally {
             setIsCreating(false);
         }
@@ -809,11 +892,13 @@ export default function UnifiedAgentView() {
             selector = "0x00000000";
             maxValue = ethers.parseEther(limit);
         } else if (scope.id === 'uniswap') {
-            target = "0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F";
+            if (!env.UNISWAP_ROUTER) throw new Error("Uniswap router address missing from chain config.");
+            target = env.UNISWAP_ROUTER;
             selector = "0x00000000";
             maxValue = ethers.parseEther(limit);
         } else if (scope.id === 'erc20') {
-            target = "0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E";
+            if (!env.USDC_TOKEN) throw new Error("USDC token address missing from chain config.");
+            target = env.USDC_TOKEN;
             selector = "0xa9059cbb";
             maxValue = 0n;
         }
@@ -862,7 +947,8 @@ export default function UnifiedAgentView() {
                 }));
             }
         } catch (e) {
-            alert("Failed to sync agents: " + (e.response?.data?.error || e.message));
+            console.error("Agent sync failed:", e);
+            alert(getFriendlyErrorMessage(e, "We could not sync agents right now. Please try again."));
         } finally {
             setIsSyncing(false);
         }
@@ -894,7 +980,8 @@ export default function UnifiedAgentView() {
                 handleNewAgent();
             }
         } catch (e) {
-            alert("Failed to delete agent: " + (e.response?.data?.error || e.message));
+            console.error("Agent revoke failed:", e);
+            alert(getFriendlyErrorMessage(e, "We could not revoke this agent. Please check your wallet and try again."));
         } finally {
             setIsDeleting(false);
         }
@@ -937,7 +1024,8 @@ export default function UnifiedAgentView() {
             await refreshInstalledModules();
             handleNewAgent();
         } catch (e) {
-            alert("Failed to revoke all agents: " + (e.response?.data?.error || e.message));
+            console.error("Revoke all agents failed:", e);
+            alert(getFriendlyErrorMessage(e, "We could not revoke all agents. Please check your wallet and try again."));
         } finally {
             setIsRevokingAll(false);
         }
@@ -1011,6 +1099,10 @@ export default function UnifiedAgentView() {
                                 isDeleting={isDeleting}
                                 onRevokeAll={handleRevokeAllAgents}
                                 isRevokingAll={isRevokingAll}
+                                isFinancialContextRefreshing={isFinancialContextRefreshing}
+                                financialContextUpdatedAt={financialContextUpdatedAt}
+                                financialContextError={financialContextError}
+                                onRefreshFinancialContext={handleRefreshFinancialContext}
                             />
                         </div>
                     )}

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
-import { getDefaultChainId } from '../config/chains';
+import { getFriendlyErrorMessage } from '../utils/errors';
 import "../views/agent-ui.css";
 
 /* ---------- icons ---------- */
@@ -622,48 +622,7 @@ export default function AgentDemoView() {
     const messages = isFinancialAgent ? financeAgentMessages : chatbotMessages;
     const isChatLoading = isFinancialAgent ? isFinancialLoading : isChatbotLoading;
     
-    const FINANCIAL_API = (import.meta.env.VITE_FINANCIAL_AGENT_URL || 'http://127.0.0.1:3003').replace(/\/$/, '');
     const fmtTime = () => new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    const [portfolio, setPortfolio] = useState(null);
-    const [prices, setPrices] = useState(null);
-    const [aaveMarket, setAaveMarket] = useState(null);
-
-    useEffect(() => {
-        const resolvedChainId = Number(chainId) || getDefaultChainId();
-        (async () => {
-            try {
-                const { data } = await axios.get(`${FINANCIAL_API}/api/financial/market/prices?chainId=${resolvedChainId}`);
-                setPrices(data.prices);
-            } catch {
-                setPrices(null);
-            }
-        })();
-    }, [chainId, FINANCIAL_API]);
-
-    useEffect(() => {
-        if (!smartAccountAddress) return;
-        const resolvedChainId = Number(chainId) || getDefaultChainId();
-        (async () => {
-            try {
-                const { data } = await axios.get(`${FINANCIAL_API}/api/financial/portfolio/${resolvedChainId}/${smartAccountAddress}`);
-                setPortfolio(data);
-            } catch {
-                setPortfolio(null);
-            }
-        })();
-        (async () => {
-            try {
-                const { data } = await axios.get(`${FINANCIAL_API}/api/financial/aave/${resolvedChainId}/usdc`);
-                if (data && !data.error) {
-                    data.supplyCap = "12000000000";
-                    setAaveMarket(data);
-                }
-            } catch {
-                setAaveMarket(null);
-            }
-        })();
-    }, [smartAccountAddress, chainId, FINANCIAL_API]);
-
     const sendFinancialMessage = (text) => {
         sendChatbotMessage(text);
     };
@@ -805,7 +764,8 @@ export default function AgentDemoView() {
                 }));
             }
         } catch (e) {
-            alert("Failed to sync agents: " + (e.response?.data?.error || e.message));
+            console.error("Agent sync failed:", e);
+            alert(getFriendlyErrorMessage(e, "We could not sync agents right now. Please try again."));
         } finally {
             setIsSyncing(false);
         }

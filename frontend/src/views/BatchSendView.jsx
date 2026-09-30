@@ -5,10 +5,8 @@ import { useToast } from '../context/ToastContext';
 import { SmartAccountABI, ERC20_ABI, IEntryPointABI } from '../utils/abis';
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
 import { toHex, getEthPriceInUsd, packUserOp, encodeERC7579Batch } from '../utils/helpers';
+import { getFriendlyErrorMessage } from '../utils/errors';
 import { Layers, Settings, ExternalLink, Plus, Trash2, Send, CheckCircle2, RotateCcw } from 'lucide-react';
-
-const UNISWAP_ROUTER = '0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F';
-const WETH_SEPOLIA = '0xfff9976782d46cc05630d1f6ebab18b2324d6b14';
 
 export default function BatchSendView() {
   const { 
@@ -24,6 +22,8 @@ export default function BatchSendView() {
     isAmoy
   } = useAppContext();
   const toast = useToast();
+  const uniswapRouter = env.UNISWAP_ROUTER || '';
+  const wethToken = env.WETH_TOKEN || '';
 
   const [operations, setOperations] = useState([
     { receiver: '', amount: '', token: 'ETH', functionSig: '', parameters: '' }
@@ -82,18 +82,22 @@ export default function BatchSendView() {
         value.push(parsedAmount);
         func.push("0x");
       } else if (op.token === 'USDC') {
+        if (!env.USDC_TOKEN) throw new Error("USDC token address missing from chain config.");
         const parsedAmount = op.amount ? ethers.parseUnits(op.amount, 6) : 0n;
         const innerCall = usdcInterface.encodeFunctionData("transfer", [op.receiver, parsedAmount]);
         dest.push(env.USDC_TOKEN);
         value.push(0n);
         func.push(innerCall);
       } else if (op.token === 'UNISWAP_V3') {
+        if (!uniswapRouter || !wethToken || !env.USDC_TOKEN) {
+          throw new Error("Swap token/router addresses are missing from chain config.");
+        }
         const parsedAmount = op.amount ? ethers.parseEther(op.amount) : 0n;
         const swapIface = new ethers.Interface([
           "function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)"
         ]);
         const params = {
-          tokenIn: WETH_SEPOLIA,
+          tokenIn: wethToken,
           tokenOut: env.USDC_TOKEN,
           fee: 3000,
           recipient: smartAccountAddress,
@@ -104,7 +108,7 @@ export default function BatchSendView() {
         const innerCall = swapIface.encodeFunctionData("exactInputSingle", [
           [params.tokenIn, params.tokenOut, params.fee, params.recipient, params.amountIn, params.amountOutMinimum, params.sqrtPriceLimitX96]
         ]);
-        dest.push(UNISWAP_ROUTER);
+        dest.push(uniswapRouter);
         value.push(parsedAmount);
         func.push(innerCall);
       } else if (op.token === 'CONTRACT_CALL') {
@@ -189,7 +193,7 @@ export default function BatchSendView() {
       setShowAdvanced(true);
     } catch (err) {
       console.error("Batch estimation error:", err);
-      toast.error("Estimation failed: " + err.message);
+      toast.error(getFriendlyErrorMessage(err, "We could not estimate gas for this batch."));
     } finally {
       setIsEstimating(false);
     }
@@ -271,8 +275,9 @@ export default function BatchSendView() {
       setPending(false);
       setGlobalLoading(false);
     } catch (err) {
+      console.error("Batch UserOperation submission failed:", err);
       toast.error("Bundler rejected the transaction!");
-      toast.error(err.reason || err.message || "Failed to execute batch operation");
+      toast.error(getFriendlyErrorMessage(err, "We could not submit this batch. Please check the operations and try again."));
       setPending(false);
       setGlobalLoading(false);
     }

@@ -13,6 +13,7 @@ import {
 } from '../utils/webauthn';
 import { getDynamicGasFees, estimateUserOperationGas } from '../utils/bundler';
 import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579Batch, encodeERC7579Single, getNonceForValidator, getPrevValidator } from '../utils/helpers';
+import { getFriendlyErrorMessage } from '../utils/errors';
 
 
  export default function WebAuthnView() {
@@ -91,8 +92,8 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
      setSavedCredential(loadPasskeyCredential());
      toast.success(`Passkey registered! Public key saved. (qx: 0x${qx.slice(0, 8)}...)`);
    } catch (err) {
-     console.error(err);
-     toast.error(err.message || 'Passkey registration failed. Make sure your device supports WebAuthn.');
+     console.error("Passkey registration failed:", err);
+     toast.error(getFriendlyErrorMessage(err, 'Passkey registration failed. Make sure your device supports WebAuthn.'));
    } finally {
      setRegistering(false);
      setGlobalLoading(false);
@@ -129,8 +130,8 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
      setKeyMismatch(false);
      setSavedCredential(loadPasskeyCredential());
    } catch (err) {
-     console.error(err);
-     toast.error(err.reason || err.message || 'Installation failed.');
+     console.error("WebAuthn validator install failed:", err);
+     toast.error(getFriendlyErrorMessage(err, 'We could not install the WebAuthn validator. Please try again.'));
    } finally {
      setInstalling(false);
      setGlobalLoading(false);
@@ -157,8 +158,8 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
       await refreshInstalledModules();
       setKeyMismatch(false);
     } catch (err) {
-      console.error(err);
-      toast.error(err.reason || err.message || 'Uninstallation failed.');
+      console.error("WebAuthn validator uninstall failed:", err);
+      toast.error(getFriendlyErrorMessage(err, 'We could not uninstall the WebAuthn validator. Please try again.'));
     } finally {
       setInstalling(false);
       setGlobalLoading(false);
@@ -208,8 +209,8 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
       await refreshInstalledModules();
       setKeyMismatch(false);
     } catch (err) {
-      console.error(err);
-      toast.error(err.reason || err.message || 'Key replacement failed.');
+      console.error("WebAuthn key replacement failed:", err);
+      toast.error(getFriendlyErrorMessage(err, 'We could not replace the passkey. Please try again.'));
     } finally {
       setInstalling(false);
       setGlobalLoading(false);
@@ -373,8 +374,8 @@ import { packUserOp, toHex, shortenAddress, buildAndSendAccountOp, encodeERC7579
      trackOp(opHash, 'WebAuthn UserOp', { calldata: rpcUserOp.callData });
      toast.success(`Submitted via passkey! OpHash: ${opHash.slice(0, 12)}...`);
    } catch (err) {
-     console.error(err);
-     toast.error(err.message || 'Failed to send UserOp with passkey.');
+     console.error("WebAuthn UserOp failed:", err);
+     toast.error(getFriendlyErrorMessage(err, 'We could not send this operation with your passkey. Please try again.'));
    } finally {
      setSending(false);
      setGlobalLoading(false);

@@ -2,7 +2,7 @@ const { ethers } = require('ethers');
 
 async function main() {
     const provider = new ethers.JsonRpcProvider("https://ethereum-sepolia-rpc.publicnode.com");
-    const SESSION_KEY_VALIDATOR = "0xC578bF1899fF9E49d0FC65BE5b1a0A26EB11aF44";
+    const SESSION_KEY_VALIDATOR = "0x9B7Fd296B6b332b525Bd6AD65f621D25C0060323";
     const validator = new ethers.Contract(SESSION_KEY_VALIDATOR, [
         "function getActiveSessionKeys(address smartAccount) external view returns (address[] memory)",
         "function sessionKeys(address account, address sessionKey) view returns (address target, bytes4 selector, uint256 maxValue, uint48 validAfter, uint48 validUntil, bool enabled, uint256 maxUses, uint256 uses)"

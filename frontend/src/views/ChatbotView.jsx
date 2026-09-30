@@ -7,6 +7,7 @@ import { ethers } from 'ethers';
 import { SessionKeyValidatorABI, SmartAccountABI } from '../utils/abis';
 import { buildAndSendAccountOp, encodeERC7579Single, encodeERC7579Batch, getActiveSessionKeysOnChain, getPrevValidator } from '../utils/helpers';
 import { estimateUserOperationGas, sendUserOperation, getUserOpReceipt, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
+import { getFriendlyErrorMessage } from '../utils/errors';
 import "./agent-ui.css";
 
 /* ---------- icons ---------- */
@@ -220,7 +221,7 @@ function AgentWorkspace({
   const scrollRef = useRef(null);
 
   useEffect(() => {
-      scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+      scrollRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [messages, isChatLoading]);
 
   const submit = (e) => {
@@ -568,10 +569,11 @@ export default function ChatbotView() {
                 await authorizeAgent(authorizedAgent);
                 go("workspace");
             } else {
-                alert("Assistant creation failed or timed out.");
+                alert("Assistant creation failed or timed out. Please try again.");
             }
         } catch (e) {
-            alert("Error creating assistant: " + e.message);
+            console.error("Assistant creation failed:", e);
+            alert(getFriendlyErrorMessage(e, "We could not create the assistant. Please check your wallet and try again."));
         } finally {
             setIsCreating(false);
         }
@@ -587,11 +589,13 @@ export default function ChatbotView() {
             selector = "0x00000000";
             maxValue = ethers.parseEther(limit);
         } else if (scope.id === 'uniswap') {
-            target = "0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F";
+            if (!env.UNISWAP_ROUTER) throw new Error("Uniswap router address missing from chain config.");
+            target = env.UNISWAP_ROUTER;
             selector = "0x00000000";
             maxValue = ethers.parseEther(limit);
         } else if (scope.id === 'erc20') {
-            target = "0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E";
+            if (!env.USDC_TOKEN) throw new Error("USDC token address missing from chain config.");
+            target = env.USDC_TOKEN;
             selector = "0xa9059cbb";
             maxValue = 0n;
         }
@@ -640,7 +644,8 @@ export default function ChatbotView() {
                 }));
             }
         } catch (e) {
-            alert("Failed to sync agents: " + (e.response?.data?.error || e.message));
+            console.error("Agent sync failed:", e);
+            alert(getFriendlyErrorMessage(e, "We could not sync agents right now. Please try again."));
         } finally {
             setIsSyncing(false);
         }
@@ -672,7 +677,8 @@ export default function ChatbotView() {
                 handleNewAgent();
             }
         } catch (e) {
-            alert("Failed to delete agent: " + (e.response?.data?.error || e.message));
+            console.error("Agent revoke failed:", e);
+            alert(getFriendlyErrorMessage(e, "We could not revoke this agent. Please check your wallet and try again."));
         } finally {
             setIsDeleting(false);
         }
@@ -715,7 +721,8 @@ export default function ChatbotView() {
             await refreshInstalledModules();
             handleNewAgent();
         } catch (e) {
-            alert("Failed to revoke all agents: " + (e.response?.data?.error || e.message));
+            console.error("Revoke all agents failed:", e);
+            alert(getFriendlyErrorMessage(e, "We could not revoke all agents. Please check your wallet and try again."));
         } finally {
             setIsRevokingAll(false);
         }

@@ -1,0 +1,69 @@
+I reviewed the implemented frontend screens and flows. I’d make the video one story: the user creates a smart-account wallet, grants a bounded agent permission, the agent acts, and the user can audit or revoke it.
+What Exists
+Area	What’s in the UI
+Landing	WalletCopilot hero, active chains, mock live agent logs, interactive agent demo, architecture/security/FAQ sections
+Dashboard	Signer wallet, Smart Vault, balances, smart account status, session-key status, non-custodial policy banner, portfolio widget, Chainlink prices, Aave widget
+Wallet Copilot	Configure AI Assistants, select capabilities, set max limits, set expiry, create/authorize assistants, workspace chat, agent dropdown, Sync Agents, New Agent, Revoke Agent, Revoke All
+Agent capabilities	Native transfer, Uniswap V3 swap, ERC-20/USDC transfer, financial read-only market/portfolio agent
+Gas Sponsorship	Paymaster allowance, USDC allowance presets/input, approve gas sponsorship, non-custodial escrow badges
+History	Recent UserOperations, labels, pending/success/reverted/dropped states, hashes, copy, explorer links
+Mint USDC	Testnet USDC faucet, mint to Smart Account, Aave approve+deposit batched UserOp
+Raw UserOps	Send ETH, USDC, Uniswap swap, contract call, gas estimate, paymaster toggle, advanced gas
+Batch Ops	Multiple operations in one atomic transaction, paymaster toggle, gas estimate
+Modules	Social recovery, session keys, WebAuthn passkey module
+Admin	Chain config, shared contracts, observability/debug ops, multisig/admin actions
+
+
+Show These
+Include	Why
+Dashboard / Smart Vault	Establishes non-custodial wallet: funds stay in smart account, not in the agent.
+Configure AI Assistants	Best visual proof of “user-defined limits”: capabilities, max amount, expiry.
+Agent Workspace execution	Core story: user asks, agent acts through an authorized session key.
+UserOp History	Makes autonomy feel accountable: every action is auditable.
+Gas Sponsorship	Nice supporting beat: payments and fees can be abstracted via USDC.
+
+
+Skip These
+Skip	Why
+Raw SendOp / BatchSend	Powerful but too developer-facing for a 60-second product story.
+Mint USDC / Faucet	Feels like testnet plumbing, not agentic wallet value.
+WebAuthn / Social Recovery	Security depth, but it competes with the agent story.
+Admin Control	Internal/operator surface, not buyer/user story.
+Landing mock demo as proof	It’s useful for a hook, but it’s mock/demo content, not the real connected app flow.
+
+
+Clips To Record
+Functionality	Exact screen / clicks	End state	Length
+Smart Vault control	Start connected on Dashboard. Frame Signer Wallet, Smart Vault, Non-custodial Policy.	Smart account + balances + session key status visible.	8s
+Set agent limits	Click Wallet Copilot → Configure Assistants. Toggle Uniswap V3 and/or ERC-20, edit limit, show 30 days.	Create & Authorize Assistants button visible with selected limits.	13s
+Agent acts	In Wallet Copilot → Workspace, select an authorized agent, type/click Swap 0.001 ETH for USDC. Cut to result.	Agent response shows execution and operation / tx link.	16s
+Audit trail	Click UserOp History.	Recent transaction row visible with label, status, hash, Explorer.	9s
+Gas sponsorship	Click Gas Sponsorship, click a preset like +10, show allowance panel.	Approve Gas Sponsorship + USDC allowance visible.	6s
+
+
+60-Second Storyboard
+Time	Clip to record	On-screen / slide text	Voiceover
+0-4	Intro slide	Your wallet should delegate, not surrender	What if your wallet could delegate work without giving up control?
+4-12	Dashboard	Smart account custody. Agent-ready controls.	WalletCopilot starts with a smart account: the user keeps custody, while balances, deposits, chains, and policy status stay visible.
+12-25	Configure Assistants	Choose capability. Set limit. Set expiry.	Next, the user creates an assistant. They choose what it can do, set a maximum amount, and set an expiry.
+25-41	Agent Workspace	Ask once. Agent executes within policy.	Now the agent can act. Ask it to swap ETH for USDC, and it uses its authorized session key to execute the UserOperation.
+41-50	UserOp History	Every agent action is auditable	Every action lands in history, with status, hash, and explorer link.
+50-56	Gas Sponsorship	Pay fees with USDC allowance	Gas sponsorship lets the same wallet pay fees through USDC allowance.
+56-60	Outro slide	WalletCopilot: agentic payments with user-defined limits	Autonomous agents, user-defined limits, auditable payments. WalletCopilot.
+
+
+Voiceover is about 102 words.
+Intro Slide
+Headline: Your wallet should delegate, not surrender
+Subline: Let AI agents make payments and DeFi moves from a smart account, bounded by the limits you set.
+Outro Slide
+Headline: WalletCopilot
+Subline: Agentic payments with scoped permissions, gas abstraction, and auditable UserOps.
+CTA: Create an agent. Set the limits. Let it work.
+Camera Risks / Fix Before Recording
+- The connected UI says funds stay in the Smart Account; avoid saying the agent literally “holds funds” unless you add a separate agent balance screen.
+- The landing demo is mock/randomized. Don’t use it as proof of real execution.
+- The connected financial agent is labeled read-only market telemetry, but suggestions include sends/swaps. That may confuse viewers.
+- The app shows max amount and expiry, not a clear “daily limit” reset. Avoid saying daily limits.
+- Quick Swap modal exists in code, but I did not find a visible button that opens it. Skip or add a trigger before recording.
+- Some useful screens are not in the main navbar even though they are renderable/imported, so avoid showing them unless you have a reliable route/state setup.

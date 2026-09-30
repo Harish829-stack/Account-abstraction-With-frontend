@@ -18,8 +18,69 @@ import {
   getReadRpcUrl,
   SHARED_CONTRACTS,
 } from "../config/chains";
+import { getFriendlyErrorMessage } from "../utils/errors";
 
 const AppContext = createContext();
+const FINANCIAL_API = (import.meta.env.VITE_FINANCIAL_AGENT_URL || "http://127.0.0.1:3003").replace(/\/$/, "");
+const SHARED_DATA_CACHE_KEY = "aa_wallet_shared_data_cache";
+const SHARED_DATA_MAX_AGE_MS = 5 * 60 * 1000;
+const EMPTY_SHARED_DATA_CACHE = {
+  portfolio: {},
+  prices: {},
+  aave: {},
+  paymasterAllowance: {},
+};
+const ERC20_EVENT_ABI = [
+  ...ERC20_ABI,
+  "event Transfer(address indexed from, address indexed to, uint256 value)",
+  "event Approval(address indexed owner, address indexed spender, uint256 value)",
+];
+
+function readPersistedSharedDataCache() {
+  try {
+    const raw = window.localStorage.getItem(SHARED_DATA_CACHE_KEY);
+    if (!raw) return EMPTY_SHARED_DATA_CACHE;
+
+    const parsed = JSON.parse(raw);
+    const now = Date.now();
+    return Object.fromEntries(
+      Object.entries(EMPTY_SHARED_DATA_CACHE).map(([section, emptyValue]) => [
+        section,
+        Object.fromEntries(
+          Object.entries(parsed[section] || emptyValue).map(([key, entry]) => [
+            key,
+            {
+              ...entry,
+              loading: false,
+              stale: entry?.updatedAt ? now - entry.updatedAt > SHARED_DATA_MAX_AGE_MS : true,
+            },
+          ])
+        ),
+      ])
+    );
+  } catch {
+    return EMPTY_SHARED_DATA_CACHE;
+  }
+}
+
+function persistSharedDataCache(cache) {
+  try {
+    const serializable = Object.fromEntries(
+      Object.entries(cache).map(([section, entries]) => [
+        section,
+        Object.fromEntries(
+          Object.entries(entries || {}).map(([key, entry]) => [
+            key,
+            { ...entry, loading: false },
+          ])
+        ),
+      ])
+    );
+    window.localStorage.setItem(SHARED_DATA_CACHE_KEY, JSON.stringify(serializable));
+  } catch {
+    // Cache writes are best-effort only.
+  }
+}
 
 export const useAppContext = () => useContext(AppContext);
 
@@ -56,7 +117,9 @@ export const AppProvider = ({ children }) => {
   const nativeToken = getNativeCurrency(currentChain?.chainId).symbol;
   const isAmoy = currentChain?.name === "Polygon Amoy";
 
-  const getUsdcAddress = (targetChainId = currentChain?.chainId) => getChainContracts(targetChainId).usdcToken || "";
+  const getUsdcAddress = useCallback((targetChainId = currentChain?.chainId) => (
+    getChainContracts(targetChainId).usdcToken || ""
+  ), [currentChain?.chainId]);
 
 
   const [eoaETHBalance, setEoaETHBalance] = useState("0");
@@ -140,6 +203,13 @@ export const AppProvider = ({ children }) => {
   const refreshLightInFlightRef = useRef(null);
   const lastRefreshAllAtRef = useRef(0);
   const tokenMetaCacheRef = useRef(new Map());
+  const sharedDataInFlightRef = useRef(new Map());
+  const [sharedDataCache, setSharedDataCache] = useState(() => readPersistedSharedDataCache());
+  const sharedDataCacheRef = useRef(sharedDataCache);
+  useEffect(() => {
+    sharedDataCacheRef.current = sharedDataCache;
+    persistSharedDataCache(sharedDataCache);
+  }, [sharedDataCache]);
 
   const [paymasterAddress, setPaymasterAddress] = useState(getChainContracts(getDefaultChainId()).paymaster || "");
   useEffect(() => {
@@ -219,6 +289,145 @@ export const AppProvider = ({ children }) => {
       return fallback;
     }
   };
+
+  const getAccountDataKey = useCallback((address = smartAccountAddress, targetChainId = chainId) => {
+    if (!address || !targetChainId) return null;
+    return `${targetChainId}:${address.toLowerCase()}`;
+  }, [smartAccountAddress, chainId]);
+
+  const getChainDataKey = useCallback((targetChainId = chainId) => {
+    if (!targetChainId) return null;
+    return String(targetChainId);
+  }, [chainId]);
+
+  const updateSharedDataEntry = useCallback((section, key, patch) => {
+    if (!section || !key) return;
+    setSharedDataCache((prev) => ({
+      ...prev,
+      [section]: {
+        ...(prev[section] || {}),
+        [key]: {
+          ...(prev[section]?.[key] || {}),
+          ...patch,
+        },
+      },
+    }));
+  }, []);
+
+  const markSharedDataStale = useCallback((sections = ["portfolio", "prices", "aave", "paymasterAllowance"]) => {
+    setSharedDataCache((prev) => {
+      const next = { ...prev };
+      sections.forEach((section) => {
+        next[section] = Object.fromEntries(
+          Object.entries(prev[section] || {}).map(([key, entry]) => [key, { ...entry, stale: true }])
+        );
+      });
+      return next;
+    });
+  }, []);
+
+  const readCachedData = useCallback(async (section, key, loader, { force = false } = {}) => {
+    if (!section || !key) return null;
+    const inflightKey = `${section}:${key}`;
+    const currentEntry = sharedDataCacheRef.current[section]?.[key];
+    if (!force && currentEntry && !currentEntry.stale && Object.prototype.hasOwnProperty.call(currentEntry, "data")) {
+      return currentEntry.data;
+    }
+    if (sharedDataInFlightRef.current.has(inflightKey)) {
+      return sharedDataInFlightRef.current.get(inflightKey);
+    }
+
+    updateSharedDataEntry(section, key, { loading: true, error: null });
+    const request = (async () => {
+      try {
+        const data = await loader();
+        updateSharedDataEntry(section, key, {
+          data,
+          error: null,
+          loading: false,
+          stale: false,
+          updatedAt: Date.now(),
+        });
+        return data;
+      } catch (error) {
+        console.error(`Failed to refresh ${section}:`, error);
+        updateSharedDataEntry(section, key, {
+          error: getFriendlyErrorMessage(error, "We could not refresh this data."),
+          loading: false,
+          stale: true,
+        });
+        throw error;
+      } finally {
+        sharedDataInFlightRef.current.delete(inflightKey);
+      }
+    })();
+
+    sharedDataInFlightRef.current.set(inflightKey, request);
+    return request;
+  }, [updateSharedDataEntry]);
+
+  const refreshFinancialPortfolio = useCallback(async ({ force = false } = {}) => {
+    const key = getAccountDataKey();
+    if (!key || !smartAccountAddress) return null;
+    return readCachedData("portfolio", key, async () => {
+      const response = await fetch(`${FINANCIAL_API}/api/financial/portfolio/${chainId}/${smartAccountAddress}`);
+      if (!response.ok) throw new Error(`Portfolio request failed with ${response.status}`);
+      return response.json();
+    }, { force });
+  }, [chainId, smartAccountAddress, getAccountDataKey, readCachedData]);
+
+  const refreshMarketPrices = useCallback(async ({ force = false } = {}) => {
+    const key = getChainDataKey();
+    if (!key || !chainId) return null;
+    return readCachedData("prices", key, async () => {
+      const response = await fetch(`${FINANCIAL_API}/api/financial/market/prices?chainId=${chainId}`);
+      if (!response.ok) throw new Error(`Price request failed with ${response.status}`);
+      const payload = await response.json();
+      return payload.prices;
+    }, { force });
+  }, [chainId, getChainDataKey, readCachedData]);
+
+  const refreshAaveData = useCallback(async ({ force = false } = {}) => {
+    const key = getAccountDataKey();
+    if (!key || !chainId) return null;
+    return readCachedData("aave", key, async () => {
+      const response = await fetch(`${FINANCIAL_API}/api/financial/aave/${chainId}/usdc`);
+      if (!response.ok) throw new Error(`Aave request failed with ${response.status}`);
+      const market = await response.json();
+      if (market.error) throw new Error(market.error);
+      market.supplyCap = "12000000000";
+
+      const position = { earnings: "0", principal: "0", totalBalance: "0" };
+      if (smartAccountAddress && provider && market.poolAddress) {
+        const pool = new ethers.Contract(market.poolAddress, [
+          "function earned(address) view returns (uint256)",
+          "function positions(address) view returns (uint256 amount, uint256 lastUpdateTime, uint256 rewards)"
+        ], provider);
+        const [earnedRaw, poolPosition] = await Promise.all([
+          pool.earned(smartAccountAddress),
+          pool.positions(smartAccountAddress),
+        ]);
+        position.earnings = parseFloat(ethers.formatUnits(earnedRaw, 6)).toFixed(6);
+        position.principal = parseFloat(ethers.formatUnits(poolPosition.amount, 6)).toFixed(6);
+        position.totalBalance = (parseFloat(position.earnings) + parseFloat(position.principal)).toFixed(6);
+      }
+
+      return { market, position };
+    }, { force });
+  }, [chainId, smartAccountAddress, provider, getAccountDataKey, readCachedData]);
+
+  const refreshPaymasterAllowance = useCallback(async ({ force = false } = {}) => {
+    const key = getAccountDataKey();
+    if (!key || !provider || !smartAccountAddress || !paymasterAddress) return null;
+    const usdcAddress = getUsdcAddress();
+    if (!usdcAddress) return null;
+
+    return readCachedData("paymasterAllowance", key, async () => {
+      const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, provider);
+      const allowance = await usdc.allowance(smartAccountAddress, paymasterAddress);
+      return ethers.formatUnits(allowance, 6);
+    }, { force });
+  }, [provider, smartAccountAddress, paymasterAddress, getUsdcAddress, getAccountDataKey, readCachedData]);
 
   const fetchRecentOps = async (saAddress = smartAccountAddress, _provider = provider) => {
     if (!saAddress || !_provider) return;
@@ -446,12 +655,14 @@ export const AppProvider = ({ children }) => {
       const code = await _provider.getCode(saAddress);
       if (code === "0x") {
         setIsSmartAccountDeployed(false);
+        setSmartAccountStatus("predicted");
         setSaEntryPointDeposit("0");
         setSaOwner("");
         return;
       }
 
       setIsSmartAccountDeployed(true);
+      setSmartAccountStatus((prev) => (prev === "agent_ready" ? prev : "deployed"));
 
       const entryPoint = new ethers.Contract(SHARED_CONTRACTS.ENTRY_POINT, IEntryPointABI, _provider);
       const deposit = await entryPoint.balanceOf(saAddress);
@@ -592,6 +803,9 @@ export const AppProvider = ({ children }) => {
       if (eoaAddress) refreshes.push(loadEOABalances(eoaAddress, provider));
       if (smartAccountAddress) {
         refreshes.push(loadSmartAccountDetails(smartAccountAddress, provider, { includeContractDetails: false }));
+        refreshes.push(refreshFinancialPortfolio({ force }));
+        refreshes.push(refreshAaveData({ force }));
+        refreshes.push(refreshPaymasterAllowance({ force }));
       }
       if (paymasterAddress) {
         refreshes.push(loadPaymasterDetails(paymasterAddress, provider, { includeEntryPointInfo: false }));
@@ -599,6 +813,7 @@ export const AppProvider = ({ children }) => {
 
       await Promise.allSettled(refreshes);
       lastRefreshAllAtRef.current = Date.now();
+      markSharedDataStale(["prices"]);
       setRefreshTrigger(prev => prev + 1);
     })();
 
@@ -622,8 +837,12 @@ export const AppProvider = ({ children }) => {
         refreshes.push(loadSmartAccountDetails(smartAccountAddress, provider, { includeContractDetails: true }));
         refreshes.push(fetchRecentOps(smartAccountAddress, provider));
         refreshes.push(refreshInstalledModules(smartAccountAddress, provider, null, { force }));
+        refreshes.push(refreshFinancialPortfolio({ force }));
+        refreshes.push(refreshAaveData({ force }));
+        refreshes.push(refreshPaymasterAllowance({ force }));
       }
       if (paymasterAddress) refreshes.push(loadPaymasterDetails(paymasterAddress, provider, { includeEntryPointInfo: true }));
+      refreshes.push(refreshMarketPrices({ force }));
 
       await Promise.allSettled(refreshes);
       lastRefreshAllAtRef.current = Date.now();
@@ -644,30 +863,57 @@ export const AppProvider = ({ children }) => {
     }
   }, [provider, eoaAddress, smartAccountAddress, paymasterAddress]);
 
-  // Ref for latest refreshLightData to avoid stale closures in the block listener
-  const refreshLightDataRef = useRef(refreshLightData);
-  useEffect(() => {
-    refreshLightDataRef.current = refreshLightData;
-  }, [refreshLightData]);
+  const invalidatePlatformData = useCallback((reason = "event") => {
+    console.info(`[AppContext] Refreshing platform state from ${reason}`);
+    markSharedDataStale();
+    void refreshLightData({ force: true });
+  }, [markSharedDataStale, refreshLightData]);
 
-  // Real-time block listener (throttled to avoid RPC spam)
   useEffect(() => {
-    if (!provider) return;
+    if (!provider || !chainId) return;
+    const usdcAddress = getUsdcAddress();
+    if (!usdcAddress) return;
 
-    const onBlock = (blockNum) => {
-      // Trigger every 2 blocks (~24s) to catch external incoming/outgoing transfers faster
-      if (document.visibilityState === "visible" && blockNum % 2 === 0) {
-        if (refreshLightDataRef.current) {
-          refreshLightDataRef.current();
-        }
+    const watchedAddresses = [eoaAddress, smartAccountAddress, paymasterAddress]
+      .filter(Boolean)
+      .map((address) => address.toLowerCase());
+    if (watchedAddresses.length === 0) return;
+
+    const usdc = new ethers.Contract(usdcAddress, ERC20_EVENT_ABI, provider);
+    const listeners = [];
+    let refreshTimer = null;
+    const scheduleRefresh = (reason) => {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        invalidatePlatformData(reason);
+      }, 1200);
+    };
+    const addListener = (eventName, handler) => {
+      usdc.on(eventName, handler);
+      listeners.push([eventName, handler]);
+    };
+    const addressMatches = (value) => value && watchedAddresses.includes(String(value).toLowerCase());
+    const onTransfer = (from, to) => {
+      if (addressMatches(from) || addressMatches(to)) {
+        scheduleRefresh("USDC transfer event");
+      }
+    };
+    const onApproval = (owner, spender) => {
+      if (addressMatches(owner) || addressMatches(spender)) {
+        scheduleRefresh("USDC approval event");
       }
     };
 
-    provider.on("block", onBlock);
+    addListener("Transfer", onTransfer);
+    addListener("Approval", onApproval);
+
     return () => {
-      provider.off("block", onBlock);
+      window.clearTimeout(refreshTimer);
+      listeners.forEach(([eventName, handler]) => {
+        usdc.off(eventName, handler);
+      });
     };
-  }, [provider]);
+  }, [provider, chainId, eoaAddress, smartAccountAddress, paymasterAddress, getUsdcAddress, invalidatePlatformData]);
 
   // Global background poller — polls every 3s for all pending tracked ops
   const setCurrentViewRef = useRef(null);
@@ -692,7 +938,7 @@ export const AppProvider = ({ children }) => {
         'View in History →',
         () => setCurrentViewRef.current && setCurrentViewRef.current('history')
       );
-      refreshAllData();
+      refreshAllData({ force: true });
     };
 
     const markReverted = (opHash, txHash, label) => {
@@ -701,7 +947,7 @@ export const AppProvider = ({ children }) => {
       ));
       addPendingUserOp(opHash, txHash);
       toast.error(`"${label}" reverted on-chain.`);
-      refreshAllData();
+      refreshAllData({ force: true });
     };
 
     const markDropped = (opHash, label) => {
@@ -814,7 +1060,7 @@ export const AppProvider = ({ children }) => {
         toast.error("Transaction rejected by user.");
       } else {
         console.error(error);
-        toast.error(error.message || "Failed to connect wallet.");
+        toast.error(getFriendlyErrorMessage(error, "We could not connect your wallet. Please try again."));
       }
     } finally {
       setIsConnecting(false);
@@ -861,11 +1107,11 @@ export const AppProvider = ({ children }) => {
           }
         } catch (addError) {
           console.error("Failed to add network:", addError);
-          toast.error("Failed to add network to MetaMask.");
+          toast.error(getFriendlyErrorMessage(addError, "We could not add this network to your wallet."));
         }
       } else {
         console.error("Failed to switch network:", switchError);
-        toast.error("Failed to switch network in MetaMask.");
+        toast.error(getFriendlyErrorMessage(switchError, "We could not switch networks. Please try again in your wallet."));
       }
     }
   };
@@ -934,20 +1180,16 @@ export const AppProvider = ({ children }) => {
   useEffect(() => {
     if (smartAccountAddress) {
       if (eoaAddress && chainId) {
-        void upsertSmartAccount({
-          address: smartAccountAddress,
-          ownerEoa: eoaAddress,
-          chainId,
+      void upsertSmartAccount({
+        address: smartAccountAddress,
+        ownerEoa: eoaAddress,
+        chainId,
         }).catch((error) => {
           console.warn("Failed to persist smart account:", error);
         });
       }
-      loadSmartAccountDetails(smartAccountAddress);
-      fetchRecentOps(smartAccountAddress);
-      // Fetch installed modules from blockchain once on connect
-      refreshInstalledModules(smartAccountAddress, provider);
     }
-  }, [smartAccountAddress]);
+  }, [smartAccountAddress, eoaAddress, chainId]);
 
   const value = {
     isTxLoading, txLoadingMessage, setGlobalLoading,
@@ -961,7 +1203,8 @@ export const AppProvider = ({ children }) => {
     paymasterAddress, setPaymasterAddress,
     pmETHBalance, pmUSDCBalance, pmDeposit, pmStake, pmUnstakeDelay, pmTokenSymbol, pmTokenDecimals,
     connectWallet, disconnect, isConnecting, switchNetwork,
-    loadEOABalances, loadSmartAccountDetails, loadPaymasterDetails, refreshAllData, refreshTrigger,
+    loadEOABalances, loadSmartAccountDetails, loadPaymasterDetails, refreshLightData, refreshAllData, refreshTrigger,
+    sharedDataCache, refreshFinancialPortfolio, refreshMarketPrices, refreshAaveData, refreshPaymasterAllowance, markSharedDataStale,
     // Module installation status (blockchain-sourced, device-agnostic)
     installedModules, loadingModules, refreshInstalledModules,
     isMultisigOwner,
@@ -975,6 +1218,10 @@ export const AppProvider = ({ children }) => {
       PAYMASTER: currentContracts.paymaster,
       MULTISIG_PROXY: currentContracts.multisigProxy,
       USDC_TOKEN: getUsdcAddress(),
+      WETH_TOKEN: currentContracts.wethToken,
+      AAVE_POOL: currentContracts.aavePool,
+      UNISWAP_ROUTER: currentContracts.uniswapRouter,
+      UNISWAP_QUOTER: currentContracts.uniswapQuoter,
 
       PRICE_FEED: currentContracts.priceFeed,
       BUNDLER_URL: currentChain?.bundlerUrl,

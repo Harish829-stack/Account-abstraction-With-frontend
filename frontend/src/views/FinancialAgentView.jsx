@@ -5,6 +5,7 @@ import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { buildAndSendAccountOp, encodeERC7579Batch } from '../utils/helpers';
 import { getDefaultChainId } from '../config/chains';
+import { getFriendlyErrorMessage } from '../utils/errors';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const FINANCIAL_API = (import.meta.env.VITE_FINANCIAL_AGENT_URL || 'http://127.0.0.1:3003').replace(/\/$/, '');
@@ -36,8 +37,7 @@ export default function FinancialAgentView() {
   const resolvedChainId = Number(chainId) || getDefaultChainId();
   const { error } = useToast();
   
-  const usdcAddress = env?.VITE_USDC_TOKEN || '0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E';
-  const AAVE_POOL = import.meta.env.VITE_AAVE_YIELD_POOL;
+  const usdcAddress = env?.USDC_TOKEN || '';
 
   const [depositAmount, setDepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
@@ -65,6 +65,7 @@ export default function FinancialAgentView() {
   const [isLoadingPortfolio, setIsLoadingPortfolio] = useState(false);
   const [prices, setPrices] = useState(null);
   const [aaveMarket, setAaveMarket] = useState(null);
+  const aavePoolAddress = aaveMarket?.poolAddress || env?.AAVE_POOL || '';
   const [isLoadingAave, setIsLoadingAave] = useState(false);
   const [aaveError, setAaveError] = useState(null);
 
@@ -142,8 +143,8 @@ export default function FinancialAgentView() {
         setAaveTotalBalance('0');
       }
     } catch (e) {
-      const msg = e.response?.data?.error || e.message || 'Unknown error';
-      setAaveError(msg);
+      console.error("Aave market load failed:", e);
+      setAaveError(getFriendlyErrorMessage(e, 'We could not refresh Aave market data.'));
     } finally {
       setIsLoadingAave(false);
     }
@@ -162,15 +163,19 @@ export default function FinancialAgentView() {
       error('Please enter a valid amount');
       return;
     }
+    if (!usdcAddress || !aavePoolAddress) {
+      error('USDC or Aave pool address is missing from chain config.');
+      return;
+    }
     try {
       setIsOpPending(true);
       const amountToDeposit = ethers.parseUnits(depositAmount.toString(), 6);
       const mockToken = new ethers.Contract(usdcAddress, ['function approve(address spender, uint256 amount) external returns (bool)'], signer);
-      const pool = new ethers.Contract(AAVE_POOL, ['function deposit(uint256 _amount) external'], signer);
-      const approveData = mockToken.interface.encodeFunctionData('approve', [AAVE_POOL, amountToDeposit]);
+      const pool = new ethers.Contract(aavePoolAddress, ['function deposit(uint256 _amount) external'], signer);
+      const approveData = mockToken.interface.encodeFunctionData('approve', [aavePoolAddress, amountToDeposit]);
       const depositData = pool.interface.encodeFunctionData('deposit', [amountToDeposit]);
       const callData = encodeERC7579Batch(
-        [usdcAddress, AAVE_POOL],
+        [usdcAddress, aavePoolAddress],
         [0n, 0n],
         [approveData, depositData]
       );
@@ -178,7 +183,8 @@ export default function FinancialAgentView() {
       trackOp(opHash, "Aave Deposit");
       setDepositAmount('');
     } catch (err) {
-      error(err.reason || err.message || 'Failed Batched Aave Deposit');
+      console.error("Financial agent Aave deposit failed:", err);
+      error(getFriendlyErrorMessage(err, 'We could not submit the Aave deposit. Please check your USDC balance and try again.'));
     } finally {
       setIsOpPending(false);
     }
@@ -189,14 +195,18 @@ export default function FinancialAgentView() {
       error('Please enter a valid amount');
       return;
     }
+    if (!aavePoolAddress) {
+      error('Aave pool address is missing from chain config.');
+      return;
+    }
     try {
       setIsOpPending(true);
       const amountToWithdraw = ethers.parseUnits(withdrawAmount.toString(), 6);
-      const pool = new ethers.Contract(AAVE_POOL, ['function withdraw(uint256 _amount) external', 'function claimReward() external'], signer);
+      const pool = new ethers.Contract(aavePoolAddress, ['function withdraw(uint256 _amount) external', 'function claimReward() external'], signer);
       const withdrawData = pool.interface.encodeFunctionData('withdraw', [amountToWithdraw]);
       const claimData = pool.interface.encodeFunctionData('claimReward', []);
       const callData = encodeERC7579Batch(
-        [AAVE_POOL, AAVE_POOL],
+        [aavePoolAddress, aavePoolAddress],
         [0n, 0n],
         [claimData, withdrawData]
       );
@@ -204,7 +214,8 @@ export default function FinancialAgentView() {
       trackOp(opHash, "Aave Claim & Withdraw");
       setWithdrawAmount('');
     } catch (err) {
-      error(err.reason || err.message || 'Failed Batched Withdraw & Claim');
+      console.error("Financial agent Aave withdrawal failed:", err);
+      error(getFriendlyErrorMessage(err, 'We could not submit the Aave withdrawal. Please check your position and try again.'));
     } finally {
       setIsOpPending(false);
     }
@@ -263,11 +274,12 @@ export default function FinancialAgentView() {
       }
 
     } catch (e) {
-      const errMsg = e.response?.data?.error || e.message || 'Network error';
+      console.error("Financial agent chat failed:", e);
+      const errMsg = getFriendlyErrorMessage(e, 'I could not reach the financial agent right now. Please try again.');
       setMessages(prev => [...prev, {
         id: Date.now() + 1,
         role: 'agent',
-        content: `⚠️ Error: ${errMsg}`,
+        content: errMsg,
         time: fmtTime(),
         toolCalls: [],
       }]);
@@ -296,7 +308,8 @@ export default function FinancialAgentView() {
       setProposalMsg('✅ Proposal confirmed! The platform execution path can now submit it.');
       setActiveProposal(prev => ({ ...prev, status: 'CONFIRMED' }));
     } catch (e) {
-      setProposalMsg('❌ ' + (e.response?.data?.error || e.message));
+      console.error("Proposal confirmation failed:", e);
+      setProposalMsg(getFriendlyErrorMessage(e, 'We could not confirm this proposal. Please try again.'));
     } finally {
       setIsConfirming(false);
     }
@@ -312,7 +325,8 @@ export default function FinancialAgentView() {
       setActiveProposal(null);
       setProposalMsg('');
     } catch (e) {
-      setProposalMsg('❌ ' + (e.response?.data?.error || e.message));
+      console.error("Proposal rejection failed:", e);
+      setProposalMsg(getFriendlyErrorMessage(e, 'We could not reject this proposal. Please try again.'));
     }
   };
 
