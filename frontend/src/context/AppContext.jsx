@@ -23,6 +23,7 @@ import { getFriendlyErrorMessage } from "../utils/errors";
 const AppContext = createContext();
 const FINANCIAL_API = (import.meta.env.VITE_FINANCIAL_AGENT_URL || "http://127.0.0.1:3003").replace(/\/$/, "");
 const SHARED_DATA_CACHE_KEY = "aa_wallet_shared_data_cache";
+const AGENT_READY_CACHE_KEY = "aa_wallet_agent_ready_accounts";
 const SHARED_DATA_MAX_AGE_MS = 5 * 60 * 1000;
 const EMPTY_SHARED_DATA_CACHE = {
   portfolio: {},
@@ -82,6 +83,42 @@ function persistSharedDataCache(cache) {
   }
 }
 
+function getAgentReadyCacheKey(chainId, smartAccountAddress) {
+  if (!chainId || !smartAccountAddress) return null;
+  return `${Number(chainId)}:${smartAccountAddress.toLowerCase()}`;
+}
+
+function readAgentReadyCache() {
+  try {
+    const raw = window.localStorage.getItem(AGENT_READY_CACHE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function isCachedAgentReady(chainId, smartAccountAddress) {
+  const key = getAgentReadyCacheKey(chainId, smartAccountAddress);
+  if (!key) return false;
+  return Boolean(readAgentReadyCache()[key]?.agentReady);
+}
+
+function persistAgentReady(chainId, smartAccountAddress, agentReady) {
+  const key = getAgentReadyCacheKey(chainId, smartAccountAddress);
+  if (!key) return;
+  try {
+    const cache = readAgentReadyCache();
+    if (agentReady) {
+      cache[key] = { agentReady: true, updatedAt: Date.now() };
+    } else {
+      delete cache[key];
+    }
+    window.localStorage.setItem(AGENT_READY_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Cache writes are best-effort only.
+  }
+}
+
 export const useAppContext = () => useContext(AppContext);
 
 export const AppProvider = ({ children }) => {
@@ -127,7 +164,7 @@ export const AppProvider = ({ children }) => {
 
   const [smartAccountAddress, setSmartAccountAddress] = useState(null);
 
-  const [smartAccountStatus, setSmartAccountStatus] = useState("predicted");
+  const [smartAccountStatus, setSmartAccountStatus] = useState("checking");
   const [isSmartAccountDeployed, setIsSmartAccountDeployed] = useState(false);
 
   // Financial Agent Chat State (Persists across tabs, resets on reload)
@@ -149,26 +186,41 @@ export const AppProvider = ({ children }) => {
       if (!eoaAddress || !provider) {
         if (active) {
           setSmartAccountAddress(null);
-          setSmartAccountStatus("predicted");
+          setSmartAccountStatus("checking");
           setIsSmartAccountDeployed(false);
+          setInstalledModules({
+            hasSessionKey: false,
+            hasSocialRecovery: false,
+            hasWebAuthn: false,
+            rawValidators: [],
+          });
         }
         return;
       }
       try {
+        const network = await provider.getNetwork();
+        const activeChainId = Number(network.chainId);
         const factoryAddress = SHARED_CONTRACTS.FACTORY;
         const predicted = await predictSmartAccountAddress(eoaAddress, provider, factoryAddress);
         if (!active || !predicted) return;
 
         setSmartAccountAddress(predicted);
+        const cachedAgentReady = isCachedAgentReady(activeChainId, predicted);
+        if (cachedAgentReady) {
+          setInstalledModules((prev) => ({ ...prev, hasSessionKey: true }));
+          setSmartAccountStatus("agent_ready");
+        } else {
+          setSmartAccountStatus("checking");
+        }
 
         // Check if deployed
         const code = await provider.getCode(predicted);
         if (code !== "0x") {
           setIsSmartAccountDeployed(true);
-          setSmartAccountStatus("deployed");
+          if (!cachedAgentReady) setSmartAccountStatus("deployed");
         } else {
           setIsSmartAccountDeployed(false);
-          setSmartAccountStatus("predicted");
+          if (!cachedAgentReady) setSmartAccountStatus("predicted");
         }
       } catch (err) {
         console.error("Failed to predict and check smart account:", err);
@@ -705,12 +757,14 @@ export const AppProvider = ({ children }) => {
       };
       const modules = await getInstalledModules(saAddress, _provider, envConfig);
       setInstalledModules(modules);
+      const activeChainId = chainIdRef.current || chainId || currentChain?.chainId;
+      persistAgentReady(activeChainId, saAddress, modules.hasSessionKey);
       
       // Update smartAccountStatus based on session key validator
       setSmartAccountStatus(prev => {
         if (modules.hasSessionKey) return "agent_ready";
-        if (prev === "agent_ready" || prev === "deployed") return "deployed";
-        return prev;
+        if (prev === "predicted" || !isSmartAccountDeployed) return "predicted";
+        return "deployed";
       });
       
       lastModuleRefreshAtRef.current = Date.now();
@@ -727,7 +781,20 @@ export const AppProvider = ({ children }) => {
       moduleRefreshInFlightRef.current = null;
       setLoadingModules(false);
     }
-  }, [smartAccountAddress, provider]);
+  }, [smartAccountAddress, provider, chainId, currentChain?.chainId, isSmartAccountDeployed]);
+
+  useEffect(() => {
+    if (!smartAccountAddress || !provider || !chainId) return;
+
+    if (isCachedAgentReady(chainId, smartAccountAddress)) {
+      setInstalledModules((prev) => ({ ...prev, hasSessionKey: true }));
+      setSmartAccountStatus("agent_ready");
+    } else {
+      setSmartAccountStatus((prev) => (prev === "agent_ready" ? prev : "checking"));
+    }
+
+    void refreshInstalledModules(smartAccountAddress, provider, null, { force: true });
+  }, [smartAccountAddress, provider, chainId, refreshInstalledModules]);
 
   useEffect(() => {
     const refreshForModuleEvent = (event) => {
@@ -1074,7 +1141,15 @@ export const AppProvider = ({ children }) => {
     setSigner(null);
     setEoaAddress(null);
     setSmartAccountAddress(null);
+    setSmartAccountStatus("checking");
     setChainId(null);
+    setIsSmartAccountDeployed(false);
+    setInstalledModules({
+      hasSessionKey: false,
+      hasSocialRecovery: false,
+      hasWebAuthn: false,
+      rawValidators: [],
+    });
     setCurrentView("home");
   };
 

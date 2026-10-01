@@ -26,7 +26,7 @@ function ConnectedDashboard() {
     smartAccountAddress, smartAccountStatus, isSmartAccountDeployed, saETHBalance, saUSDCBalance,
     paymasterAddress,
     setCurrentView, refreshAllData, signer, provider, env, chainId, nativeToken, isAmoy,
-    trackOp, setGlobalLoading
+    trackOp, setGlobalLoading, loadingModules
   } = useAppContext();
   const toast = useToast();
   const uniswapRouter = env.UNISWAP_ROUTER || '';
@@ -111,6 +111,7 @@ function ConnectedDashboard() {
   const smartValueUsd = saETH * ethPrice + saUSDC;
   const agentIsReady = smartAccountStatus === "agent_ready";
   const smartStatusLabel = agentIsReady ? "Agent Ready" : (isSmartAccountDeployed ? "Needs Session Key" : "Predicted");
+  const isCheckingAgentStatus = smartAccountStatus === "checking" || loadingModules;
   const chainLabel = isAmoy ? "Amoy Testnet" : "Sepolia Testnet";
   const fmtUsdShort = (value) => `$${Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -445,6 +446,11 @@ function ConnectedDashboard() {
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-mint/15 text-mint border border-mint/30">
                 <span className="w-1.5 h-1.5 rounded-full bg-mint animate-ping"></span>
                 <span>{smartStatusLabel}</span>
+              </div>
+            ) : isCheckingAgentStatus ? (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-white/10">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                <span>Checking Status</span>
               </div>
             ) : (
               <button 
