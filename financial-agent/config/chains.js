@@ -89,11 +89,11 @@ const CHAIN_CONFIGS = {
     // Canonical MockUSDC — same CREATE3 salt as Sepolia, same address on all chains.
     usdcAddress: '0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E',
     // L2 WETH — checksummed
-    wethAddress: '0x980B3b374e3c40ffBf522c74C3470D4E01B7c773',
+    wethAddress: '0x980B62Da83eFf3D4576C647993b0c1D7faf17c73',
 
     tokens: [
       { symbol: 'USDC', address: '0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E', priceSymbol: 'USDC' },
-      { symbol: 'WETH', address: '0x980B3b374e3c40ffBf522c74C3470D4E01B7c773', priceSymbol: 'ETH'  },
+      { symbol: 'WETH', address: '0x980B62Da83eFf3D4576C647993b0c1D7faf17c73', priceSymbol: 'ETH'  },
       { symbol: 'aUSDC (Aave)', address: '0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A', priceSymbol: 'USDC' },
     ],
 

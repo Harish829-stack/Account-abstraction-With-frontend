@@ -36,7 +36,7 @@ const CHAINLINK_FEEDS = {
   // ── Arbitrum Sepolia (421614) ─────────────────────────────────────────────
   421614: {
     ETH_USD:  '0xd30e2101a97dcbAeBCBC04F14C3f624E67A35165',
-    USDC_USD: '0x011e525c56c2d1323b73373fa9f993d6b0521e8e',
+    // USDC/USD does not exist officially on Arbitrum Sepolia. Omitting to prevent 0x errors.
   },
 
   // ── Polygon Amoy (80002) ──────────────────────────────────────────────────

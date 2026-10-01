@@ -22,12 +22,14 @@ async function main() {
   console.log("Waiting 10 seconds before updating the APY...");
   await new Promise(resolve => setTimeout(resolve, 10000));
 
-  // Change APY slightly (random change between -50 and +50 basis points)
-  const change = Math.floor(Math.random() * 101) - 50; 
-  
-  let newApy = Number(currentApy) + change;
-  // Ensure APY doesn't go below 0
-  if (newApy < 0) newApy = 0;
+  // Generate APY strictly between 400 (4.0%) and 500 (5.0%)
+  // 80% chance to be in the 400-450 range (4.0% - 4.5%)
+  let newApy;
+  if (Math.random() < 0.8) {
+    newApy = Math.floor(Math.random() * 51) + 400; // 400 to 450
+  } else {
+    newApy = Math.floor(Math.random() * 50) + 451; // 451 to 500
+  }
 
   console.log(`Updating APY to: ${newApy} basis points (${newApy / 100}%)`);
   
