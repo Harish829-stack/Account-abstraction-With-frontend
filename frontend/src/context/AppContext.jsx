@@ -8,6 +8,8 @@ import {
   getAccountHistory,
   getUserOperation,
   saveUserOperation,
+  syncAccountLedger,
+  syncAccountLedgerAndWait,
   upsertSmartAccount,
 } from "../utils/backendApi";
 import {
@@ -444,26 +446,19 @@ export const AppProvider = ({ children }) => {
     const key = getAccountDataKey();
     if (!key || !chainId) return null;
     return readCachedData("aave", key, async () => {
-      const response = await fetch(`${FINANCIAL_API}/api/financial/aave/${chainId}/usdc`);
+      const aaveUrl = smartAccountAddress 
+        ? `${FINANCIAL_API}/api/financial/aave/${chainId}/usdc/${smartAccountAddress}`
+        : `${FINANCIAL_API}/api/financial/aave/${chainId}/usdc`;
+        
+      const response = await fetch(aaveUrl);
       if (!response.ok) throw new Error(`Aave request failed with ${response.status}`);
-      const market = await response.json();
-      if (market.error) throw new Error(market.error);
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+      
+      const market = data.market || data;
       market.supplyCap = "12000000000";
-
-      const position = { earnings: "0", principal: "0", totalBalance: "0" };
-      if (smartAccountAddress && provider && market.poolAddress) {
-        const pool = new ethers.Contract(market.poolAddress, [
-          "function earned(address) view returns (uint256)",
-          "function positions(address) view returns (uint256 amount, uint256 lastUpdateTime, uint256 rewards)"
-        ], provider);
-        const [earnedRaw, poolPosition] = await Promise.all([
-          pool.earned(smartAccountAddress),
-          pool.positions(smartAccountAddress),
-        ]);
-        position.earnings = parseFloat(ethers.formatUnits(earnedRaw, 6)).toFixed(6);
-        position.principal = parseFloat(ethers.formatUnits(poolPosition.amount, 6)).toFixed(6);
-        position.totalBalance = (parseFloat(position.earnings) + parseFloat(position.principal)).toFixed(6);
-      }
+      
+      const position = data.position || { earnings: "0", principal: "0", totalBalance: "0" };
 
       return { market, position };
     }, { force });
@@ -582,6 +577,20 @@ export const AppProvider = ({ children }) => {
     localStorage.setItem('trackedOps', JSON.stringify(trackedOps));
   }, [trackedOps]);
 
+  // Map a UserOp label to the narrowest possible actionTag for ledger sync.
+  // Only the fields relevant to that operation will be re-verified on-chain.
+  const labelToActionTag = useCallback((label = '') => {
+    const l = label.toLowerCase();
+    if (l.includes('deploy'))                                             return 'DEPLOYMENT';
+    if (l.includes('agent') || l.includes('session'))                    return 'SESSION_KEY';
+    if (l.includes('approv'))                                            return 'APPROVAL';
+    if (l.includes('aave') || l.includes('supply') || l.includes('deposit') || l.includes('repay'))
+                                                                         return 'AAVE_POSITION';
+    if (l.includes('usdc') || l.includes('swap'))                        return 'USDC_BALANCE';
+    if (l.includes('eth') || l.includes('send') || l.includes('withdraw')) return 'ETH_BALANCE';
+    return 'FULL_SYNC';
+  }, []);
+
   const eoaAddressRef = useRef(null);
   useEffect(() => { eoaAddressRef.current = eoaAddress; }, [eoaAddress]);
   const smartAccountAddressRef = useRef(null);
@@ -683,23 +692,41 @@ export const AppProvider = ({ children }) => {
     try {
       const activeChainId = chainIdRef.current || chainId || currentChain?.chainId;
       const contracts = getChainContracts(activeChainId);
-
-      const balance = await _provider.getBalance(saAddress);
-      setSaETHBalance(balance.toString());
-
-      const usdcAddress = contracts.usdcToken;
-      if (usdcAddress) {
-        try {
-          const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
-          const usdcBal = await usdc.balanceOf(saAddress);
-          setSaUSDCBalance(usdcBal.toString());
-        } catch (e) {
-          console.warn("Failed to fetch SA USDC balance:", e);
-          setSaUSDCBalance("0");
+      try {
+        // Use sync-await on first load so DB is fresh before we fetch the portfolio
+        const ledger = await syncAccountLedgerAndWait({
+          smartAccountAddress: saAddress,
+          chainId: activeChainId,
+          actionTag: 'FULL_SYNC',
+        });
+        // After sync completes, force-refresh portfolio from fresh DB state
+        const portfolio = await refreshFinancialPortfolio({ force: true });
+        if (portfolio?.assets) {
+          const ethAsset = portfolio.assets.find(a => String(a.symbol).toUpperCase() === 'ETH');
+          const usdcAsset = portfolio.assets.find(a => String(a.symbol).toUpperCase() === 'USDC');
+          if (ethAsset) setSaETHBalance(ethAsset.balanceRaw);
+          if (usdcAsset) setSaUSDCBalance(usdcAsset.balanceRaw);
+        } else if (ledger) {
+          // Fallback: use ledger from sync-await response directly
+          if (ledger.ethBalanceWei) setSaETHBalance(ledger.ethBalanceWei);
+          if (ledger.usdcBalanceWei) setSaUSDCBalance(ledger.usdcBalanceWei);
+        }
+      } catch (err) {
+        console.warn("Failed to fetch SA balances from DB API, falling back to RPC:", err);
+        const balance = await _provider.getBalance(saAddress);
+        setSaETHBalance(balance.toString());
+        
+        const usdcAddress = contracts.usdcToken;
+        if (usdcAddress) {
+          try {
+            const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
+            const usdcBal = await usdc.balanceOf(saAddress);
+            setSaUSDCBalance(usdcBal.toString());
+          } catch (e) {
+            setSaUSDCBalance("0");
+          }
         }
       }
-
-
 
       if (!includeContractDetails) return;
 
@@ -1022,6 +1049,13 @@ export const AppProvider = ({ children }) => {
         'View in History →',
         () => setCurrentViewRef.current && setCurrentViewRef.current('history')
       );
+      // Trigger backend ledger sync — backend verifies real chain state, no values sent from frontend
+      void syncAccountLedger({
+        smartAccountAddress: smartAccountAddressRef.current,
+        chainId: chainIdRef.current,
+        actionTag: labelToActionTag(label),
+        txHash,
+      }).catch(err => console.warn('[LedgerSync] trigger failed (non-fatal):', err));
       // No force=true — let the in-flight guard and throttle deduplicate this
       refreshAllData();
     };
@@ -1270,14 +1304,23 @@ export const AppProvider = ({ children }) => {
     autoConnect();
   }, []);
 
-  // Sync smart account dynamically whenever it changes
+  // Sync smart account dynamically whenever it changes.
+  // Also fires a FULL_SYNC to bootstrap the ledger for new or returning wallets.
   useEffect(() => {
     if (smartAccountAddress) {
       if (eoaAddress && chainId) {
-      void upsertSmartAccount({
-        address: smartAccountAddress,
-        ownerEoa: eoaAddress,
-        chainId,
+        void upsertSmartAccount({
+          address: smartAccountAddress,
+          ownerEoa: eoaAddress,
+          chainId,
+        }).then(() => {
+          // Bootstrap: re-verify all on-chain state for this account.
+          // Runs on every connect so existing wallets always have fresh DB state.
+          void syncAccountLedger({
+            smartAccountAddress,
+            chainId,
+            actionTag: 'FULL_SYNC',
+          }).catch(err => console.warn('[Bootstrap] ledger FULL_SYNC failed (non-fatal):', err));
         }).catch((error) => {
           console.warn("Failed to persist smart account:", error);
         });

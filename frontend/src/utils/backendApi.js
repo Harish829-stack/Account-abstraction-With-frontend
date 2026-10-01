@@ -156,3 +156,37 @@ export async function pollReceipts() {
 export async function pollIndexer() {
   return request("/indexer/poll", { method: "POST" });
 }
+
+/**
+ * Trigger a backend ledger sync for a smart account.
+ * The backend verifies real on-chain state and updates the DB.
+ * This is fire-and-forget — the frontend never sends balance values.
+ */
+export async function syncAccountLedger({ smartAccountAddress, chainId, actionTag, txHash }) {
+  if (!smartAccountAddress || !chainId || !actionTag) return null;
+  return request(`/accounts/${smartAccountAddress}/sync`, {
+    method: "POST",
+    body: JSON.stringify({ chainId, actionTag, txHash }),
+  });
+}
+
+/**
+ * Like syncAccountLedger but AWAITS the backend sync completion and returns
+ * the freshly updated ledger. Use this for FULL_SYNC on wallet connect so
+ * the portfolio is guaranteed to be up-to-date before the UI renders.
+ *
+ * Falls back to fire-and-forget if the awaited call times out (>15s).
+ */
+export async function syncAccountLedgerAndWait({ smartAccountAddress, chainId, actionTag = 'FULL_SYNC', txHash } = {}) {
+  if (!smartAccountAddress || !chainId) return null;
+  try {
+    return await request(`/accounts/${smartAccountAddress}/sync-await`, {
+      method: "POST",
+      body: JSON.stringify({ chainId, actionTag, txHash }),
+    });
+  } catch (err) {
+    // Fallback: fire-and-forget, don't block UI
+    console.warn('[backendApi] sync-await failed, falling back to fire-and-forget:', err.message);
+    return syncAccountLedger({ smartAccountAddress, chainId, actionTag, txHash });
+  }
+}

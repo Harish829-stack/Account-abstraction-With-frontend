@@ -11,6 +11,7 @@ import { ObservabilityModule } from "./observability/observability.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { ReceiptsModule } from "./receipts/receipts.module";
 import { RedisModule } from "./redis/redis.module";
+import { SyncModule } from "./sync/sync.module";
 import { UserOpsModule } from "./user-ops/user-ops.module";
 
 @Module({
@@ -27,7 +28,8 @@ import { UserOpsModule } from "./user-ops/user-ops.module";
     ReceiptsModule,
     HealthModule,
     IndexerModule,
-    ObservabilityModule
+    ObservabilityModule,
+    SyncModule,
   ]
 })
 export class AppModule {}

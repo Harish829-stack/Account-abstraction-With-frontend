@@ -266,8 +266,10 @@ export async function getInstalledModules(smartAccountAddress, provider, env) {
 
     return {
         hasSessionKey:     allValidators.some(v => lower(v) === lower(env.SESSION_KEY_VALIDATOR)),
-        hasSocialRecovery: allValidators.some(v => lower(v) === lower(env.SOCIAL_RECOVERY_VALIDATOR)),
-        hasWebAuthn:       allValidators.some(v => lower(v) === lower(env.WEBAUTHN_VALIDATOR)),
+        // hasSocialRecovery and hasWebAuthn modules are not used on this platform.
+        // Commented out to avoid unnecessary RPC comparisons and DB writes.
+        hasSocialRecovery: false, // allValidators.some(v => lower(v) === lower(env.SOCIAL_RECOVERY_VALIDATOR)),
+        hasWebAuthn:       false, // allValidators.some(v => lower(v) === lower(env.WEBAUTHN_VALIDATOR)),
         rawValidators:     allValidators,
     };
 }

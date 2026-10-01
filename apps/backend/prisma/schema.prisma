@@ -78,6 +78,18 @@ model SmartAccount {
   financialProposals TransactionProposal[]
   financialSnapshots FinancialSnapshot[]
 
+  // ─── On-chain ledger cache (updated via trigger+verify sync) ───────────────
+  // All Wei amounts stored as strings to avoid JS number precision loss.
+  isDeployed             Boolean   @default(false)
+  hasSessionKeyModule    Boolean   @default(false)
+  ethBalanceWei          String    @default("0")
+  usdcBalanceWei         String    @default("0")
+  paymasterAllowanceWei  String    @default("0")
+  // Aave position for this specific smart account
+  aaveDepositedWei       String    @default("0")
+  aaveEarningsWei        String    @default("0")
+  ledgerUpdatedAt        DateTime?
+
   @@unique([chainId, address])
 }
 
@@ -207,4 +219,20 @@ model FinancialAuditLog {
 
   @@index([userId, eventType])
   @@index([proposalId])
+}
+
+// ─── Market Data Cache ────────────────────────────────────────────────────────
+// One row per chain. Upserted by the sync endpoint when actionTag is
+// MARKET_PRICES or FULL_SYNC. All prices are string to preserve precision.
+model ChainMarketData {
+  id             Int       @id @default(autoincrement())
+  chainId        Int       @unique
+  ethPriceUsd    String    @default("0")   // Chainlink ETH/USD latest answer
+  usdcPriceUsd   String    @default("1")   // Chainlink USDC/USD or $1 fallback
+  aaveApyBps     Int       @default(0)     // basis points: 482 = 4.82% APY
+  aaveLiquidity  String    @default("0")   // USDC balance of pool (human-readable, 6 dec)
+  priceUpdatedAt DateTime?
+  aaveUpdatedAt  DateTime?
+
+  @@index([chainId])
 }

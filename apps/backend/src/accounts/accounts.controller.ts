@@ -7,11 +7,15 @@ import {
   parsePositiveInteger
 } from "../common/validation";
 import { AccountsService } from "./accounts.service";
+import { AccountsRepository } from "./accounts.repository";
 import type { SmartAccountResponse, UserOperationHistoryItem } from "./accounts.types";
 
 @Controller("accounts")
 export class AccountsController {
-  constructor(private readonly accountsService: AccountsService) {}
+  constructor(
+    private readonly accountsService: AccountsService,
+    private readonly accountsRepository: AccountsRepository
+  ) {}
 
   @Post("upsert")
   async upsertSmartAccount(@Body() body: Record<string, unknown>): Promise<SmartAccountResponse> {
@@ -45,6 +49,22 @@ export class AccountsController {
       parseAddress(address, "address"),
       parseChainId(chainId),
       limit ? parsePositiveInteger(limit, "limit") : undefined
+    );
+  }
+
+  /**
+   * GET /accounts/:address/ledger?chainId=...
+   * Returns the cached on-chain state for a smart account from Postgres.
+   * Used by the financial-agent sidecar — no blockchain calls made here.
+   */
+  @Get(":address/ledger")
+  async getLedger(
+    @Param("address") address: string,
+    @Query("chainId") chainId: string
+  ) {
+    return this.accountsRepository.getLedger(
+      parseAddress(address, "address"),
+      parseChainId(chainId)
     );
   }
 }

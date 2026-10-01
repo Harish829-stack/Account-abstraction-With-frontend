@@ -15,10 +15,10 @@
 const { ethers } = require('ethers');
 const { Groq } = require('groq-sdk');
 const { getChainConfig } = require('../config/chains');
-const { getPortfolioSnapshot } = require('../financial/portfolioService');
-const { getAllPrices } = require('../financial/chainlinkPriceService');
+// READ_ONLY tools: served from the NestJS backend DB — no blockchain calls
+const { getLedger, getMarketData } = require('../db/backendClient');
+// PREPARATION / calculation helpers
 const { calculateYieldScenario, calculatePortfolioScenario } = require('../financial/yieldCalculator');
-const { getAaveUsdcMarket } = require('../defi/aave/aaveService');
 const { assessAaveSupplyRisk } = require('../defi/aave/aaveRiskService');
 const { getUniswapQuote } = require('../defi/uniswap/uniswapQuoteService');
 const { createProposal } = require('../transactions/proposalService');
@@ -315,29 +315,95 @@ async function _executeTool(name, args, context, accumulator) {
   const chainId = args.chainId ?? context.chainId;
 
   switch (name) {
+    // READ_ONLY: portfolio — reads cached ledger from DB, no RPC
     case 'get_portfolio_snapshot': {
-      const snapshot = await getPortfolioSnapshot(provider, chainId, args.walletAddress);
-      accumulator.portfolio = snapshot;
+      const chainId = args.chainId ?? context.chainId;
+      const walletAddress = args.walletAddress ?? context.smartAccountAddress;
+      const ledger = await getLedger(walletAddress, chainId);
+      const market = await getMarketData(chainId);
 
-      // Audit
-      await _auditLog(context.userId, null, 'PORTFOLIO_READ', { chainId, walletAddress: args.walletAddress });
+      // Format into the same shape the LLM expects
+      const ethPrice  = market ? parseFloat(market.ethPriceUsd)  : 0;
+      const usdcPrice = market ? parseFloat(market.usdcPriceUsd) : 1;
+
+      const ethFormatted  = ledger ? (BigInt(ledger.ethBalanceWei)  / BigInt(1e12)).toString() : '0';
+      const usdcFormatted = ledger ? (BigInt(ledger.usdcBalanceWei) / BigInt(1e6)).toString()  : '0';
+
+      const ethValueUsd  = (parseFloat(ethFormatted)  / 1e6) * ethPrice;
+      const usdcValueUsd = parseFloat(usdcFormatted)         * usdcPrice;
+      const totalValueUsd = ethValueUsd + usdcValueUsd;
+
+      const snapshot = {
+        walletAddress,
+        chainId,
+        timestamp: Math.floor(Date.now() / 1000),
+        totalValueUsd,
+        source: 'db_cache',
+        ledgerUpdatedAt: ledger?.ledgerUpdatedAt ?? null,
+        assets: [
+          {
+            symbol: 'ETH',
+            tokenAddress: null,
+            balanceRaw: ledger?.ethBalanceWei ?? '0',
+            balanceFormatted: (parseFloat(ethFormatted) / 1e6).toFixed(6),
+            decimals: 18,
+            priceUsd: ethPrice,
+            valueUsd: ethValueUsd,
+            allocationPercentage: totalValueUsd > 0 ? (ethValueUsd / totalValueUsd) * 100 : 0,
+          },
+          {
+            symbol: 'USDC',
+            tokenAddress: null,
+            balanceRaw: ledger?.usdcBalanceWei ?? '0',
+            balanceFormatted: usdcFormatted,
+            decimals: 6,
+            priceUsd: usdcPrice,
+            valueUsd: usdcValueUsd,
+            allocationPercentage: totalValueUsd > 0 ? (usdcValueUsd / totalValueUsd) * 100 : 0,
+          },
+        ],
+      };
+      accumulator.portfolio = snapshot;
+      await _auditLog(context.userId, null, 'PORTFOLIO_READ', { chainId, walletAddress, source: 'db_cache' });
       return snapshot;
     }
 
+    // READ_ONLY: market prices — reads ChainMarketData from DB, no RPC
     case 'get_market_prices': {
-      const prices = await getAllPrices(provider, chainId);
+      const chainId = args.chainId ?? context.chainId;
+      const market  = await getMarketData(chainId);
+      if (!market) return { error: 'No market data cached yet. Please wait for a sync.' };
+      const prices = {
+        ETH_USD:  { priceUsd: market.ethPriceUsd,  isStale: !market.priceUpdatedAt, updatedAt: market.priceUpdatedAt },
+        USDC_USD: { priceUsd: market.usdcPriceUsd,  isStale: false,                  updatedAt: market.priceUpdatedAt },
+      };
       accumulator.marketPrices = prices;
-      await _auditLog(context.userId, null, 'MARKET_PRICE_READ', { chainId });
+      await _auditLog(context.userId, null, 'MARKET_PRICE_READ', { chainId, source: 'db_cache' });
       return prices;
     }
 
+    // READ_ONLY: Aave market — reads ChainMarketData from DB, no RPC
     case 'get_aave_usdc_market': {
-      const market = await getAaveUsdcMarket(provider, chainId);
-      const risk = assessAaveSupplyRisk(market);
-      accumulator.aaveMarket = market;
-      accumulator.riskAssessment = risk;
-      await _auditLog(context.userId, null, 'AAVE_METRICS_READ', { chainId });
-      return { ...market, riskAssessment: risk };
+      const chainId = args.chainId ?? context.chainId;
+      const market  = await getMarketData(chainId);
+      if (!market) return { error: 'No Aave market data cached yet. Please wait for a sync.' };
+      const supplyApyPercentage = (market.aaveApyBps / 100).toFixed(4);
+      const result = {
+        chainId,
+        asset: 'USDC',
+        symbol: 'USDC',
+        availableLiquidity: market.aaveLiquidity,
+        supplyCap: '0',
+        supplyApyPercentage,
+        isActive: true,
+        isFrozen: false,
+        source: 'db_cache',
+        riskAssessment: assessAaveSupplyRisk({ supplyApyPercentage }),
+        timestamp: Math.floor(Date.now() / 1000),
+      };
+      accumulator.aaveMarket = result;
+      await _auditLog(context.userId, null, 'AAVE_METRICS_READ', { chainId, source: 'db_cache' });
+      return result;
     }
 
     case 'get_uniswap_quote': {

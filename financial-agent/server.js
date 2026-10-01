@@ -14,9 +14,7 @@ const cors = require('cors');
 const { ethers } = require('ethers');
 
 const { runFinancialAgent } = require('./agent/financialAgent');
-const { getPortfolioSnapshot } = require('./financial/portfolioService');
-const { getAllPrices } = require('./financial/chainlinkPriceService');
-const { getAaveUsdcMarket } = require('./defi/aave/aaveService');
+const { getLedger, getMarketData } = require('./db/backendClient');
 const { assessAaveSupplyRisk } = require('./defi/aave/aaveRiskService');
 const { getUniswapQuote } = require('./defi/uniswap/uniswapQuoteService');
 const {
@@ -130,8 +128,31 @@ app.get('/api/financial/portfolio/:chainId/:wallet', async (req, res) => {
   try {
     const chainId = requireChainId(req.params.chainId);
     requireAddress(req.params.wallet, 'wallet');
-    const provider = getProvider(chainId);
-    const snapshot = await getPortfolioSnapshot(provider, chainId, req.params.wallet);
+    const ledger = await getLedger(req.params.wallet, chainId);
+    const market = await getMarketData(chainId);
+
+    const ethPrice  = market ? parseFloat(market.ethPriceUsd)  : 0;
+    const usdcPrice = market ? parseFloat(market.usdcPriceUsd) : 1;
+    
+    const ethFormatted = ledger ? ethers.formatUnits(ledger.ethBalanceWei, 18) : '0';
+    const usdcFormatted = ledger ? ethers.formatUnits(ledger.usdcBalanceWei, 6) : '0';
+    
+    const ethValueUsd = parseFloat(ethFormatted) * ethPrice;
+    const usdcValueUsd = parseFloat(usdcFormatted) * usdcPrice;
+    const totalValueUsd = ethValueUsd + usdcValueUsd;
+
+    const snapshot = {
+      walletAddress: req.params.wallet,
+      chainId,
+      timestamp: Math.floor(Date.now() / 1000),
+      totalValueUsd,
+      source: 'db_cache',
+      ledgerUpdatedAt: ledger?.ledgerUpdatedAt ?? null,
+      assets: [
+        { symbol: 'ETH', tokenAddress: null, isEth: true, balanceRaw: ledger?.ethBalanceWei ?? '0', balanceFormatted: ethFormatted, decimals: 18, priceUsd: ethPrice, valueUsd: ethValueUsd, allocationPercentage: totalValueUsd > 0 ? (ethValueUsd / totalValueUsd) * 100 : 0 },
+        { symbol: 'USDC', tokenAddress: '0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A', isEth: false, balanceRaw: ledger?.usdcBalanceWei ?? '0', balanceFormatted: usdcFormatted, decimals: 6, priceUsd: usdcPrice, valueUsd: usdcValueUsd, allocationPercentage: totalValueUsd > 0 ? (usdcValueUsd / totalValueUsd) * 100 : 0 },
+      ],
+    };
     res.json(snapshot);
   } catch (err) {
     handleError(err, res);
@@ -142,8 +163,11 @@ app.get('/api/financial/portfolio/:chainId/:wallet', async (req, res) => {
 app.get('/api/financial/market/prices', async (req, res) => {
   try {
     const chainId = requireChainId(req.query.chainId || 11155111);
-    const provider = getProvider(chainId);
-    const prices = await getAllPrices(provider, chainId);
+    const market = await getMarketData(chainId);
+    const prices = market ? {
+      ETH_USD:  { priceUsd: market.ethPriceUsd, isStale: !market.priceUpdatedAt, updatedAt: market.priceUpdatedAt },
+      USDC_USD: { priceUsd: market.usdcPriceUsd, isStale: false, updatedAt: market.priceUpdatedAt },
+    } : {};
     res.json({ chainId, prices, timestamp: Math.floor(Date.now() / 1000) });
   } catch (err) {
     handleError(err, res);
@@ -151,13 +175,35 @@ app.get('/api/financial/market/prices', async (req, res) => {
 });
 
 // ── GET /api/financial/aave/:chainId/usdc ────────────────────────────────────
-app.get('/api/financial/aave/:chainId/usdc', async (req, res) => {
+app.get('/api/financial/aave/:chainId/usdc/:wallet?', async (req, res) => {
   try {
     const chainId = requireChainId(req.params.chainId);
-    const provider = getProvider(chainId);
-    const market = await getAaveUsdcMarket(provider, chainId);
-    const risk = assessAaveSupplyRisk(market);
-    res.json({ ...market, riskAssessment: risk });
+    const wallet = req.params.wallet;
+    const marketData = await getMarketData(chainId);
+    const supplyApyPercentage = marketData ? (marketData.aaveApyBps / 100).toFixed(4) : "0.0000";
+    const market = {
+      chainId, asset: 'USDC', symbol: 'USDC',
+      availableLiquidity: marketData?.aaveLiquidity ?? '0',
+      supplyCap: '0', supplyApyPercentage, isActive: true, isFrozen: false, source: 'db_cache',
+      timestamp: Math.floor(Date.now() / 1000),
+    };
+
+    let position = { earnings: "0", principal: "0", totalBalance: "0" };
+    if (wallet) {
+      const ledger = await getLedger(wallet, chainId);
+      if (ledger) {
+        const principalFloat = parseFloat(ethers.formatUnits(ledger.aaveDepositedWei || '0', 6));
+        const earningsFloat = parseFloat(ethers.formatUnits(ledger.aaveEarningsWei || '0', 6));
+        position = {
+          principal: principalFloat.toFixed(6),
+          earnings: earningsFloat.toFixed(6),
+          totalBalance: (principalFloat + earningsFloat).toFixed(6),
+        };
+      }
+    }
+
+    const risk = assessAaveSupplyRisk({ supplyApyPercentage });
+    res.json({ market, position, riskAssessment: risk });
   } catch (err) {
     handleError(err, res);
   }

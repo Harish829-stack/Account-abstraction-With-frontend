@@ -8,6 +8,7 @@ import { AccountsService } from "./accounts.service";
   imports: [PrismaModule],
   controllers: [AccountsController],
   providers: [AccountsRepository, AccountsService],
-  exports: [AccountsService]
+  exports: [AccountsService, AccountsRepository]
 })
 export class AccountsModule {}
+
