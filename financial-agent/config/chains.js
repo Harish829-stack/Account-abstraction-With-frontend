@@ -35,7 +35,7 @@ const CHAIN_CONFIGS = {
   // ── Ethereum Sepolia (11155111) ─────────────────────────────────────────────
   // Aave:    https://docs.aave.com/developers/deployed-contracts/v3-testnet-addresses
   // Uniswap: https://docs.uniswap.org/contracts/v3/reference/deployments/ethereum-deployments
-  11155111: {
+  /* 11155111: {
     chainId: 11155111,
     name: 'Ethereum Sepolia',
     nativeSymbol: 'ETH',
@@ -70,7 +70,7 @@ const CHAIN_CONFIGS = {
     aavePoolAddress:           '0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A',
     aaveDataProviderAddress:   undefined,
     aavePoolAddressesProvider: undefined,
-  },
+  }, */
 
   // ── Arbitrum Sepolia (421614) ───────────────────────────────────────────────
   // Aave:    https://docs.aave.com/developers/deployed-contracts/v3-testnet-addresses
@@ -110,7 +110,7 @@ const CHAIN_CONFIGS = {
 
   // ── Polygon Amoy (80002) ────────────────────────────────────────────────────
   // DeFi protocols not yet verified — portfolio read-only only
-  80002: {
+  /* 80002: {
     chainId: 80002,
     name: 'Polygon Amoy',
     nativeSymbol: 'POL',
@@ -136,7 +136,7 @@ const CHAIN_CONFIGS = {
     aavePoolAddress:           undefined,
     aaveDataProviderAddress:   undefined,
     aavePoolAddressesProvider: undefined,
-  },
+  }, */
 };
 
 /**

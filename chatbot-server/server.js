@@ -14,6 +14,7 @@ const {
     buildAndSendAgentOp,
     waitForUserOp
 } = require('./userOpBuilder');
+const { resolvePaymasterRoute } = require('./paymasterRouter');
 
 const app = express();
 const parseCorsOrigins = () => {
@@ -54,7 +55,9 @@ const rateLimiter = createRateLimiter();
 if (rateLimiter) app.use(rateLimiter);
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
+const provider = process.env.SEPOLIA_RPC_URL.startsWith('wss://') 
+  ? new ethers.WebSocketProvider(process.env.SEPOLIA_RPC_URL) 
+  : new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
 const agentStoreApiUrl = (process.env.AGENT_STORE_API_URL || process.env.CONFIG_API_URL || '').replace(/\/$/, '');
 const defaultChainId = Number(process.env.CHAIN_ID || process.env.DEFAULT_CHAIN_ID || 11155111);
 
@@ -482,7 +485,9 @@ app.post('/api/chat', async (req, res) => {
             console.warn("Failed to fetch chain config, falling back to Sepolia defaults", e.message);
         }
     }
-    const chainProvider = new ethers.JsonRpcProvider(rpcUrl);
+    const chainProvider = rpcUrl.startsWith('wss://') 
+        ? new ethers.WebSocketProvider(rpcUrl) 
+        : new ethers.JsonRpcProvider(rpcUrl);
 
 
     const config = agentStoreApiUrl
@@ -696,7 +701,89 @@ app.post('/api/chat', async (req, res) => {
 
         const agentWallet = new ethers.Wallet(config.privateKey);
         let opsResults = [];
-        
+
+        // ── Waterfall Gas Routing ────────────────────────────────────────────
+        // Resolve paymaster route ONCE before the loop (nonce-independent).
+        // Route A  → custom token paymaster
+        // Route B  → native ETH fallback (silently)
+        // Route C  → throws, message returned to user
+        let paymasterRoute = null;
+        let gasNote = '';
+        const paymasterAddress = process.env.ERC20PAYMASTER || process.env.PAYMASTER || '';
+        const gasTokenAddress  = process.env.USDC_SEPOLIA || ''; // custom gas token
+
+        if (paymasterAddress && gasTokenAddress) {
+            try {
+                // --- Lightweight gas estimate for routing decision (no paymaster attached) ---
+                const { ethers: _ethers } = require('ethers'); // already imported, just for clarity
+                const { getDynamicGasFees, estimateUserOperationGas } = require('./userOpBuilder');
+                const { maxFeePerGas } = await getDynamicGasFees(chainProvider);
+
+                // Build a throwaway op for estimation (no paymaster, dummy sig)
+                const dummyNonce = baseNonce;
+                const dummySig = ethers.hexlify(ethers.concat([
+                    agentWallet.address,
+                    '0xfffffffffffffffffffffffffffffff0000000000000000000000000000000007aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1c'
+                ]));
+                const dummyOp = {
+                    sender: smartAccountAddress,
+                    nonce: '0x' + dummyNonce.toString(16),
+                    callData,
+                    callGasLimit: '0x0',
+                    verificationGasLimit: '0x0',
+                    preVerificationGas: '0x0',
+                    maxFeePerGas: '0x' + maxFeePerGas.toString(16),
+                    maxPriorityFeePerGas: '0x' + maxFeePerGas.toString(16),
+                    paymaster: '0x',
+                    paymasterVerificationGasLimit: '0x',
+                    paymasterPostOpGasLimit: '0x',
+                    paymasterData: '0x',
+                    signature: dummySig,
+                };
+
+                let gasEstimate;
+                try {
+                    gasEstimate = await estimateUserOperationGas(dummyOp, bundlerUrl);
+                } catch (estErr) {
+                    // If estimation fails, use safe fallback values for routing decision only
+                    console.warn('[PaymasterRouter] Estimation failed for routing, using safe fallbacks:', estErr.message);
+                    gasEstimate = {
+                        callGasLimit: '2000000',
+                        verificationGasLimit: '1000000',
+                        preVerificationGas: '100000',
+                    };
+                }
+
+                // ── Token cost calculation (Hardcoded to $2500 as requested) ────────
+                let ethPriceUsd = 2500; 
+                
+                // tokenEthExchangeRate: token-wei per ETH-wei  (USDC has 6 decimals)
+                const tokenEthExchangeRate = BigInt(Math.round(ethPriceUsd * 1e6));
+
+                paymasterRoute = await resolvePaymasterRoute({
+                    provider: chainProvider,
+                    smartAccountAddress,
+                    paymasterAddress,
+                    gasTokenAddress,
+                    tokenEthExchangeRate,
+                    gasEstimate,
+                    maxFeePerGas,
+                    entryPointAddress: process.env.ENTRY_POINT,
+                });
+
+                gasNote = paymasterRoute.gasNote || '';
+                console.log(`[Chat] Gas route resolved: Route ${paymasterRoute.route} — ${gasNote}`);
+
+            } catch (routeErr) {
+                // Route C: both paths exhausted → surface to user, do NOT proceed
+                return res.status(400).json({ error: routeErr.message });
+            }
+        } else {
+            console.log('[Chat] Paymaster or gas token not configured — skipping paymaster router, using native ETH.');
+            gasNote = '⛽ Gas paid in native ETH (paymaster not configured).';
+        }
+        // ── End Gas Routing ──────────────────────────────────────────────────
+
         // Fire sequentially but without waiting for block confirmation (using predicted nonces)
         for (let i = 0; i < repeatCount; i++) {
             const currentNonce = baseNonce + BigInt(i);
@@ -710,7 +797,8 @@ app.post('/api/chat', async (req, res) => {
                     process.env.ENTRY_POINT,
                     process.env.SESSION_KEY_VALIDATOR,
                     currentNonce,
-                    bundlerUrl
+                    bundlerUrl,
+                    paymasterRoute   // Route A → paymaster fields set; Route B/null → 0x
                 );
                 
                 // Wait for the UserOp to be completely mined before sending the next one
@@ -734,8 +822,9 @@ app.post('/api/chat', async (req, res) => {
             }
         }
 
+        const routeTag = paymasterRoute?.route === 'A' ? ' via custom token paymaster' : ' via native ETH';
         res.json({ 
-            reply: `I have initiated ${repeatCount} operation(s) on your behalf.`, 
+            reply: `I have initiated ${repeatCount} operation(s) on your behalf${routeTag}. ${gasNote}`, 
             ops: opsResults 
         });
 

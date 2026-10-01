@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { ethers } from "ethers";
 import { useAppContext } from "../context/AppContext";
@@ -105,17 +105,28 @@ function ConnectedDashboard() {
   const [showSellDropdown, setShowSellDropdown] = useState(false);
   const [showBuyDropdown, setShowBuyDropdown] = useState(false);
 
+  // Refs so fetchQuote closure always has the latest values without making
+  // provider/ethPrice reactive dependencies (which caused the 429 storm).
+  const providerRef = useRef(provider);
+  useEffect(() => { providerRef.current = provider; }, [provider]);
+  const ethPriceRef = useRef(ethPrice);
+  useEffect(() => { ethPriceRef.current = ethPrice; }, [ethPrice]);
+
   useEffect(() => {
     const loadPrice = async () => {
       const price = await getEthPriceInUsd(provider, env.PRICE_FEED);
       setEthPrice(price);
     };
-    loadPrice();
+    // Load once on mount; re-runs only if provider identity changes (wallet connect/switch)
+    if (provider) loadPrice();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
   useEffect(() => {
     const fetchQuote = async () => {
-      if (!provider || !swapAmount || parseFloat(swapAmount) <= 0) {
+      const _provider = providerRef.current;
+      const _ethPrice = ethPriceRef.current;
+      if (!_provider || !swapAmount || parseFloat(swapAmount) <= 0) {
         setEstimatedUsdcOutput("0.00");
         return;
       }
@@ -131,7 +142,7 @@ function ConnectedDashboard() {
           [
             "function quoteExactInputSingle((address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96)) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)",
           ],
-          provider,
+          _provider,
         );
         const amountIn = ethers.parseEther(swapAmount);
         const params = {
@@ -144,11 +155,7 @@ function ConnectedDashboard() {
         const result = await quoter.quoteExactInputSingle.staticCall(params);
         setEstimatedUsdcOutput(ethers.formatUnits(result.amountOut, 6));
       } catch (err) {
-        console.warn(
-          "Uniswap V3 quote exact input failed, falling back to Chainlink feed:",
-          err,
-        );
-        const rawOutput = parseFloat(swapAmount) * ethPrice;
+        const rawOutput = parseFloat(swapAmount) * _ethPrice;
         setEstimatedUsdcOutput(
           rawOutput > 0 && rawOutput < 0.01 ? "< 0.01" : rawOutput.toFixed(2),
         );
@@ -164,8 +171,8 @@ function ConnectedDashboard() {
     return () => clearTimeout(delayDebounceFn);
   }, [
     swapAmount,
-    provider,
-    ethPrice,
+    // provider and ethPrice intentionally omitted — read via refs to prevent
+    // re-triggering on every background refresh cycle (caused 429 storms)
     env.USDC_TOKEN,
     uniswapQuoter,
     wethToken,

@@ -33,7 +33,9 @@ const _providers = {};
 function getProvider(chainId) {
   if (!_providers[chainId]) {
     const chain = getChainConfig(chainId);
-    _providers[chainId] = new ethers.JsonRpcProvider(chain.rpcUrl);
+    _providers[chainId] = chain.rpcUrl.startsWith('wss://')
+      ? new ethers.WebSocketProvider(chain.rpcUrl)
+      : new ethers.JsonRpcProvider(chain.rpcUrl);
   }
   return _providers[chainId];
 }

@@ -254,6 +254,8 @@ export const AppProvider = ({ children }) => {
   const refreshAllInFlightRef = useRef(null);
   const refreshLightInFlightRef = useRef(null);
   const lastRefreshAllAtRef = useRef(0);
+  // Prevents event-driven refreshes from firing more than once per 30s
+  const lastEventRefreshAtRef = useRef(0);
   const tokenMetaCacheRef = useRef(new Map());
   const sharedDataInFlightRef = useRef(new Map());
   const [sharedDataCache, setSharedDataCache] = useState(() => readPersistedSharedDataCache());
@@ -301,11 +303,10 @@ export const AppProvider = ({ children }) => {
     const chain = getChainConfig(targetChainId);
     if (!readRpcUrl || !chain) return browserProvider;
 
-    const rpcProvider = new ethers.JsonRpcProvider(
-      readRpcUrl,
-      { chainId: chain.chainId, name: chain.name },
-      { staticNetwork: true, batchMaxCount: 1 }
-    );
+    const networkInfo = { chainId: chain.chainId, name: chain.name };
+    const rpcProvider = readRpcUrl.startsWith('wss://')
+      ? new ethers.WebSocketProvider(readRpcUrl, networkInfo)
+      : new ethers.JsonRpcProvider(readRpcUrl, networkInfo, { staticNetwork: true, batchMaxCount: 1 });
 
     try {
       await Promise.race([
@@ -666,7 +667,6 @@ export const AppProvider = ({ children }) => {
           const isOwner = owners.some(o => o.toLowerCase() === address.toLowerCase());
           setIsMultisigOwner(isOwner);
         } catch (e) {
-          console.warn("Failed to fetch Multisig owners:", e);
           setIsMultisigOwner(false);
         }
       } else if (includeOwnership) {
@@ -858,11 +858,14 @@ export const AppProvider = ({ children }) => {
     }
   };
 
-  // Shared refresh for all views
+  // Shared refresh for all views — lightweight, used by event triggers
+  // force=true is reserved for manual refresh buttons; event-driven calls must use force=false
   const refreshLightData = async ({ force = false } = {}) => {
     if (!provider) return;
     const now = Date.now();
+    // Deduplicate in-flight calls
     if (refreshLightInFlightRef.current) return refreshLightInFlightRef.current;
+    // Throttle: skip if last light refresh was < 30s ago (unless manual force)
     if (!force && now - lastRefreshAllAtRef.current < 30000) return;
 
     refreshLightInFlightRef.current = (async () => {
@@ -870,13 +873,13 @@ export const AppProvider = ({ children }) => {
       if (eoaAddress) refreshes.push(loadEOABalances(eoaAddress, provider));
       if (smartAccountAddress) {
         refreshes.push(loadSmartAccountDetails(smartAccountAddress, provider, { includeContractDetails: false }));
-        refreshes.push(refreshFinancialPortfolio({ force }));
-        refreshes.push(refreshAaveData({ force }));
-        refreshes.push(refreshPaymasterAllowance({ force }));
+        // Use force=false so shared cache throttle applies
+        refreshes.push(refreshFinancialPortfolio({ force: false }));
+        refreshes.push(refreshAaveData({ force: false }));
+        refreshes.push(refreshPaymasterAllowance({ force: false }));
       }
-      if (paymasterAddress) {
-        refreshes.push(loadPaymasterDetails(paymasterAddress, provider, { includeEntryPointInfo: false }));
-      }
+      // Paymaster details are NOT fetched on light refresh —
+      // it's a global shared contract, poll it only on full refresh
 
       await Promise.allSettled(refreshes);
       lastRefreshAllAtRef.current = Date.now();
@@ -895,7 +898,8 @@ export const AppProvider = ({ children }) => {
     if (!provider) return;
     const now = Date.now();
     if (refreshAllInFlightRef.current) return refreshAllInFlightRef.current;
-    if (!force && now - lastRefreshAllAtRef.current < 20000) return;
+    // Throttle: skip if last full refresh was < 45s ago (unless manual force from a button)
+    if (!force && now - lastRefreshAllAtRef.current < 45000) return;
 
     refreshAllInFlightRef.current = (async () => {
       const refreshes = [];
@@ -931,9 +935,16 @@ export const AppProvider = ({ children }) => {
   }, [provider, eoaAddress, smartAccountAddress, paymasterAddress]);
 
   const invalidatePlatformData = useCallback((reason = "event") => {
+    const now = Date.now();
+    // Hard cap: ignore event-driven refreshes fired within 30s of the previous one
+    if (now - lastEventRefreshAtRef.current < 30_000) {
+      return;
+    }
+    lastEventRefreshAtRef.current = now;
     console.info(`[AppContext] Refreshing platform state from ${reason}`);
     markSharedDataStale();
-    void refreshLightData({ force: true });
+    // No force=true — let the throttle and in-flight guards inside refreshLightData apply
+    void refreshLightData({ force: false });
   }, [markSharedDataStale, refreshLightData]);
 
   useEffect(() => {
@@ -941,7 +952,10 @@ export const AppProvider = ({ children }) => {
     const usdcAddress = getUsdcAddress();
     if (!usdcAddress) return;
 
-    const watchedAddresses = [eoaAddress, smartAccountAddress, paymasterAddress]
+    // Deliberately exclude paymasterAddress: it is a global shared contract used by
+    // all users on the network. Including it caused every other user's USDC payment
+    // to trigger a refresh storm in this client.
+    const watchedAddresses = [eoaAddress, smartAccountAddress]
       .filter(Boolean)
       .map((address) => address.toLowerCase());
     if (watchedAddresses.length === 0) return;
@@ -949,11 +963,13 @@ export const AppProvider = ({ children }) => {
     const usdc = new ethers.Contract(usdcAddress, ERC20_EVENT_ABI, provider);
     const listeners = [];
     let refreshTimer = null;
+
+    // Debounce: collapse rapid back-to-back events into a single refresh
     const scheduleRefresh = (reason) => {
       window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(() => {
         invalidatePlatformData(reason);
-      }, 1200);
+      }, 2000); // increased from 1200ms to further reduce burst calls
     };
     const addListener = (eventName, handler) => {
       usdc.on(eventName, handler);
@@ -980,7 +996,8 @@ export const AppProvider = ({ children }) => {
         usdc.off(eventName, handler);
       });
     };
-  }, [provider, chainId, eoaAddress, smartAccountAddress, paymasterAddress, getUsdcAddress, invalidatePlatformData]);
+  // paymasterAddress intentionally excluded from deps — see comment above
+  }, [provider, chainId, eoaAddress, smartAccountAddress, getUsdcAddress, invalidatePlatformData]);
 
   // Global background poller — polls every 3s for all pending tracked ops
   const setCurrentViewRef = useRef(null);
@@ -1005,7 +1022,8 @@ export const AppProvider = ({ children }) => {
         'View in History →',
         () => setCurrentViewRef.current && setCurrentViewRef.current('history')
       );
-      refreshAllData({ force: true });
+      // No force=true — let the in-flight guard and throttle deduplicate this
+      refreshAllData();
     };
 
     const markReverted = (opHash, txHash, label) => {
@@ -1014,7 +1032,8 @@ export const AppProvider = ({ children }) => {
       ));
       addPendingUserOp(opHash, txHash);
       toast.error(`"${label}" reverted on-chain.`);
-      refreshAllData({ force: true });
+      // No force=true — let the in-flight guard and throttle deduplicate this
+      refreshAllData();
     };
 
     const markDropped = (opHash, label) => {

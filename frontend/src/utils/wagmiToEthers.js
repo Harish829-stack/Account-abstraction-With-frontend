@@ -1,4 +1,4 @@
-import { BrowserProvider, JsonRpcSigner, JsonRpcProvider, hexlify } from 'ethers';
+import { BrowserProvider, JsonRpcSigner, JsonRpcProvider, WebSocketProvider, hexlify } from 'ethers';
 import { getChainConfig, getReadRpcUrl } from '../config/chains';
 
 /**
@@ -54,6 +54,9 @@ export function getReadProvider(chainId) {
   const chain = getChainConfig(chainId);
 
   if (rpcUrl && chain) {
+    if (rpcUrl.startsWith('wss://')) {
+      return new WebSocketProvider(rpcUrl, { chainId: chain.chainId, name: chain.name });
+    }
     return new JsonRpcProvider(rpcUrl, { chainId: chain.chainId, name: chain.name });
   }
   // For other chains, return null — AppContext will use the BrowserProvider from walletClient

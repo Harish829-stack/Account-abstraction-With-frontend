@@ -147,11 +147,7 @@ async function estimateUserOperationGas(userOp, bundlerUrl) {
     }
     
     const est = data.result;
-    if (est) {
-      if (est.callGasLimit) est.callGasLimit = ((BigInt(est.callGasLimit) * 150n) / 100n).toString();
-      if (est.verificationGasLimit) est.verificationGasLimit = ((BigInt(est.verificationGasLimit) * 200n) / 100n).toString();
-      if (est.preVerificationGas) est.preVerificationGas = ((BigInt(est.preVerificationGas) * 150n) / 100n + 10000n).toString();
-    }
+    // Removed internal buffers here; we apply them contextually in buildAndSendAgentOp
     return est;
   } catch (error) {
     if (error.response && error.response.data && error.response.data.error) {
@@ -248,6 +244,20 @@ module.exports = {
   waitForUserOp
 };
 
+/**
+ * Builds, signs, and sends a UserOp for an AI agent session key.
+ *
+ * @param {ethers.Wallet}   agentWallet
+ * @param {ethers.Provider} provider
+ * @param {string}          smartAccountAddress
+ * @param {string}          callData          - ERC-7579 encoded callData
+ * @param {string}          entryPointAddress
+ * @param {string}          validatorAddress  - SessionKeyValidator address
+ * @param {bigint}          nonce
+ * @param {string}          bundlerUrl
+ * @param {object|null}     paymasterRoute    - Result from paymasterRouter.resolvePaymasterRoute().
+ *                                             Pass null to skip paymaster (pure native path).
+ */
 async function buildAndSendAgentOp(
   agentWallet,
   provider,
@@ -256,7 +266,8 @@ async function buildAndSendAgentOp(
   entryPointAddress,
   validatorAddress,
   nonce,
-  bundlerUrl
+  bundlerUrl,
+  paymasterRoute = null
 ) {
     const { maxPriorityFeePerGas, maxFeePerGas } = await getDynamicGasFees(provider);
 
@@ -271,10 +282,11 @@ async function buildAndSendAgentOp(
         preVerificationGas: "0x0",
         maxFeePerGas: toHex(maxFeePerGas),
         maxPriorityFeePerGas: toHex(maxPriorityFeePerGas),
-        paymaster: "0x",
-        paymasterVerificationGasLimit: "0x",
-        paymasterPostOpGasLimit: "0x",
-        paymasterData: "0x",
+        // Apply paymaster fields from the waterfall router (Route A = token, Route B/null = 0x)
+        paymaster: paymasterRoute?.paymaster || "0x",
+        paymasterVerificationGasLimit: paymasterRoute?.paymasterVerificationGasLimit || "0x",
+        paymasterPostOpGasLimit: paymasterRoute?.paymasterPostOpGasLimit || "0x",
+        paymasterData: paymasterRoute?.paymasterData || "0x",
         // This MUST be an 85-byte signature for the SessionKeyValidator
         signature: ethers.hexlify(ethers.concat([
             agentWallet.address,
@@ -282,28 +294,52 @@ async function buildAndSendAgentOp(
         ]))
     };
 
+    let usePaymaster = rpcUserOp.paymaster && rpcUserOp.paymaster !== "0x";
+    let est;
+
     try {
         try {
-            const est = await estimateUserOperationGas(rpcUserOp, bundlerUrl);
-            
-            // Add an aggressive 50% margin to reduce gas-limit failures from state drift.
+            est = await estimateUserOperationGas(rpcUserOp, bundlerUrl);
+        } catch (e) {
+            if (usePaymaster) {
+                console.warn("Paymaster estimation failed (possibly insufficient allowance/balance). Falling back to native gas.", e.message);
+                usePaymaster = false;
+                rpcUserOp.paymaster = "0x";
+                rpcUserOp.paymasterVerificationGasLimit = "0x";
+                rpcUserOp.paymasterPostOpGasLimit = "0x";
+                rpcUserOp.paymasterData = "0x";
+                // Retry estimation without paymaster
+                est = await estimateUserOperationGas(rpcUserOp, bundlerUrl);
+            } else {
+                throw e; // Rethrow if native estimation fails
+            }
+        }
+        
+        if (usePaymaster) {
+            // Apply buffers and minimums for paymaster approach
             let callGasWithMargin = (BigInt(est.callGasLimit) * 15n) / 10n;
             let vgfWithMargin = (BigInt(est.verificationGasLimit) * 15n) / 10n;
             let pvgWithMargin = (BigInt(est.preVerificationGas) * 15n) / 10n;
 
-            // Apply high minimums to prevent "account internally reverts on oog" during sendUserOperation
             if (callGasWithMargin < 500000n) callGasWithMargin = 500000n;
             if (vgfWithMargin < 500000n) vgfWithMargin = 500000n;
 
             rpcUserOp.callGasLimit = toHex(callGasWithMargin);
             rpcUserOp.verificationGasLimit = toHex(vgfWithMargin);
             rpcUserOp.preVerificationGas = toHex(pvgWithMargin);
-        } catch(e) {
-            console.warn("Bundler estimation failed, using fallback high limits. Error:", e.message);
-            // Use very high fallbacks to ensure Uniswap and complex operations don't run Out Of Gas (OOG)
-            rpcUserOp.callGasLimit = toHex(2000000n);
-            rpcUserOp.verificationGasLimit = toHex(1000000n);
-            rpcUserOp.preVerificationGas = toHex(100000n);
+        } else {
+            // Normal native payment approach with no buffer and required gas fees only
+            let nativeCallGas = BigInt(est.callGasLimit);
+            let nativeVgf = BigInt(est.verificationGasLimit);
+            let nativePvg = BigInt(est.preVerificationGas);
+
+            // Bundlers often have strict floor rules, ensure we don't fall below them
+            if (nativeVgf < 100000n) nativeVgf = 100000n;
+            if (nativePvg < 50000n) nativePvg = 50000n;
+
+            rpcUserOp.callGasLimit = toHex(nativeCallGas);
+            rpcUserOp.verificationGasLimit = toHex(nativeVgf);
+            rpcUserOp.preVerificationGas = toHex(nativePvg);
         }
     } catch (estErr) {
         console.error("Gas estimation failed:", estErr.message);
@@ -324,6 +360,24 @@ async function buildAndSendAgentOp(
     const packedSignature = ethers.concat([ agentWallet.address, rawSig ]);
     rpcUserOp.signature = ethers.hexlify(packedSignature);
 
-    const opHash = await sendUserOperation(rpcUserOp, bundlerUrl);
-    return opHash;
+    try {
+        const opHash = await sendUserOperation(rpcUserOp, bundlerUrl);
+        return opHash;
+    } catch (e) {
+        if (usePaymaster && e.message && (e.message.includes("AA33") || e.message.toLowerCase().includes("paymaster"))) {
+            console.warn("sendUserOperation failed with paymaster error. Falling back to native gas payment.", e.message);
+            return await buildAndSendAgentOp(
+                agentWallet,
+                provider,
+                smartAccountAddress,
+                callData,
+                entryPointAddress,
+                validatorAddress,
+                nonce,
+                bundlerUrl,
+                null // Force native path
+            );
+        }
+        throw e;
+    }
 }

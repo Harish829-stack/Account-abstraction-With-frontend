@@ -39,7 +39,7 @@ import "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.so
  * ── postOpReverted handling ──────────────────────────────────────────────────
  *
  *  If postOp itself reverts, EntryPoint calls postOp again with mode = postOpReverted.
- *  At that point tokens are already held by us from the pre-charge. We return early 
+ *  At that point tokens are already held by us from the pre-charge. We return early
  *  and keep the preCharge as the fee.
  *
  * ── paymasterAndData layout ──────────────────────────────────────────────────
@@ -54,7 +54,7 @@ contract MultiTokenPaymaster is IPaymaster, Ownable, ReentrancyGuard {
     // ── Constants ──────────────────────────────────────────────────────────────
 
     /// @dev 10% markup: buffers price movement between validate and postOp.
-    uint256 public constant PRICE_MARKUP      = 110;
+    uint256 public constant PRICE_MARKUP = 110;
     uint256 public constant PRICE_DENOMINATOR = 100;
 
     /// @dev Chainlink answer rejected if older than this (checked in postOp only).
@@ -86,7 +86,7 @@ contract MultiTokenPaymaster is IPaymaster, Ownable, ReentrancyGuard {
     uint256 public maxNativePriceUsd = 10_000 * 1e8;
 
     struct TokenConfig {
-        bool  enabled;
+        bool enabled;
         uint8 decimals; // Cached from IERC20Metadata
         uint8 feedDecimals; // Cached from Chainlink feed
         AggregatorV3Interface tokenUsdFeed;
@@ -100,26 +100,35 @@ contract MultiTokenPaymaster is IPaymaster, Ownable, ReentrancyGuard {
 
     event TokenAdded(address indexed token, uint8 decimals, address feed);
     event TokenEnabled(address indexed token, bool enabled);
-    event TokenFeedUpdated(address indexed token, address newFeed, uint8 newFeedDecimals);
+    event TokenFeedUpdated(
+        address indexed token,
+        address newFeed,
+        uint8 newFeedDecimals
+    );
     event NativeUsdFeedUpdated(address indexed newFeed);
     event MaxNativePriceUpdated(uint256 newMaxPrice);
-    event TokensWithdrawn(address indexed token, address indexed to, uint256 amount);
+    event TokensWithdrawn(
+        address indexed token,
+        address indexed to,
+        uint256 amount
+    );
     event Deposited(uint256 amount);
 
     // ── Constructor ────────────────────────────────────────────────────────────
 
     constructor(
-        address     _initialOwner,
+        address _initialOwner,
         IEntryPoint _entryPoint,
-        address     _nativeUsdFeed
+        address _nativeUsdFeed
     ) Ownable(_initialOwner) {
         require(address(_entryPoint) != address(0), "PM: zero entryPoint");
-        require(_nativeUsdFeed       != address(0), "PM: zero feed");
+        require(_nativeUsdFeed != address(0), "PM: zero feed");
 
         entryPoint = _entryPoint;
         nativeUsdFeed = AggregatorV3Interface(_nativeUsdFeed);
 
-        NATIVE_USD_FEED_DECIMALS = AggregatorV3Interface(_nativeUsdFeed).decimals();
+        NATIVE_USD_FEED_DECIMALS = AggregatorV3Interface(_nativeUsdFeed)
+            .decimals();
     }
 
     // ── Token management (owner) ───────────────────────────────────────────────
@@ -133,20 +142,20 @@ contract MultiTokenPaymaster is IPaymaster, Ownable, ReentrancyGuard {
      *                          Must be scaled to _tokenUsdFeed's decimals (usually 8).
      */
     function addToken(
-        address token, 
-        address _tokenUsdFeed, 
+        address token,
+        address _tokenUsdFeed,
         uint256 _minTokenPriceUsd
     ) external onlyOwner {
-        require(token != address(0),          "PM: zero token");
-        require(_tokenUsdFeed != address(0),  "PM: zero feed");
-        require(_minTokenPriceUsd > 0,        "PM: zero min price");
+        require(token != address(0), "PM: zero token");
+        require(_tokenUsdFeed != address(0), "PM: zero feed");
+        require(_minTokenPriceUsd > 0, "PM: zero min price");
         require(!tokenConfigs[token].enabled, "PM: already added");
 
         uint8 dec = IERC20Metadata(token).decimals();
         uint8 feedDec = AggregatorV3Interface(_tokenUsdFeed).decimals();
-        
-        tokenConfigs[token] = TokenConfig({ 
-            enabled: true, 
+
+        tokenConfigs[token] = TokenConfig({
+            enabled: true,
             decimals: dec,
             feedDecimals: feedDec,
             tokenUsdFeed: AggregatorV3Interface(_tokenUsdFeed),
@@ -166,15 +175,18 @@ contract MultiTokenPaymaster is IPaymaster, Ownable, ReentrancyGuard {
     /**
      * @notice Update the Chainlink feed for an already registered token.
      */
-    function updateTokenFeed(address token, address newFeed) external onlyOwner {
+    function updateTokenFeed(
+        address token,
+        address newFeed
+    ) external onlyOwner {
         require(tokenConfigs[token].decimals > 0, "PM: unknown token");
         require(newFeed != address(0), "PM: zero feed");
 
         uint8 newFeedDec = AggregatorV3Interface(newFeed).decimals();
-        
+
         tokenConfigs[token].tokenUsdFeed = AggregatorV3Interface(newFeed);
         tokenConfigs[token].feedDecimals = newFeedDec;
-        
+
         emit TokenFeedUpdated(token, newFeed, newFeedDec);
     }
 
@@ -196,8 +208,11 @@ contract MultiTokenPaymaster is IPaymaster, Ownable, ReentrancyGuard {
         maxNativePriceUsd = _maxPrice;
         emit MaxNativePriceUpdated(_maxPrice);
     }
-    
-    function setMinTokenPriceUsd(address token, uint256 _minPrice) external onlyOwner {
+
+    function setMinTokenPriceUsd(
+        address token,
+        uint256 _minPrice
+    ) external onlyOwner {
         require(tokenConfigs[token].decimals > 0, "PM: unknown token");
         require(_minPrice > 0, "PM: zero price");
         tokenConfigs[token].minTokenPriceUsd = _minPrice;
@@ -241,7 +256,7 @@ contract MultiTokenPaymaster is IPaymaster, Ownable, ReentrancyGuard {
         );
 
         context = abi.encode(userOp.sender, chosenToken, worstCaseTokenCost);
-        return (context, 0); 
+        return (context, 0);
     }
 
     function postOp(
@@ -252,8 +267,10 @@ contract MultiTokenPaymaster is IPaymaster, Ownable, ReentrancyGuard {
     ) external override {
         require(msg.sender == address(entryPoint), "PM: only EntryPoint");
 
-        (address user, address token, uint256 preCharge) =
-            abi.decode(context, (address, address, uint256));
+        (address user, address token, uint256 preCharge) = abi.decode(
+            context,
+            (address, address, uint256)
+        );
 
         if (mode == PostOpMode.postOpReverted) {
             return;
@@ -284,7 +301,10 @@ contract MultiTokenPaymaster is IPaymaster, Ownable, ReentrancyGuard {
 
         require(nativeUsdPrice > 0, "PM: native price non-positive");
         require(answeredInRound1 >= roundId1, "PM: native round stale");
-        require(block.timestamp - updatedAt1 <= MAX_PRICE_AGE, "PM: native price stale");
+        require(
+            block.timestamp - updatedAt1 <= MAX_PRICE_AGE,
+            "PM: native price stale"
+        );
 
         (
             uint80 roundId2,
@@ -296,16 +316,20 @@ contract MultiTokenPaymaster is IPaymaster, Ownable, ReentrancyGuard {
 
         require(tokenUsdPrice > 0, "PM: token price non-positive");
         require(answeredInRound2 >= roundId2, "PM: token round stale");
-        require(block.timestamp - updatedAt2 <= MAX_PRICE_AGE, "PM: token price stale");
-
-        return _calculateTokenAmount(
-            nativeWei,
-            cfg.decimals,
-            uint256(nativeUsdPrice),
-            NATIVE_USD_FEED_DECIMALS,
-            uint256(tokenUsdPrice),
-            cfg.feedDecimals
+        require(
+            block.timestamp - updatedAt2 <= MAX_PRICE_AGE,
+            "PM: token price stale"
         );
+
+        return
+            _calculateTokenAmount(
+                nativeWei,
+                cfg.decimals,
+                uint256(nativeUsdPrice),
+                NATIVE_USD_FEED_DECIMALS,
+                uint256(tokenUsdPrice),
+                cfg.feedDecimals
+            );
     }
 
     /**
@@ -316,22 +340,22 @@ contract MultiTokenPaymaster is IPaymaster, Ownable, ReentrancyGuard {
      */
     function _calculateTokenAmount(
         uint256 nativeWei,
-        uint8   tokenDecimals,
+        uint8 tokenDecimals,
         uint256 nativeUsdPrice,
-        uint8   nativeFeedDecimals,
+        uint8 nativeFeedDecimals,
         uint256 tokenUsdPrice,
-        uint8   tokenFeedDecimals
+        uint8 tokenFeedDecimals
     ) internal pure returns (uint256) {
-        uint256 numerator = nativeWei 
-            * nativeUsdPrice 
-            * PRICE_MARKUP 
-            * (10 ** uint256(tokenDecimals)) 
-            * (10 ** uint256(tokenFeedDecimals));
+        uint256 numerator = nativeWei *
+            nativeUsdPrice *
+            PRICE_MARKUP *
+            (10 ** uint256(tokenDecimals)) *
+            (10 ** uint256(tokenFeedDecimals));
 
-        uint256 denominator = (10 ** 18) 
-            * tokenUsdPrice 
-            * PRICE_DENOMINATOR 
-            * (10 ** uint256(nativeFeedDecimals));
+        uint256 denominator = (10 ** 18) *
+            tokenUsdPrice *
+            PRICE_DENOMINATOR *
+            (10 ** uint256(nativeFeedDecimals));
 
         return numerator / denominator;
     }

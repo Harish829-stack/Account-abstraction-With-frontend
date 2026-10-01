@@ -33,8 +33,8 @@ export const CHAIN_REGISTRY = [
     chainId: 11155111,
     name: "Sepolia",
     isTestnet: true,
-    isActive: true,
-    viewOnly: false,
+    isActive: false,
+    viewOnly: true,
     rpcUrl: env.VITE_SEPOLIA_RPC_URL,
     bundlerUrl: env.VITE_SEPOLIA_BUNDLER_URL || env.VITE_SKANDHA_RPC_URL,
     explorerUrl: "https://sepolia.etherscan.io",
@@ -64,8 +64,8 @@ export const CHAIN_REGISTRY = [
     chainId: 80002,
     name: "Polygon Amoy",
     isTestnet: true,
-    isActive: true,
-    viewOnly: false,
+    isActive: false,
+    viewOnly: true,
     rpcUrl: env.VITE_AMOY_RPC_URL,
     bundlerUrl: getAmoyBundlerUrl(),
     explorerUrl: "https://amoy.polygonscan.com",
@@ -209,10 +209,16 @@ function applyRemoteConfig(config) {
   if (!config || !Array.isArray(config.chains)) return;
 
   const staticByChainId = new Map(CHAIN_REGISTRY.map((chain) => [chain.chainId, chain]));
-  const remoteChains = config.chains.map((chain) => ({
-    ...(staticByChainId.get(chain.chainId) || {}),
-    ...chain,
-  }));
+  const remoteChains = config.chains.map((chain) => {
+    const staticChain = staticByChainId.get(chain.chainId) || {};
+    return {
+      ...staticChain,
+      ...chain,
+      // Priority to local frontend .env for RPCs (to support WSS override)
+      rpcUrl: staticChain.rpcUrl || chain.rpcUrl,
+      bundlerUrl: staticChain.bundlerUrl || chain.bundlerUrl,
+    };
+  });
 
   CHAIN_REGISTRY.splice(0, CHAIN_REGISTRY.length, ...remoteChains);
 
