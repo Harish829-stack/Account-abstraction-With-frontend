@@ -1,8 +1,32 @@
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import { useAppContext } from '../context/AppContext';
 import { shortenAddress } from '../utils/helpers';
 import { getDefaultChainId, getSupportedChains } from '../config/chains';
 import { useToast } from '../context/ToastContext';
+
+function NavItem({ viewId, icon, label, disabled = false, badge = "", currentView, setCurrentView }) {
+  const isActive = currentView === viewId;
+
+  return (
+    <a
+      href="#"
+      onClick={(e) => {
+        e.preventDefault();
+        if (!disabled) setCurrentView(viewId);
+      }}
+      className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl transition-all text-sm ${
+        isActive
+          ? 'bg-mint text-obsidian-950 font-bold shadow-mint-sm'
+          : 'text-slate-400 hover:text-obsidian-950 hover:bg-mint'
+      } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+      title={disabled ? "Connect Smart Account First" : ""}
+    >
+      {icon}
+      <span>{label}</span>
+      {badge && <span className="text-[10px] px-2 py-0.5 rounded bg-mint/15 text-mint font-bold">{badge}</span>}
+    </a>
+  );
+}
 
 export default function Navbar() {
   const { eoaAddress, smartAccountAddress, disconnect, currentView, setCurrentView, chainId, switchNetwork, isMultisigOwner } = useAppContext();
@@ -11,30 +35,6 @@ export default function Navbar() {
   const toast = useToast();
 
   if (!eoaAddress) return null;
-
-  const NavItem = ({ viewId, icon, label, disabled = false, specialClasses = "", labelClasses = "" }) => {
-    const isActive = currentView === viewId;
-
-    return (
-      <a
-        href="#"
-        onClick={(e) => {
-          e.preventDefault();
-          if (!disabled) setCurrentView(viewId);
-        }}
-        className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl transition-all text-sm ${
-          isActive 
-            ? 'bg-mint text-obsidian-950 font-bold shadow-mint-sm' 
-            : 'text-slate-400 hover:text-obsidian-950 hover:bg-mint'
-        } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-        title={disabled ? "Connect Smart Account First" : ""}
-      >
-        {icon}
-        <span className={labelClasses}>{label}</span>
-        {specialClasses && <span className={specialClasses}>{specialClasses.includes("Paymaster") ? "Paymaster" : specialClasses.includes("AI") ? "AI AGENT" : ""}</span>}
-      </a>
-    );
-  };
 
   const copyToClipboard = (text, notificationMsg) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -131,38 +131,50 @@ export default function Navbar() {
           <NavItem 
             viewId="home" 
             icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><rect height="7" rx="1.5" width="7" x="3" y="3"></rect><rect height="7" rx="1.5" width="7" x="14" y="3"></rect><rect height="7" rx="1.5" width="7" x="3" y="14"></rect><rect height="7" rx="1.5" width="7" x="14" y="14"></rect></svg>} 
-            label={<span className="font-semibold">Dashboard</span>} 
+            label="Dashboard"
+            currentView={currentView}
+            setCurrentView={setCurrentView}
           />
           <NavItem 
             viewId="paymaster" 
             icon={<span className="text-base font-bold text-mint">$</span>} 
-            label={<span className="font-semibold">Gas Sponsorship</span>} 
+            label="Gas Sponsorship"
             disabled={!smartAccountAddress} 
-            specialClasses="text-[10px] px-2 py-0.5 rounded bg-mint/15 text-mint font-bold"
+            badge="Paymaster"
+            currentView={currentView}
+            setCurrentView={setCurrentView}
           />
           <NavItem 
             viewId="chatbot" 
             icon={<svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"></path></svg>} 
-            label={<span className="font-semibold">Wallet Copilot</span>} 
+            label="Wallet Copilot"
             disabled={!smartAccountAddress} 
+            currentView={currentView}
+            setCurrentView={setCurrentView}
           />
           <NavItem 
             viewId="history" 
             icon={<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"></path></svg>} 
-            label={<span className="font-semibold">UserOp History</span>} 
+            label="UserOp History"
             disabled={!smartAccountAddress} 
+            currentView={currentView}
+            setCurrentView={setCurrentView}
           />
           <NavItem 
             viewId="mint-usdc" 
             icon={<svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" strokeWidth="2"></circle><path d="M12 8v8M8 12h8" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"></path></svg>} 
-            label={<span className="font-semibold">Mint USDC (Faucet)</span>} 
+            label="Mint USDC (Faucet)"
             disabled={!smartAccountAddress} 
+            currentView={currentView}
+            setCurrentView={setCurrentView}
           />
           {isMultisigOwner && (
             <NavItem 
               viewId="admin" 
               icon={<svg className="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"></path></svg>} 
-              label={<span className="font-semibold">Admin Control</span>} 
+              label="Admin Control"
+              currentView={currentView}
+              setCurrentView={setCurrentView}
             />
           )}
         </nav>

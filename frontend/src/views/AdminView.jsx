@@ -446,12 +446,12 @@ export default function AdminView() {
 
   return (
     <div className="admin-shell animate-fade-in">
-      <section className="admin-card" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div className="admin-section-title" style={{ margin: 0 }}>
+      <section className="admin-card ui-topbar">
+        <div className="admin-section-title ui-m-0">
           <span><Shield size={18} /></span>
           <h3>Admin Workspace</h3>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div className="ui-action-row">
           {[
             ['protocol', 'Protocol Ops'],
             ['operations', 'Operations'],
@@ -460,9 +460,8 @@ export default function AdminView() {
             <button
               key={id}
               type="button"
-              className={`admin-btn ${adminMode === id ? 'admin-btn-primary' : 'admin-btn-secondary'}`}
+              className={`admin-btn ui-button-tight ${adminMode === id ? 'admin-btn-primary' : 'admin-btn-secondary'}`}
               onClick={() => setAdminMode(id)}
-              style={{ padding: '0.65rem 0.9rem' }}
             >
               {label}
             </button>
@@ -507,17 +506,17 @@ export default function AdminView() {
           </div>
 
           {ownersList.length > 0 && (
-            <div className="admin-owners-list" style={{ marginTop: '1.2rem' }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--primary)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <div className="admin-owners-list ui-owner-list">
+              <span className="ui-owner-title">
                 <Shield size={14} /> Authorized Owners
               </span>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div className="ui-owner-stack">
                 {ownersList.map((owner, index) => (
-                  <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.7)', border: '1px solid rgba(16,185,129,0.2)', padding: '0.4rem 0.6rem', borderRadius: '8px' }}>
-                    <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold' }}>{index + 1}</span>
-                    <code style={{ fontSize: '11px', color: '#1f2937', fontFamily: 'monospace' }}>{owner}</code>
+                  <div key={index} className="ui-owner-item">
+                    <span className="ui-owner-index">{index + 1}</span>
+                    <code className="ui-owner-code">{owner}</code>
                     {owner.toLowerCase() === eoaAddress?.toLowerCase() && (
-                      <span style={{ fontSize: '9px', background: 'var(--primary)', color: 'white', padding: '2px 6px', borderRadius: '12px', fontWeight: 'bold', marginLeft: 'auto' }}>YOU</span>
+                      <span className="ui-owner-you">YOU</span>
                     )}
                   </div>
                 ))}
@@ -700,7 +699,7 @@ export default function AdminView() {
               <span><Gauge size={18} /></span>
               <h3>Platform Metrics</h3>
             </div>
-            <div className="admin-actions" style={{ marginBottom: 16 }}>
+            <div className="admin-actions ui-mb-md">
               <button className="admin-btn admin-btn-secondary" onClick={loadOperations} disabled={opsLoading}>
                 <RefreshCw size={18} /> {opsLoading ? 'Refreshing...' : 'Refresh'}
               </button>
@@ -820,7 +819,7 @@ export default function AdminView() {
                 </label>
               ))}
             </div>
-            <div className="admin-actions" style={{ marginTop: 16 }}>
+            <div className="admin-actions ui-mt-md">
               <button className="admin-btn admin-btn-primary" onClick={saveChain} disabled={configLoading}>
                 <CheckCircle size={18} /> Save Chain
               </button>
@@ -851,7 +850,7 @@ export default function AdminView() {
                 <CheckCircle size={18} /> Save Chain Contracts
               </button>
 
-              <div className="admin-section-title" style={{ marginTop: 24 }}>
+              <div className="admin-section-title ui-mt-xl">
                 <span><Shield size={18} /></span>
                 <h3>Shared Contracts</h3>
               </div>

@@ -4,7 +4,7 @@ import App from './App.jsx';
 import { AppProvider } from './context/AppContext.jsx';
 import { ToastProvider } from './context/ToastContext.jsx';
 import { ChatbotProvider } from './context/ChatbotContext.jsx';
-import './index.css';
+import './styles/index.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

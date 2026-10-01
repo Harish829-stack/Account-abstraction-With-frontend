@@ -8,7 +8,6 @@ import { SessionKeyValidatorABI, SmartAccountABI } from '../utils/abis';
 import { buildAndSendAccountOp, encodeERC7579Single, encodeERC7579Batch, getActiveSessionKeysOnChain, getPrevValidator } from '../utils/helpers';
 import { estimateUserOperationGas, sendUserOperation, getUserOpReceipt, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import { getFriendlyErrorMessage } from '../utils/errors';
-import "./agent-ui.css";
 
 /* ---------- icons ---------- */
 const BotIcon = ({ size = 16 }) => (

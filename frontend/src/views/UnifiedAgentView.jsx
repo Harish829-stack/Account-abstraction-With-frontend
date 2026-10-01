@@ -9,7 +9,6 @@ import { buildAndSendAccountOp, encodeERC7579Single, encodeERC7579Batch, getActi
 import { estimateUserOperationGas, sendUserOperation, getUserOpReceipt, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import { getDefaultChainId } from '../config/chains';
 import { getFriendlyErrorMessage } from '../utils/errors';
-import "./agent-ui.css";
 
 /* ---------- icons ---------- */
 const BotIcon = ({ size = 16 }) => (

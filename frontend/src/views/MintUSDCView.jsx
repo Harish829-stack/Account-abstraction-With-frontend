@@ -16,7 +16,6 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { getExplorerTxUrl } from '../config/chains';
-import { buildAndSendAccountOp, encodeERC7579Batch } from '../utils/helpers';
 import { getFriendlyErrorMessage } from '../utils/errors';
 
 const MOCK_USDC_ABI = [
@@ -27,7 +26,6 @@ const MOCK_USDC_ABI = [
 export default function MintUSDCView() {
   const {
     signer,
-    provider,
     smartAccountAddress,
     chainId,
     env
@@ -37,15 +35,9 @@ export default function MintUSDCView() {
   const [pending, setPending] = useState(false);
   const [txHash, setTxHash] = useState(null);
 
-  // Aave Deposit State
-  const [aaveAmount, setAaveAmount] = useState('100');
-  const [isAavePending, setIsAavePending] = useState(false);
-  const [aaveStatus, setAaveStatus] = useState('');
-
   const { success, error, info } = useToast();
 
   const usdcAddress = env.USDC_TOKEN || '';
-  const aavePoolAddress = env.AAVE_POOL || '';
 
   if (!smartAccountAddress) {
     return (
@@ -102,57 +94,6 @@ export default function MintUSDCView() {
       error(getFriendlyErrorMessage(err, 'We could not mint USDC. Please check your wallet and try again.'));
     } finally {
       setPending(false);
-    }
-  };
-
-  const handleAaveDeposit = async () => {
-    if (!aaveAmount || isNaN(aaveAmount) || parseFloat(aaveAmount) <= 0) {
-      error('Please enter a valid amount');
-      return;
-    }
-
-    try {
-      setIsAavePending(true);
-      setAaveStatus('Preparing batched UserOp...');
-      if (!usdcAddress || !aavePoolAddress) throw new Error("USDC or Aave pool address is missing from chain config.");
-      
-      const amountToDeposit = ethers.parseUnits(aaveAmount.toString(), 6);
-      
-      const mockToken = new ethers.Contract(usdcAddress, ['function approve(address spender, uint256 amount) external returns (bool)'], signer);
-      const pool = new ethers.Contract(aavePoolAddress, ['function deposit(uint256 _amount) external'], signer);
-      
-      const approveData = mockToken.interface.encodeFunctionData('approve', [aavePoolAddress, amountToDeposit]);
-      const depositData = pool.interface.encodeFunctionData('deposit', [amountToDeposit]);
-      
-      const callData = encodeERC7579Batch(
-        [usdcAddress, aavePoolAddress],
-        [0n, 0n],
-        [approveData, depositData]
-      );
-      
-      setAaveStatus('Sign UserOp in Wallet...');
-      
-      const opHash = await buildAndSendAccountOp(
-        signer, 
-        provider, 
-        smartAccountAddress, 
-        callData, 
-        env.ENTRY_POINT, 
-        env.K1_VALIDATOR, 
-        chainId
-      );
-      
-      setAaveStatus('✅ Success! UserOp submitted.');
-      success(`Batched UserOp submitted: ${opHash.slice(0, 10)}...`);
-      setAaveAmount('');
-      setTimeout(() => setAaveStatus(''), 5000);
-    } catch (err) {
-      console.error("Batched Aave deposit failed:", err);
-      const msg = getFriendlyErrorMessage(err, 'We could not submit the Aave deposit. Please check your USDC balance and try again.');
-      setAaveStatus('Error: ' + msg.slice(0, 80));
-      error(msg);
-    } finally {
-      setIsAavePending(false);
     }
   };
 

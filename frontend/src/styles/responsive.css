@@ -1,0 +1,361 @@
+/*
+  Shared responsive/layout utilities.
+  Keep view-specific CSS in this styles directory and import it from styles/index.css only.
+*/
+
+.ui-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ui-action-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ui-button-tight {
+  padding: 0.65rem 0.9rem;
+}
+
+.ui-m-0 {
+  margin: 0;
+}
+
+.ui-mt-md {
+  margin-top: 1rem;
+}
+
+.ui-mt-lg {
+  margin-top: 1.2rem;
+}
+
+.ui-mt-xl {
+  margin-top: 1.5rem;
+}
+
+.ui-mb-md {
+  margin-bottom: 1rem;
+}
+
+.ui-owner-list {
+  margin-top: 1.2rem;
+}
+
+.ui-owner-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+  color: var(--primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.ui-owner-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ui-owner-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 0.4rem 0.6rem;
+}
+
+.ui-owner-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ui-owner-code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #1f2937;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
+.ui-owner-you {
+  margin-left: auto;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  padding: 2px 6px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.ui-side-tab-button {
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+.ui-chat-log-preview {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  height: 250px;
+  overflow: hidden;
+}
+
+.ui-log-label {
+  color: #00f59b;
+  font-size: 10px;
+}
+
+.ui-log-copy {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
+.ui-centered-copy {
+  max-width: 750px;
+  margin: 5rem auto 3rem;
+  padding: 0 20px;
+  text-align: center;
+}
+
+.ui-centered-copy h3 {
+  margin-bottom: 1rem;
+  color: #fff;
+  font-size: 1.8rem;
+  font-weight: 600;
+}
+
+.ui-centered-copy p {
+  color: #9ca3af;
+  font-size: 1.1rem;
+  line-height: 1.7;
+}
+
+.agent-demo-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 600px;
+}
+
+.agent-demo-stage {
+  flex: 1;
+}
+
+.agent-scope-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.agent-scope-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(7, 9, 14, 0.55);
+  padding: 14px 16px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.agent-scope-card.is-enabled {
+  border-color: #00f59b;
+  background: rgba(0, 245, 155, 0.08);
+  box-shadow: 0 0 20px rgba(0, 245, 155, 0.12);
+}
+
+.agent-scope-toggle,
+.agent-scope-limit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-scope-toggle {
+  gap: 14px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.agent-scope-check {
+  display: grid;
+  place-items: center;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #07090e;
+  font-size: 12px;
+  font-weight: 900;
+  transition: all 0.15s ease;
+}
+
+.agent-scope-card.is-enabled .agent-scope-check {
+  border-color: #00f59b;
+  background: #00f59b;
+}
+
+.agent-scope-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+.agent-scope-desc {
+  margin-top: 2px;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.agent-scope-input {
+  width: 90px;
+  border: 1px solid rgba(0, 245, 155, 0.4);
+  border-radius: 8px;
+  outline: none;
+  background: rgba(7, 9, 14, 0.85);
+  box-shadow: 0 0 10px rgba(0, 245, 155, 0.1);
+  color: #fff;
+  padding: 8px 12px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.agent-scope-unit {
+  border: 1px solid rgba(0, 245, 155, 0.2);
+  border-radius: 6px;
+  background: rgba(0, 245, 155, 0.1);
+  color: #00f59b;
+  padding: 4px 8px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.agent-dropdown {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  outline: none;
+  background-color: rgba(7, 9, 14, 0.9);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2300f59b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 15px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+  color: #fff;
+  padding: 8px 36px 8px 14px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.agent-dropdown option {
+  background: #0b0e14;
+  color: #f3f4f6;
+}
+
+.agent-dropdown option[value="financial"] {
+  color: #00f59b;
+}
+
+.agent-prompt-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 20px 12px;
+  white-space: nowrap;
+}
+
+.agent-prompt-chip {
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 245, 155, 0.2);
+  border-radius: 16px;
+  background: rgba(0, 245, 155, 0.1);
+  color: #00f59b;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.agent-prompt-chip:hover {
+  background: rgba(0, 245, 155, 0.2);
+}
+
+@media (max-width: 768px) {
+  .ui-topbar,
+  .ui-action-row {
+    align-items: stretch;
+  }
+
+  .ui-topbar > *,
+  .ui-action-row > * {
+    flex: 1 1 auto;
+  }
+
+  .ui-action-row .admin-btn,
+  .ui-topbar .admin-btn {
+    justify-content: center;
+  }
+
+  .ui-centered-copy {
+    margin: 3rem auto 2rem;
+  }
+
+  .ui-centered-copy h3 {
+    font-size: 1.45rem;
+  }
+
+  .ui-centered-copy p {
+    font-size: 1rem;
+  }
+
+  .agent-scope-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .agent-scope-limit {
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 520px) {
+  .ui-owner-item {
+    align-items: flex-start;
+  }
+
+  .ui-owner-you {
+    margin-left: 0;
+  }
+}

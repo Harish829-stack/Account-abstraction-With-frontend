@@ -1,8 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
-import { getFriendlyErrorMessage } from '../utils/errors';
-import "../views/agent-ui.css";
 
 /* ---------- icons ---------- */
 const BotIcon = ({ size = 16 }) => (
@@ -144,83 +141,40 @@ function CreateAssistantStep({ onCreate, isCreating }) {
       />
 
       <p className="label">1. Select capabilities & set limits</p>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div className="agent-scope-stack">
         {SCOPES.map((s) => {
           const config = scopesConfig[s.id];
           return (
             <div 
               key={s.id} 
-              style={{
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'space-between', 
-                padding: '14px 16px',
-                borderRadius: '14px', 
-                border: config.enabled ? '1px solid #00f59b' : '1px solid rgba(255, 255, 255, 0.08)',
-                backgroundColor: config.enabled ? 'rgba(0, 245, 155, 0.08)' : 'rgba(7, 9, 14, 0.55)',
-                boxShadow: config.enabled ? '0 0 20px rgba(0, 245, 155, 0.12)' : 'none',
-                transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
-              }}
+              className={`agent-scope-card ${config.enabled ? 'is-enabled' : ''}`}
             >
               <div 
-                style={{ display: 'flex', alignItems: 'center', gap: '14px', cursor: 'pointer' }}
+                className="agent-scope-toggle"
                 onClick={() => handleToggle(s.id)}
               >
-                <div style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '6px',
-                  border: config.enabled ? '1.5px solid #00f59b' : '1.5px solid rgba(255, 255, 255, 0.2)',
-                  backgroundColor: config.enabled ? '#00f59b' : 'rgba(255, 255, 255, 0.05)',
-                  display: 'grid',
-                  placeItems: 'center',
-                  color: '#07090e',
-                  fontSize: '12px',
-                  fontWeight: 900,
-                  transition: 'all 0.15s ease'
-                }}>
+                <div className="agent-scope-check">
                   {config.enabled && '✓'}
                 </div>
                 <div>
-                  <div style={{ fontWeight: '700', fontSize: '14.5px', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div className="agent-scope-name">
                     <span>{s.emoji}</span> 
                     <span>{s.name}</span>
                   </div>
-                  <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>{s.desc}</div>
+                  <div className="agent-scope-desc">{s.desc}</div>
                 </div>
               </div>
 
               {config.enabled && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="agent-scope-limit">
                   <input
                     type="number"
                     value={config.limit}
                     onChange={(e) => handleLimitChange(s.id, e.target.value)}
-                    style={{ 
-                      width: '90px', 
-                      padding: '8px 12px', 
-                      fontSize: '14px', 
-                      fontWeight: '600',
-                      fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                      backgroundColor: 'rgba(7, 9, 14, 0.85)',
-                      color: '#ffffff',
-                      border: '1px solid rgba(0, 245, 155, 0.4)', 
-                      borderRadius: '8px', 
-                      outline: 'none',
-                      boxShadow: '0 0 10px rgba(0, 245, 155, 0.1)'
-                    }}
+                    className="agent-scope-input"
                     placeholder="Limit"
                   />
-                  <span style={{ 
-                    fontSize: '11.5px', 
-                    color: '#00f59b', 
-                    fontWeight: '700',
-                    fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                    backgroundColor: 'rgba(0, 245, 155, 0.1)',
-                    border: '1px solid rgba(0, 245, 155, 0.2)',
-                    padding: '4px 8px',
-                    borderRadius: '6px'
-                  }}>
+                  <span className="agent-scope-unit">
                     {s.id === 'erc20' ? 'USDC' : 'ETH'}
                   </span>
                 </div>
@@ -230,7 +184,7 @@ function CreateAssistantStep({ onCreate, isCreating }) {
         })}
       </div>
 
-      <p className="label" style={{ marginTop: '24px' }}>
+      <p className="label ui-mt-xl">
         2. Set access duration <span className="label__muted">(days before expiry)</span>
       </p>
       <div className="field">
@@ -248,8 +202,7 @@ function CreateAssistantStep({ onCreate, isCreating }) {
       </div>
 
       <button 
-        className="agent-btn" 
-        style={{ marginTop: '16px' }} 
+        className="agent-btn ui-mt-md"
         disabled={isCreating || !hasAnySelected} 
         onClick={() => onCreate?.({ scopesConfig, validityDays })}
       >
@@ -302,30 +255,12 @@ function AgentWorkspace({
             className="agent-dropdown" 
             value={activeAgentAddress || "financial"} 
             onChange={(e) => setActiveAgentAddress(e.target.value)}
-            style={{ 
-              padding: '8px 36px 8px 14px', 
-              borderRadius: '10px', 
-              border: '1px solid rgba(255, 255, 255, 0.12)', 
-              fontSize: '13.5px', 
-              fontWeight: '700', 
-              color: '#ffffff',
-              backgroundColor: 'rgba(7, 9, 14, 0.9)', 
-              appearance: 'none', 
-              backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%2300f59b\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'%3E%3C/path%3E%3C/svg%3E")', 
-              backgroundRepeat: 'no-repeat', 
-              backgroundPosition: 'right 10px center', 
-              backgroundSize: '15px',
-              cursor: 'pointer',
-              outline: 'none',
-              boxShadow: '0 4px 15px rgba(0,0,0,0.4)',
-              transition: 'all 0.15s ease'
-            }}
           >
-            <option value="financial" style={{ backgroundColor: '#0b0e14', color: '#00f59b' }}>
+            <option value="financial">
               💹 Financial Agent (Portfolio & Data)
             </option>
             {agents.map((a) => (
-              <option key={a.agentAddress} value={a.agentAddress} style={{ backgroundColor: '#0b0e14', color: '#f3f4f6' }}>
+              <option key={a.agentAddress} value={a.agentAddress}>
                 {a.name} ({a.scope.toUpperCase()})
               </option>
             ))}
@@ -439,7 +374,7 @@ function AgentWorkspace({
         <div ref={scrollRef} />
       </div>
 
-      <div style={{ padding: '0 20px 12px', display: 'flex', gap: '8px', overflowX: 'auto', whiteSpace: 'nowrap' }} className="hide-scrollbar">
+      <div className="agent-prompt-strip hide-scrollbar">
           {(activeAgentAddress === 'financial' ? [
               "What's my portfolio worth?",
               "Send 100 USDC to vitalik.eth",
@@ -454,19 +389,7 @@ function AgentWorkspace({
                           sendMessage(q);
                       }
                   }}
-                  style={{
-                      background: 'rgba(0, 245, 155, 0.1)',
-                      border: '1px solid rgba(0, 245, 155, 0.2)',
-                      color: '#00f59b',
-                      padding: '6px 12px',
-                      borderRadius: '16px',
-                      fontSize: '12px',
-                      cursor: 'pointer',
-                      flexShrink: 0,
-                      transition: 'all 0.2s'
-                  }}
-                  onMouseOver={(e) => { e.currentTarget.style.background = 'rgba(0, 245, 155, 0.2)'; }}
-                  onMouseOut={(e) => { e.currentTarget.style.background = 'rgba(0, 245, 155, 0.1)'; }}
+                  className="agent-prompt-chip"
               >
                   {q}
               </button>
@@ -506,15 +429,7 @@ export default function AgentDemoView() {
     // Derived context
     const smartAccountAddress = "0xDemoSmartAccount1234567890abcdef12345678";
     const eoaAddress = "0xDemoUser1234567890abcdef1234567890abcdef";
-    const chainId = 11155111;
-    const provider = {}; 
-    const signer = {};
-    const env = { ENTRY_POINT: '0x' };
-    const trackOp = () => {};
     const financeAgentMessages = mockMessages;
-    const setFinanceAgentMessages = setMockMessages;
-    const financeAgentHistory = [];
-    const setFinanceAgentHistory = () => {};
     
     const isAgentConfigured = mockAgents.length > 0;
     const agentStatus = mockAgents[0];
@@ -545,7 +460,6 @@ export default function AgentDemoView() {
             const isAave = lowerText.includes('aave') || lowerText.includes('supply') || lowerText.includes('invest');
             const isSwap = lowerText.includes('swap');
             const isEth = /\d+\s*eth/i.test(lowerText);
-            const isUsdc = /\d+\s*usdc/i.test(lowerText);
             const actionName = isAave ? 'Supply' : (isSwap ? 'Swap' : 'Transfer');
             const agentScope = isFinancialAgent ? 'financial' : currentAgent?.scope;
             
@@ -605,24 +519,21 @@ export default function AgentDemoView() {
         }, 2500);
     };
     
-    const generateAgent = async (scope, limit, name) => "0xAgent" + Math.random().toString(16).slice(2,8);
+    const generateAgent = async () => "0xAgent" + Math.random().toString(16).slice(2,8);
     const authorizeAgent = async (agent) => {
         setMockAgents(prev => [...prev, agent]);
     };
-    const deleteAgent = async () => {};
-    const clearAgents = async () => setMockAgents([]);
     const refreshAgents = async () => {};
     const refreshInstalledModules = async () => {};
 
     const isFinancialAgent = activeAgentAddress === 'financial';
     const activeAgent = isFinancialAgent ? null : agents.find(a => a.agentAddress === activeAgentAddress);
-    const [isFinancialLoading, setIsFinancialLoading] = useState(false);
+    const [isFinancialLoading] = useState(false);
     
     // Derived state
     const messages = isFinancialAgent ? financeAgentMessages : chatbotMessages;
     const isChatLoading = isFinancialAgent ? isFinancialLoading : isChatbotLoading;
     
-    const fmtTime = () => new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     const sendFinancialMessage = (text) => {
         sendChatbotMessage(text);
     };
@@ -649,7 +560,11 @@ export default function AgentDemoView() {
     });
 
     useEffect(() => {
-        if (isAgentConfigured && agentStatus && !visited.includes("workspace")) {
+        if (!isAgentConfigured || !agentStatus || visited.includes("workspace")) {
+            return undefined;
+        }
+
+        const syncTimer = window.setTimeout(() => {
             const scopeObj = SCOPES.find(s => s.id === agentStatus.scope) || SCOPES[0];
             setConfig({
                 name: agentStatus.name || '',
@@ -659,7 +574,9 @@ export default function AgentDemoView() {
             });
             setVisited(v => [...new Set([...v, "setup", "workspace"])]);
             setTab("workspace");
-        }
+        }, 0);
+
+        return () => window.clearTimeout(syncTimer);
     }, [isAgentConfigured, agentStatus, visited]);
 
     const go = (id) => {
@@ -701,74 +618,13 @@ export default function AgentDemoView() {
         }, 1500);
     };
 
-    const getAgentRule = ({ scope, limit }) => {
-        let target = "0x0000000000000000000000000000000000000000";
-        let selector = "0x00000000";
-        let maxValue = 0n;
-
-        if (scope.id === 'native') {
-            target = "0x0000000000000000000000000000000000000000";
-            selector = "0x00000000";
-            maxValue = ethers.parseEther(limit);
-        } else if (scope.id === 'uniswap') {
-            target = "0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F";
-            selector = "0x00000000";
-            maxValue = ethers.parseEther(limit);
-        } else if (scope.id === 'erc20') {
-            target = "0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E";
-            selector = "0xa9059cbb";
-            maxValue = 0n;
-        }
-
-        return { target, selector, maxValue };
-    };
-
-    const waitForReceipt = async (opHash) => {
-        let receipt = null;
-        let retries = 45;
-        while (!receipt && retries > 0) {
-            await new Promise(r => setTimeout(r, 2000));
-            receipt = await getUserOpReceipt(opHash, chainId);
-            retries--;
-        }
-        return receipt;
-    };
-
     const handleSyncAgents = async () => {
-        if (!smartAccountAddress || !provider) return;
         setIsSyncing(true);
-        try {
-            const validatorAddr = env.SESSION_KEY_VALIDATOR;
-            if (!validatorAddr) throw new Error("SessionKeyValidator address missing from chain config.");
-
-            const account = new ethers.Contract(smartAccountAddress, SmartAccountABI, provider);
-            const moduleInstalled = await account.isModuleInstalled(1, validatorAddr, "0x");
-            const activeKeys = moduleInstalled
-                ? await getActiveSessionKeysOnChain(validatorAddr, smartAccountAddress, provider)
-                : [];
-
-            // Call the chatbot-server sync endpoint directly (not the NestJS backend)
-            const CHATBOT_API_URL = import.meta.env.VITE_CHATBOT_API_URL || "";
-            await axios.post(`${CHATBOT_API_URL}/api/agent/sync/${smartAccountAddress}`, {
-                chainId,
-                moduleInstalled,
-                activeAgentAddresses: activeKeys.map((key) => key.address)
-            });
-
+        window.setTimeout(async () => {
             await refreshAgents();
             await refreshInstalledModules();
-
-            if (!moduleInstalled) {
-                window.dispatchEvent(new CustomEvent("aa-session-key-module-revoked", {
-                    detail: { smartAccountAddress, chainId }
-                }));
-            }
-        } catch (e) {
-            console.error("Agent sync failed:", e);
-            alert(getFriendlyErrorMessage(e, "We could not sync agents right now. Please try again."));
-        } finally {
             setIsSyncing(false);
-        }
+        }, 600);
     };
 
     const handleDeleteAgent = async (agentAddress) => {
@@ -816,8 +672,8 @@ export default function AgentDemoView() {
     const workspaceLimit = activeAgent?.maxAmount || config.limit;
 
     return (
-        <div style={{ position: 'relative', width: '100%', minHeight: '600px', display: 'flex', flexDirection: 'column' }}>
-        <div className="stage" style={{ flex: 1 }}>
+        <div className="agent-demo-frame">
+        <div className="stage agent-demo-stage">
           <div className="shell">
                 <nav className="tabs" role="tablist">
                     {TABS.map((t) => (
