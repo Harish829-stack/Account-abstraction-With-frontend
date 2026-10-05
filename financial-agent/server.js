@@ -29,7 +29,6 @@ const {
   ConflictError,
 } = require('./transactions/proposalService');
 const { getChainConfig } = require('./config/chains');
-const { executeConfirmedProposal } = require('./transactions/executionService');
 
 const app = express();
 
@@ -280,13 +279,9 @@ app.post('/api/financial/proposals/:id/confirm', async (req, res) => {
     const userId = (req.body.userId || req.headers['x-user-id'] || '').toLowerCase();
     if (!userId) return res.status(401).json({ error: 'userId is required' });
     proposal = await confirmProposal(req.params.id, userId);
-    const execution = await executeConfirmedProposal(proposal);
     res.json({
-      ...execution.proposal,
-      opHash: execution.opHash,
-      txUrl: execution.txUrl,
-      receipt: execution.receipt,
-      message: `Proposal ${proposal.id} confirmed and submitted.`,
+      ...proposal,
+      message: `Proposal ${proposal.id} confirmed.`,
     });
   } catch (err) {
     if (proposal?.id) {
