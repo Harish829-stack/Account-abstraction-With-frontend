@@ -536,7 +536,7 @@ export const AppProvider = ({ children }) => {
         const epContract = new ethers.Contract(entryPointAddress, IEntryPointABI, _provider);
         const filter = epContract.filters.UserOperationEvent(null, saAddress);
         const blockNum = await _provider.getBlockNumber();
-        const events = await epContract.queryFilter(filter, Math.max(0, blockNum - 100), blockNum);
+        const events = await epContract.queryFilter(filter, Math.max(0, blockNum - 9), blockNum);
         const last10 = events.slice(-10).reverse();
         
         formattedOps = await Promise.all(last10.map(async (e) => {
