@@ -93,7 +93,7 @@ const CardHeader = ({ title, subtitle }) => (
 const SCOPES = [
   { id: "native",  emoji: "⚡", name: "Native Transfer", desc: "ETH transfers", suggestions: ['Send 0.001 ETH to 0x1234...', 'Send 0.01 ETH to my friend 3 times'] },
   { id: "uniswap", emoji: "🦄", name: "Uniswap V3", desc: "Swaps on Sepolia", suggestions: ['Swap 0.001 ETH for USDC', 'Swap 0.001 ETH for USDC 3 times'] },
-  { id: "erc20",   emoji: "💸", name: "ERC-20",     desc: "USDC transfers", suggestions: ['Send 0.5 USDC to 0x1234...', 'Send 1 USDC to my friend 3 times'] }
+  { id: "erc20",   emoji: "💸", name: "ERC-20",     desc: "USDC transfers + Aave deposits", suggestions: ['Send 0.5 USDC to 0x1234...', 'Deposit 100 USDC into Aave', 'Send 1 USDC to my friend 3 times'] }
 ];
 
 const TABS = [
@@ -897,8 +897,11 @@ export default function UnifiedAgentView() {
             maxValue = ethers.parseEther(limit);
         } else if (scope.id === 'erc20') {
             if (!env.USDC_TOKEN) throw new Error("USDC token address missing from chain config.");
-            target = env.USDC_TOKEN;
-            selector = "0xa9059cbb";
+            // ERC-20 scope supports USDC transfer and Aave approve+deposit batches.
+            // The current on-chain validator has one target/selector slot, so this
+            // scope is zero-native-value limited rather than target-selector limited.
+            target = "0x0000000000000000000000000000000000000000";
+            selector = "0x00000000";
             maxValue = 0n;
         }
 

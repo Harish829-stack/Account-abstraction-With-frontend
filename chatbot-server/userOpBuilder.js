@@ -62,6 +62,29 @@ function encodeERC7579Single(target, value, callData) {
     return nexusIface.encodeFunctionData("execute", [EXEC_MODE_DEFAULT, executionCalldata]);
 }
 
+function encodeERC7579Batch(targets, values, callDatas) {
+    if (!Array.isArray(targets) || !Array.isArray(values) || !Array.isArray(callDatas)) {
+        throw new Error("Batch execution inputs must be arrays");
+    }
+    if (targets.length === 0 || targets.length !== values.length || targets.length !== callDatas.length) {
+        throw new Error("Batch execution arrays must be non-empty and the same length");
+    }
+
+    const EXEC_MODE_BATCH = "0x0100000000000000000000000000000000000000000000000000000000000000";
+    const abiCoder = new ethers.AbiCoder();
+    const executions = targets.map((target, i) => ({
+        target,
+        value: values[i],
+        callData: callDatas[i]
+    }));
+    const executionCalldata = abiCoder.encode(
+        ["tuple(address target, uint256 value, bytes callData)[]"],
+        [executions]
+    );
+    const nexusIface = new ethers.Interface(["function execute(bytes32 mode, bytes calldata executionCalldata)"]);
+    return nexusIface.encodeFunctionData("execute", [EXEC_MODE_BATCH, executionCalldata]);
+}
+
 function getNonceForValidator(validatorAddress) {
     return BigInt(validatorAddress);
 }
@@ -234,6 +257,7 @@ module.exports = {
   toHex,
   packUserOp,
   encodeERC7579Single,
+  encodeERC7579Batch,
   getNonceForValidator,
   encodeUniswapSwap,
   encodeERC20Transfer,

@@ -171,7 +171,7 @@ Your role:
 - Always label estimates as estimates — never as guarantees.
 
 Key rules:
-1. NEVER claim an investment is safe or guaranteed.
+1. NEVER claim an investment is safe or guaranteed,but give one most promising result according to calculations.
 2. ALWAYS label APY, yield, and price figures as estimates.
 3. Keep responses under 3-4 short bullet points whenever possible. Being overly wordy is heavily penalized.
 4. When a price feed shows "isStale: true", warn the user prominently.
@@ -183,12 +183,6 @@ Key rules:
 
 Supported chains and key addresses:
 
-Ethereum Sepolia (chainId: 11155111)
-  USDC (canonical MockUSDC): 0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E
-  WETH (Aave Mock):  0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c
-  Aave YieldPool V2: 0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A
-  Uniswap Router:    0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F
-  ETH/USD Price Feed: 0x5e3075cbd05214408d32935D0f498b3B5676b280
 
 Arbitrum Sepolia (chainId: 421614)
   USDC (canonical MockUSDC): 0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E
@@ -196,7 +190,6 @@ Arbitrum Sepolia (chainId: 421614)
   Aave YieldPool V2: 0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A
   Uniswap Router:    0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F
   ETH/USD Price Feed: 0x5e3075cbd05214408d32935D0f498b3B5676b280
-
 Polygon Amoy (chainId: 80002) — portfolio read only, no DeFi protocols verified`;
 
 // ── Main agent function ───────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ const {
     toHex,
     packUserOp,
     encodeERC7579Single,
+    encodeERC7579Batch,
     getNonceForValidator,
     encodeUniswapSwap,
     encodeERC20Transfer,
@@ -516,10 +517,11 @@ app.post('/api/chat', async (req, res) => {
     try {
         // 1. Setup tools based on scope
         let tools = [];
-        let systemPrompt = `You are a helpful Web3 AI assistant. Your job is to translate user requests into function calls. 
+        let systemPrompt = `You are a helpful Web3 AI assistant. Your job is to translate user requests into function calls.
         If the user asks to repeat an action, set the 'repeat' parameter to that number.
-        CRITICAL: For token swaps, assume standard Sepolia token addresses if none are provided. Do NOT ask the user for contract addresses for WETH or USDC.
-        CRITICAL: If the user does not specify a recipient address for a transfer, DO NOT hallucinate an address. You must return a normal text response asking them to provide the recipient address.`;
+        CRITICAL: Use the configured protocol addresses. Never invent USDC, WETH, router, or Aave pool addresses.
+        CRITICAL: If the user does not specify a recipient address for a transfer, DO NOT hallucinate an address. You must return a normal text response asking them to provide the recipient address.
+        CRITICAL: If the user asks to deposit, supply, invest, or stake USDC into Aave while the active scope is erc20, call aave_supply.`;
 
         if (config.scope === 'uniswap') {
             tools.push({
@@ -554,6 +556,20 @@ app.post('/api/chat', async (req, res) => {
                             repeat: { type: 'string', description: 'Number of times to repeat this operation independently (e.g., "1")' }
                         },
                         required: ['tokenAddress', 'recipient', 'amount']
+                    }
+                }
+            }, {
+                type: 'function',
+                function: {
+                    name: 'aave_supply',
+                    description: 'Supply USDC to the configured Aave Yield Pool. This executes approve + deposit as one batch UserOp.',
+                    parameters: {
+                        type: 'object',
+                        properties: {
+                            amount: { type: 'string', description: 'Amount of USDC in human-readable format (e.g., "100")' },
+                            repeat: { type: 'string', description: 'Number of times to repeat this operation independently (normally "1")' }
+                        },
+                        required: ['amount']
                     }
                 }
             });
@@ -601,6 +617,7 @@ app.post('/api/chat', async (req, res) => {
         let target = "0x";
         let innerCallData = "0x";
         let value = "0";
+        let callData = null;
         
         if (toolCall.function.name === 'uniswap_swap') {
             target = process.env.UNISWAP_ROUTER;
@@ -634,7 +651,7 @@ app.post('/api/chat', async (req, res) => {
 
         } else if (toolCall.function.name === 'erc20_transfer') {
             // Enforce authorized USDC token to prevent SessionKey target mismatch
-            target = process.env.USDC_SEPOLIA;
+            target = activeChainInfo?.contracts?.usdcToken || process.env.USDC_SEPOLIA;
             
             // The LLM now provides a human-readable amount (e.g. "0.00005"). We convert it to base units using 6 decimals.
             let amountInWei;
@@ -650,6 +667,42 @@ app.post('/api/chat', async (req, res) => {
             if (amountInWei > BigInt(ethers.parseUnits(config.maxAmount, 6))) { // Assuming USDC 6 decimals for demo maxAmount
                 return res.json({ reply: `Rejected: Amount exceeds max allowed (${config.maxAmount}).`, ops: [] });
             }
+
+        } else if (toolCall.function.name === 'aave_supply') {
+            const usdcToken = activeChainInfo?.contracts?.usdcToken || process.env.USDC_SEPOLIA;
+            const aavePool = activeChainInfo?.contracts?.aavePool || process.env.AAVE_YIELD_POOL;
+            if (!usdcToken || !aavePool) {
+                return res.status(400).json({ error: "Aave pool or USDC token is not configured for this chain." });
+            }
+
+            let amountInWei;
+            try {
+                amountInWei = ethers.parseUnits(args.amount.toString(), 6);
+            } catch (e) {
+                return res.json({ reply: `Error parsing amount. Please use a valid USDC amount like "100".`, ops: [] });
+            }
+
+            if (amountInWei <= 0n) {
+                return res.json({ reply: `Rejected: Amount must be greater than zero.`, ops: [] });
+            }
+
+            if (amountInWei > BigInt(ethers.parseUnits(config.maxAmount, 6))) {
+                return res.json({ reply: `Rejected: Amount ${args.amount} USDC exceeds max allowed (${config.maxAmount} USDC).`, ops: [] });
+            }
+
+            const erc20Iface = new ethers.Interface([
+                "function approve(address spender, uint256 amount) returns (bool)"
+            ]);
+            const aaveIface = new ethers.Interface([
+                "function deposit(uint256 amount)"
+            ]);
+            const approveData = erc20Iface.encodeFunctionData("approve", [aavePool, amountInWei]);
+            const depositData = aaveIface.encodeFunctionData("deposit", [amountInWei]);
+            callData = encodeERC7579Batch(
+                [usdcToken, aavePool],
+                [0n, 0n],
+                [approveData, depositData]
+            );
 
         } else if (toolCall.function.name === 'transfer_eth') {
             if (!ethers.isAddress(args.recipient_address)) {
@@ -683,7 +736,9 @@ app.post('/api/chat', async (req, res) => {
             }
         }
 
-        const callData = encodeERC7579Single(target, value, innerCallData);
+        if (!callData) {
+            callData = encodeERC7579Single(target, value, innerCallData);
+        }
         
         // 4. Build, Sign, and Submit Loop
         const entryPoint = new ethers.Contract(

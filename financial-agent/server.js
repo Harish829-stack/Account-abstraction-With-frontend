@@ -22,12 +22,14 @@ const {
   getProposal,
   confirmProposal,
   rejectProposal,
+  advanceStatus,
   sweepExpiredProposals,
   NotFoundError,
   ForbiddenError,
   ConflictError,
 } = require('./transactions/proposalService');
 const { getChainConfig } = require('./config/chains');
+const { executeConfirmedProposal } = require('./transactions/executionService');
 
 const app = express();
 
@@ -104,7 +106,7 @@ app.post('/api/financial/chat', async (req, res) => {
     if (!smartAccountAddress) return res.status(400).json({ error: 'smartAccountAddress is required' });
     if (!userId) return res.status(400).json({ error: 'userId (EOA address) is required' });
 
-    const resolvedChainId = requireChainId(chainId || 11155111);
+    const resolvedChainId = requireChainId(chainId || 421614);
     requireAddress(smartAccountAddress, 'smartAccountAddress');
 
     const result = await runFinancialAgent({
@@ -150,7 +152,7 @@ app.get('/api/financial/portfolio/:chainId/:wallet', async (req, res) => {
       ledgerUpdatedAt: ledger?.ledgerUpdatedAt ?? null,
       assets: [
         { symbol: 'ETH', tokenAddress: null, isEth: true, balanceRaw: ledger?.ethBalanceWei ?? '0', balanceFormatted: ethFormatted, decimals: 18, priceUsd: ethPrice, valueUsd: ethValueUsd, allocationPercentage: totalValueUsd > 0 ? (ethValueUsd / totalValueUsd) * 100 : 0 },
-        { symbol: 'USDC', tokenAddress: '0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A', isEth: false, balanceRaw: ledger?.usdcBalanceWei ?? '0', balanceFormatted: usdcFormatted, decimals: 6, priceUsd: usdcPrice, valueUsd: usdcValueUsd, allocationPercentage: totalValueUsd > 0 ? (usdcValueUsd / totalValueUsd) * 100 : 0 },
+        { symbol: 'USDC', tokenAddress: getChainConfig(chainId).usdcAddress, isEth: false, balanceRaw: ledger?.usdcBalanceWei ?? '0', balanceFormatted: usdcFormatted, decimals: 6, priceUsd: usdcPrice, valueUsd: usdcValueUsd, allocationPercentage: totalValueUsd > 0 ? (usdcValueUsd / totalValueUsd) * 100 : 0 },
       ],
     };
     res.json(snapshot);
@@ -162,7 +164,7 @@ app.get('/api/financial/portfolio/:chainId/:wallet', async (req, res) => {
 // ── GET /api/financial/market/prices ─────────────────────────────────────────
 app.get('/api/financial/market/prices', async (req, res) => {
   try {
-    const chainId = requireChainId(req.query.chainId || 11155111);
+    const chainId = requireChainId(req.query.chainId || 421614);
     const market = await getMarketData(chainId);
     const prices = market ? {
       ETH_USD:  { priceUsd: market.ethPriceUsd, isStale: !market.priceUpdatedAt, updatedAt: market.priceUpdatedAt },
@@ -216,7 +218,7 @@ app.get('/api/financial/uniswap/quote', async (req, res) => {
     if (!tokenIn || !tokenOut || !amountIn) {
       return res.status(400).json({ error: 'tokenIn, tokenOut, and amountIn are required' });
     }
-    const resolvedChainId = requireChainId(chainId || 11155111);
+    const resolvedChainId = requireChainId(chainId || 421614);
     requireAddress(tokenIn, 'tokenIn');
     requireAddress(tokenOut, 'tokenOut');
 
@@ -273,15 +275,23 @@ app.get('/api/financial/proposals/:id', async (req, res) => {
 
 // ── POST /api/financial/proposals/:id/confirm ────────────────────────────────
 app.post('/api/financial/proposals/:id/confirm', async (req, res) => {
+  let proposal;
   try {
     const userId = (req.body.userId || req.headers['x-user-id'] || '').toLowerCase();
     if (!userId) return res.status(401).json({ error: 'userId is required' });
-    const proposal = await confirmProposal(req.params.id, userId);
+    proposal = await confirmProposal(req.params.id, userId);
+    const execution = await executeConfirmedProposal(proposal);
     res.json({
-      ...proposal,
-      message: `Proposal ${proposal.id} confirmed. The platform can now execute it via the existing chatbot execution path.`,
+      ...execution.proposal,
+      opHash: execution.opHash,
+      txUrl: execution.txUrl,
+      receipt: execution.receipt,
+      message: `Proposal ${proposal.id} confirmed and submitted.`,
     });
   } catch (err) {
+    if (proposal?.id) {
+      await advanceStatus(proposal.id, 'FAILED').catch(() => {});
+    }
     handleError(err, res);
   }
 });
@@ -308,6 +318,7 @@ app.use((_req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PORT = Number(process.env.PORT || 3003);
+const HOST = process.env.HOST || '127.0.0.1';
 
 async function start() {
   // Sweep expired proposals on startup
@@ -326,10 +337,15 @@ async function start() {
     }
   }, 60_000);
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Financial Agent] Listening on port ${PORT}`);
-    console.log(`[Financial Agent] Health: http://localhost:${PORT}/health`);
-    console.log(`[Financial Agent] Chat:   http://localhost:${PORT}/api/financial/chat`);
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`[Financial Agent] Listening on http://${HOST}:${PORT}`);
+    console.log(`[Financial Agent] Health: http://${HOST}:${PORT}/health`);
+    console.log(`[Financial Agent] Chat:   http://${HOST}:${PORT}/api/financial/chat`);
+  });
+
+  server.on('error', (err) => {
+    console.error(`[Financial Agent] Failed to listen on ${HOST}:${PORT}:`, err.message);
+    process.exit(1);
   });
 }
 
