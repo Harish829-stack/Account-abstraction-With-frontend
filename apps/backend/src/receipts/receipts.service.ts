@@ -1,10 +1,9 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import type { Chain, SmartAccount, UserOperation } from "@prisma/client";
 import { jsonRpcCall, toRpcQuantity } from "../common/json-rpc";
+import { parseUserOperationEventSuccess, USER_OPERATION_EVENT_TOPIC } from "../common/user-operation-event";
 import { ReceiptsRepository } from "./receipts.repository";
 import type { ReceiptPollSummary, UserOperationReceiptResult } from "./receipts.types";
-
-const USER_OPERATION_EVENT_TOPIC = "0x49628fd1471006c1482da88028e9ce4dbb080b815c9b0344d39e5a8e6ec1419f";
 
 type PendingUserOperation = UserOperation & { smartAccount: SmartAccount; chain: Chain };
 
@@ -125,7 +124,7 @@ export class ReceiptsService implements OnModuleInit, OnModuleDestroy {
     if (!log) return null;
 
     return {
-      success: this.parseUserOperationEventSuccess(log.data),
+      success: parseUserOperationEventSuccess(log.data),
       receipt: {
         transactionHash: log.transactionHash,
         blockNumber: log.blockNumber
@@ -152,13 +151,6 @@ export class ReceiptsService implements OnModuleInit, OnModuleDestroy {
     const record = await this.receiptsRepository.findSharedContract("ENTRY_POINT");
     this.entryPointAddress = record?.address || process.env.ENTRY_POINT || undefined;
     return this.entryPointAddress;
-  }
-
-  private parseUserOperationEventSuccess(data: string): boolean {
-    const normalized = data.startsWith("0x") ? data.slice(2) : data;
-    const successWord = normalized.slice(64, 128);
-    if (!successWord) return true;
-    return BigInt(`0x${successWord}`) !== 0n;
   }
 
   private readPositiveEnv(name: string, fallback: number): number {

@@ -6,10 +6,11 @@ import {
   braveWallet,
   injectedWallet,
 } from '@rainbow-me/rainbowkit/wallets';
-import { sepolia, polygonAmoy, holesky, baseSepolia, optimismSepolia } from 'wagmi/chains';
+import { arbitrumSepolia, sepolia, polygonAmoy, holesky, baseSepolia, optimismSepolia } from 'wagmi/chains';
 import { getSupportedChainIds } from './config/chains';
 
 const viemChainsById = {
+  [arbitrumSepolia.id]: arbitrumSepolia,
   [sepolia.id]: sepolia,
   [polygonAmoy.id]: polygonAmoy,
   [holesky.id]: holesky,
@@ -21,7 +22,7 @@ const activeChains = getSupportedChainIds()
   .map((chainId) => viemChainsById[chainId])
   .filter(Boolean);
 
-const configuredChains = activeChains.length > 0 ? activeChains : [sepolia];
+const configuredChains = activeChains.length > 0 ? activeChains : [arbitrumSepolia];
 
 /**
  * RainbowKit + Wagmi configuration.

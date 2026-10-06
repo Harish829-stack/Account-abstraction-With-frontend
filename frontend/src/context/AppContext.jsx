@@ -8,6 +8,7 @@ import {
   getAccountHistory,
   getUserOperation,
   saveUserOperation,
+  submitActionEvent,
   syncAccountLedger,
   syncAccountLedgerAndWait,
   upsertSmartAccount,
@@ -21,6 +22,8 @@ import {
   SHARED_CONTRACTS,
 } from "../config/chains";
 import { getFriendlyErrorMessage } from "../utils/errors";
+import { ActionTag, expandActionTags, labelToActionTag, normalizeActionTags } from "../constants/actionTags";
+import { readStoredJson, readStoredString, removeStoredValue, StorageKey, subscribeToStorage, writeStoredJson, writeStoredString } from "../utils/storage";
 
 const AppContext = createContext();
 const FINANCIAL_API = (import.meta.env.VITE_FINANCIAL_AGENT_URL || "http://127.0.0.1:3003").replace(/\/$/, "");
@@ -41,10 +44,8 @@ const ERC20_EVENT_ABI = [
 
 function readPersistedSharedDataCache() {
   try {
-    const raw = window.localStorage.getItem(SHARED_DATA_CACHE_KEY);
-    if (!raw) return EMPTY_SHARED_DATA_CACHE;
-
-    const parsed = JSON.parse(raw);
+    const parsed = readStoredJson(SHARED_DATA_CACHE_KEY, null, (value) => value && typeof value === 'object');
+    if (!parsed) return EMPTY_SHARED_DATA_CACHE;
     const now = Date.now();
     return Object.fromEntries(
       Object.entries(EMPTY_SHARED_DATA_CACHE).map(([section, emptyValue]) => [
@@ -79,7 +80,7 @@ function persistSharedDataCache(cache) {
         ),
       ])
     );
-    window.localStorage.setItem(SHARED_DATA_CACHE_KEY, JSON.stringify(serializable));
+    writeStoredJson(SHARED_DATA_CACHE_KEY, serializable);
   } catch {
     // Cache writes are best-effort only.
   }
@@ -92,8 +93,7 @@ function getAgentReadyCacheKey(chainId, smartAccountAddress) {
 
 function readAgentReadyCache() {
   try {
-    const raw = window.localStorage.getItem(AGENT_READY_CACHE_KEY);
-    return raw ? JSON.parse(raw) : {};
+    return readStoredJson(AGENT_READY_CACHE_KEY, {}, (value) => value && typeof value === 'object' && !Array.isArray(value));
   } catch {
     return {};
   }
@@ -115,7 +115,7 @@ function persistAgentReady(chainId, smartAccountAddress, agentReady) {
     } else {
       delete cache[key];
     }
-    window.localStorage.setItem(AGENT_READY_CACHE_KEY, JSON.stringify(cache));
+    writeStoredJson(AGENT_READY_CACHE_KEY, cache);
   } catch {
     // Cache writes are best-effort only.
   }
@@ -126,7 +126,7 @@ export const useAppContext = () => useContext(AppContext);
 export const AppProvider = ({ children }) => {
   const [currentView, setCurrentView] = useState(() => {
     try {
-      return localStorage.getItem('currentView') || 'home';
+      return readStoredString(StorageKey.CURRENT_VIEW, 'home');
     } catch {
       return 'home';
     }
@@ -135,7 +135,7 @@ export const AppProvider = ({ children }) => {
   const [setupStep, setSetupStep] = useState(1);
 
   useEffect(() => {
-    localStorage.setItem('currentView', currentView);
+    writeStoredString(StorageKey.CURRENT_VIEW, currentView);
   }, [currentView]);
 
   const [provider, setProvider] = useState(null);
@@ -202,6 +202,14 @@ export const AppProvider = ({ children }) => {
       try {
         const network = await provider.getNetwork();
         const activeChainId = Number(network.chainId);
+        if (activeChainId !== expectedChainId) {
+          if (active) {
+            setSmartAccountAddress(null);
+            setSmartAccountStatus("checking");
+            setIsSmartAccountDeployed(false);
+          }
+          return;
+        }
         const factoryAddress = SHARED_CONTRACTS.FACTORY;
         const predicted = await predictSmartAccountAddress(eoaAddress, provider, factoryAddress);
         if (!active || !predicted) return;
@@ -230,7 +238,7 @@ export const AppProvider = ({ children }) => {
     };
     predictAndCheck();
     return () => { active = false; };
-  }, [eoaAddress, provider]);
+  }, [eoaAddress, provider, expectedChainId]);
 
   const [saETHBalance, setSaETHBalance] = useState("0");
   const [saUSDCBalance, setSaUSDCBalance] = useState("0");
@@ -255,6 +263,7 @@ export const AppProvider = ({ children }) => {
   const lastModuleRefreshAtRef = useRef(0);
   const refreshAllInFlightRef = useRef(null);
   const refreshLightInFlightRef = useRef(null);
+  const refreshLightDataRef = useRef(null);
   const lastRefreshAllAtRef = useRef(0);
   // Prevents event-driven refreshes from firing more than once per 30s
   const lastEventRefreshAtRef = useRef(0);
@@ -291,7 +300,7 @@ export const AppProvider = ({ children }) => {
 
   const [pendingUserOps, setPendingUserOps] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('pendingUserOps')) || [];
+      return readStoredJson(StorageKey.PENDING_USER_OPS, [], Array.isArray);
     } catch {
       return [];
     }
@@ -558,15 +567,14 @@ export const AppProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    localStorage.setItem('pendingUserOps', JSON.stringify(pendingUserOps));
+    writeStoredJson(StorageKey.PENDING_USER_OPS, pendingUserOps);
   }, [pendingUserOps]);
 
   // --- Global Background Transaction Tracker ---
   // Each entry: { opHash, label, submittedAt, status: 'pending' | 'confirmed' | 'dropped' }
   const [trackedOps, setTrackedOps] = useState(() => {
     try {
-      const saved = localStorage.getItem('trackedOps');
-      return saved ? JSON.parse(saved) : [];
+      return readStoredJson(StorageKey.TRACKED_OPS, [], Array.isArray);
     } catch {
       return [];
     }
@@ -574,22 +582,17 @@ export const AppProvider = ({ children }) => {
   const trackedOpsRef = useRef(trackedOps);
   useEffect(() => { 
     trackedOpsRef.current = trackedOps; 
-    localStorage.setItem('trackedOps', JSON.stringify(trackedOps));
+    writeStoredJson(StorageKey.TRACKED_OPS, trackedOps);
   }, [trackedOps]);
 
-  // Map a UserOp label to the narrowest possible actionTag for ledger sync.
-  // Only the fields relevant to that operation will be re-verified on-chain.
-  const labelToActionTag = useCallback((label = '') => {
-    const l = label.toLowerCase();
-    if (l.includes('deploy'))                                             return 'DEPLOYMENT';
-    if (l.includes('agent') || l.includes('session'))                    return 'SESSION_KEY';
-    if (l.includes('approv'))                                            return 'APPROVAL';
-    if (l.includes('aave') || l.includes('supply') || l.includes('deposit') || l.includes('repay'))
-                                                                         return 'AAVE_POSITION';
-    if (l.includes('usdc') || l.includes('swap'))                        return 'USDC_BALANCE';
-    if (l.includes('eth') || l.includes('send') || l.includes('withdraw')) return 'ETH_BALANCE';
-    return 'FULL_SYNC';
-  }, []);
+  useEffect(() => subscribeToStorage(
+    [StorageKey.TRACKED_OPS, StorageKey.PENDING_USER_OPS, StorageKey.SHARED_DATA],
+    (event) => {
+      if (event.key === StorageKey.TRACKED_OPS) setTrackedOps(readStoredJson(StorageKey.TRACKED_OPS, [], Array.isArray));
+      if (event.key === StorageKey.PENDING_USER_OPS) setPendingUserOps(readStoredJson(StorageKey.PENDING_USER_OPS, [], Array.isArray));
+      if (event.key === StorageKey.SHARED_DATA) setSharedDataCache(readPersistedSharedDataCache());
+    }
+  ), []);
 
   const eoaAddressRef = useRef(null);
   useEffect(() => { eoaAddressRef.current = eoaAddress; }, [eoaAddress]);
@@ -600,8 +603,12 @@ export const AppProvider = ({ children }) => {
 
   // Call this right after sendUserOperation() — instantly unblocks the view
   const trackOp = useCallback((opHash, label = 'UserOperation', metadata = {}) => {
+    const tags = normalizeActionTags(metadata.tags, label);
+    if (import.meta.env.DEV && !metadata.tags) {
+      console.warn(`[ActionTags] Deprecated label fallback used for "${label}" -> ${labelToActionTag(label)}`);
+    }
     setTrackedOps(prev => [
-      { opHash, label, submittedAt: Date.now(), status: 'pending' },
+      { opHash, label, tags, submittedAt: Date.now(), status: 'pending' },
       ...prev.filter(op => op.opHash !== opHash)
     ]);
     addPendingUserOp(opHash);
@@ -675,7 +682,7 @@ export const AppProvider = ({ children }) => {
           const owners = await multisig.getOwners();
           const isOwner = owners.some(o => o.toLowerCase() === address.toLowerCase());
           setIsMultisigOwner(isOwner);
-        } catch (e) {
+        } catch {
           setIsMultisigOwner(false);
         }
       } else if (includeOwnership) {
@@ -722,7 +729,7 @@ export const AppProvider = ({ children }) => {
             const usdc = new ethers.Contract(usdcAddress, ERC20_ABI, _provider);
             const usdcBal = await usdc.balanceOf(saAddress);
             setSaUSDCBalance(usdcBal.toString());
-          } catch (e) {
+          } catch {
             setSaUSDCBalance("0");
           }
         }
@@ -920,6 +927,25 @@ export const AppProvider = ({ children }) => {
       refreshLightInFlightRef.current = null;
     }
   };
+  refreshLightDataRef.current = refreshLightData;
+
+  useEffect(() => {
+    if (!provider) return undefined;
+    const refreshAfterReturn = () => {
+      void refreshLightDataRef.current?.({ force: false });
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshAfterReturn();
+    };
+    window.addEventListener('focus', refreshAfterReturn);
+    window.addEventListener('online', refreshAfterReturn);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.removeEventListener('focus', refreshAfterReturn);
+      window.removeEventListener('online', refreshAfterReturn);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [provider, chainId, eoaAddress, smartAccountAddress]);
 
   const refreshAllData = async ({ force = false } = {}) => {
     if (!provider) return;
@@ -1034,14 +1060,48 @@ export const AppProvider = ({ children }) => {
   const providerRef = useRef(null);
   useEffect(() => { providerRef.current = provider; }, [provider]);
 
+  const refreshAllDataRef = useRef(refreshAllData);
+  useEffect(() => { refreshAllDataRef.current = refreshAllData; }, [refreshAllData]);
+
+  const refreshTaggedResourcesRef = useRef(() => {});
+  refreshTaggedResourcesRef.current = (tags, label) => {
+    const resources = expandActionTags(tags, label);
+    const refreshes = [];
+    const needsPortfolio = resources.includes(ActionTag.ETH_BALANCE) || resources.includes(ActionTag.USDC_BALANCE);
+    if (needsPortfolio) {
+      markSharedDataStale(['portfolio']);
+      refreshes.push(refreshFinancialPortfolio({ force: true }));
+    }
+    if (resources.includes(ActionTag.AAVE_POSITION)) {
+      markSharedDataStale(['aave']);
+      refreshes.push(refreshAaveData({ force: true }));
+    }
+    if (resources.includes(ActionTag.APPROVAL)) {
+      markSharedDataStale(['paymasterAllowance']);
+      refreshes.push(refreshPaymasterAllowance({ force: true }));
+    }
+    if (resources.includes(ActionTag.SESSION_KEY)) {
+      refreshes.push(refreshInstalledModules(smartAccountAddressRef.current, providerRef.current, null, { force: true }));
+    }
+    if (resources.includes(ActionTag.DEPLOYMENT)) {
+      refreshes.push(loadSmartAccountDetails(smartAccountAddressRef.current, providerRef.current, { includeContractDetails: true }));
+    }
+    if (resources.includes(ActionTag.MARKET_PRICES)) {
+      markSharedDataStale(['prices']);
+      refreshes.push(refreshMarketPrices({ force: true }));
+    }
+    void Promise.allSettled(refreshes).then(() => setRefreshTrigger((value) => value + 1));
+  };
+
   useEffect(() => {
     // Increase poll interval to 12s to prevent 429 Too Many Requests on Infura free tier
     const POLL_INTERVAL_MS = 12000;
     const TIMEOUT_MS = 20 * 60 * 1000; // Backend worker owns final stale marking.
 
-    const markConfirmed = (opHash, txHash, label) => {
+    const markConfirmed = (opHash, txHash, label, tags) => {
+      const normalizedTags = normalizeActionTags(tags, label);
       setTrackedOps(prev => prev.map(o =>
-        o.opHash === opHash ? { ...o, status: 'confirmed' } : o
+        o.opHash === opHash ? { ...o, tags: normalizedTags, status: 'confirmed' } : o
       ));
       addPendingUserOp(opHash, txHash);
       toast.withAction(
@@ -1049,15 +1109,58 @@ export const AppProvider = ({ children }) => {
         'View in History →',
         () => setCurrentViewRef.current && setCurrentViewRef.current('history')
       );
-      // Trigger backend ledger sync — backend verifies real chain state, no values sent from frontend
-      void syncAccountLedger({
-        smartAccountAddress: smartAccountAddressRef.current,
-        chainId: chainIdRef.current,
-        actionTag: labelToActionTag(label),
-        txHash,
-      }).catch(err => console.warn('[LedgerSync] trigger failed (non-fatal):', err));
-      // No force=true — let the in-flight guard and throttle deduplicate this
-      refreshAllData();
+      // New backend versions verify the receipt and derive effects. Refresh from
+      // verified resources only; retry briefly when an RPC node has not indexed
+      // the receipt yet. Older versions retain the legacy sync fallback.
+      const verifyAndRefresh = (attempt = 0) => {
+        void submitActionEvent({
+          smartAccountAddress: smartAccountAddressRef.current,
+          chainId: chainIdRef.current,
+          tags: normalizedTags,
+          userOpHash: opHash,
+          txHash,
+          metadata: { label },
+        }).then((event) => {
+          if (!event) {
+            refreshTaggedResourcesRef.current(normalizedTags, label);
+            return;
+          }
+          if (event.status === 'failed') {
+            markReverted(opHash, txHash, label);
+            return;
+          }
+          if (event.status === 'pending') {
+            if (attempt < 2) {
+              window.setTimeout(() => verifyAndRefresh(attempt + 1), 1500 * (2 ** attempt));
+            } else {
+              refreshTaggedResourcesRef.current([ActionTag.FULL_SYNC], label);
+            }
+            return;
+          }
+          refreshTaggedResourcesRef.current(
+            Array.isArray(event.verifiedTags) && event.verifiedTags.length
+              ? event.verifiedTags
+              : [ActionTag.FULL_SYNC],
+            label
+          );
+        }).catch((err) => {
+          if (attempt < 2) {
+            window.setTimeout(() => verifyAndRefresh(attempt + 1), 1500 * (2 ** attempt));
+            return;
+          }
+          console.warn('[ActionEvent] verified sync unavailable, using legacy sync:', err);
+          void syncAccountLedger({
+            smartAccountAddress: smartAccountAddressRef.current,
+            chainId: chainIdRef.current,
+            actionTag: normalizedTags[0] || ActionTag.FULL_SYNC,
+            actionTags: normalizedTags,
+            txHash,
+          }).then(() => {
+            refreshTaggedResourcesRef.current(normalizedTags, label);
+          }).catch(syncError => console.warn('[LedgerSync] trigger failed (non-fatal):', syncError));
+        });
+      };
+      verifyAndRefresh();
     };
 
     const markReverted = (opHash, txHash, label) => {
@@ -1067,14 +1170,14 @@ export const AppProvider = ({ children }) => {
       addPendingUserOp(opHash, txHash);
       toast.error(`"${label}" reverted on-chain.`);
       // No force=true — let the in-flight guard and throttle deduplicate this
-      refreshAllData();
+      refreshAllDataRef.current();
     };
 
     const markDropped = (opHash, label) => {
       setTrackedOps(prev => prev.map(o =>
         o.opHash === opHash ? { ...o, status: 'dropped' } : o
       ));
-      toast.error(`"${label}" may have been dropped by the bundler. Check JiffyScan with hash: ${opHash.slice(0, 10)}...`);
+      toast.error(`"${label}" may have been dropped by the bundler. Open History to check it on Arbiscan.`);
     };
 
     const interval = setInterval(async () => {
@@ -1087,7 +1190,7 @@ export const AppProvider = ({ children }) => {
         try {
           const backendOp = await getUserOperation(op.opHash);
           if (backendOp?.status === "confirmed") {
-            markConfirmed(op.opHash, backendOp.txHash, op.label);
+            markConfirmed(op.opHash, backendOp.txHash, op.label, op.tags);
             continue;
           }
           if (backendOp?.status === "reverted") {
@@ -1112,7 +1215,11 @@ export const AppProvider = ({ children }) => {
           // Step 1: Try the bundler's eth_getUserOperationReceipt API first (fast path)
           const result = await getUserOpReceipt(op.opHash, chainIdRef.current);
           if (result && result.receipt) {
-            markConfirmed(op.opHash, result.receipt.transactionHash, op.label);
+            if (result.success === false) {
+              markReverted(op.opHash, result.receipt.transactionHash, op.label);
+            } else {
+              markConfirmed(op.opHash, result.receipt.transactionHash, op.label, op.tags);
+            }
             continue;
           }
 
@@ -1131,7 +1238,12 @@ export const AppProvider = ({ children }) => {
               const events = await epContract.queryFilter(filter, fromBlock, currentBlock);
               if (events.length > 0) {
                 const txHash = events[0].transactionHash;
-                markConfirmed(op.opHash, txHash, op.label);
+                const eventSuccess = events[0].args?.success;
+                if (eventSuccess === false) {
+                  markReverted(op.opHash, txHash, op.label);
+                } else {
+                  markConfirmed(op.opHash, txHash, op.label, op.tags);
+                }
               }
             } catch (onChainErr) {
               console.warn(`[Tracker] On-chain fallback check failed for ${op.opHash.slice(0, 10)}...:`, onChainErr);
@@ -1154,7 +1266,7 @@ export const AppProvider = ({ children }) => {
     setGlobalLoading(true, "Connecting Wallet...");
     setIsConnecting(true);
     try {
-      localStorage.removeItem('userDisconnected');
+      removeStoredValue(StorageKey.USER_DISCONNECTED);
       await window.ethereum.request({ method: "eth_requestAccounts" });
       const browserProvider = new ethers.BrowserProvider(window.ethereum);
       const network = await browserProvider.getNetwork();
@@ -1189,7 +1301,7 @@ export const AppProvider = ({ children }) => {
   };
 
   const disconnect = () => {
-    localStorage.setItem('userDisconnected', 'true');
+    writeStoredString(StorageKey.USER_DISCONNECTED, 'true');
     setProvider(null);
     setSigner(null);
     setEoaAddress(null);
@@ -1274,7 +1386,7 @@ export const AppProvider = ({ children }) => {
   // On mount, auto-connect if already authorized in MetaMask
   useEffect(() => {
     const autoConnect = async () => {
-      if (localStorage.getItem('userDisconnected') === 'true') return;
+      if (readStoredString(StorageKey.USER_DISCONNECTED) === 'true') return;
       if (window.ethereum) {
         try {
           const accounts = await window.ethereum.request({ method: 'eth_accounts' });
@@ -1308,7 +1420,7 @@ export const AppProvider = ({ children }) => {
   // Also fires a FULL_SYNC to bootstrap the ledger for new or returning wallets.
   useEffect(() => {
     if (smartAccountAddress) {
-      if (eoaAddress && chainId) {
+      if (eoaAddress && Number(chainId) === expectedChainId) {
         void upsertSmartAccount({
           address: smartAccountAddress,
           ownerEoa: eoaAddress,
@@ -1326,7 +1438,7 @@ export const AppProvider = ({ children }) => {
         });
       }
     }
-  }, [smartAccountAddress, eoaAddress, chainId]);
+  }, [smartAccountAddress, eoaAddress, chainId, expectedChainId]);
 
   const value = {
     isTxLoading, txLoadingMessage, setGlobalLoading,

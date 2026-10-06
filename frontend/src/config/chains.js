@@ -1,4 +1,8 @@
+import { readStoredJson, writeStoredJson } from "../utils/storage";
+
 const env = import.meta.env;
+export const ARBITRUM_SEPOLIA_CHAIN_ID = 421614;
+export const ARBITRUM_SEPOLIA_EXPLORER_URL = (env.VITE_ARBITRUM_SEPOLIA_EXPLORER_URL || "https://sepolia.arbiscan.io").replace(/\/$/, "");
 const CANONICAL_MOCK_USDC = "0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E";
 const SEPOLIA_MOCK_WETH = "0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c";
 const ARBITRUM_SEPOLIA_WETH = "0x980B3b374e3c40ffBf522c74C3470D4E01B7c773";
@@ -136,7 +140,7 @@ export const CHAIN_REGISTRY = [
     viewOnly: false,
     rpcUrl: env.VITE_ARBITRUM_SEPOLIA_RPC_URL || "https://sepolia-rollup.arbitrum.io/rpc",
     bundlerUrl: env.VITE_ARBITRUM_SEPOLIA_BUNDLER_URL || "",
-    explorerUrl: "https://sepolia.arbiscan.io",
+    explorerUrl: ARBITRUM_SEPOLIA_EXPLORER_URL,
     explorerApiUrl: "https://api-sepolia.arbiscan.io/api",
     explorerApiChainId: 421614,
     nativeCurrency: { name: "Arbitrum Sepolia Ether", symbol: "ETH", decimals: 18 },
@@ -155,7 +159,7 @@ export const CHAIN_REGISTRY = [
     switchNetwork: {
       chainName: "Arbitrum Sepolia",
       rpcUrls: [env.VITE_ARBITRUM_SEPOLIA_RPC_URL || "https://sepolia-rollup.arbitrum.io/rpc"],
-      blockExplorerUrls: ["https://sepolia.arbiscan.io"],
+      blockExplorerUrls: [ARBITRUM_SEPOLIA_EXPLORER_URL],
     },
   },
   {
@@ -190,8 +194,7 @@ function getConfigApiBase() {
 
 function readCachedConfig() {
   try {
-    const raw = window.localStorage.getItem(CONFIG_CACHE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    return readStoredJson(CONFIG_CACHE_KEY, null, (value) => value && typeof value === "object");
   } catch {
     return null;
   }
@@ -199,7 +202,7 @@ function readCachedConfig() {
 
 function writeCachedConfig(config) {
   try {
-    window.localStorage.setItem(CONFIG_CACHE_KEY, JSON.stringify(config));
+    writeStoredJson(CONFIG_CACHE_KEY, config);
   } catch {
     // Cache writes are best-effort only.
   }
@@ -209,7 +212,9 @@ function applyRemoteConfig(config) {
   if (!config || !Array.isArray(config.chains)) return;
 
   const staticByChainId = new Map(CHAIN_REGISTRY.map((chain) => [chain.chainId, chain]));
-  const remoteChains = config.chains.map((chain) => {
+  const remoteChains = config.chains
+    .filter((chain) => Number(chain.chainId) === ARBITRUM_SEPOLIA_CHAIN_ID)
+    .map((chain) => {
     const staticChain = staticByChainId.get(chain.chainId) || {};
     return {
       ...staticChain,
@@ -217,8 +222,13 @@ function applyRemoteConfig(config) {
       // Priority to local frontend .env for RPCs (to support WSS override)
       rpcUrl: staticChain.rpcUrl || chain.rpcUrl,
       bundlerUrl: staticChain.bundlerUrl || chain.bundlerUrl,
+      explorerUrl: ARBITRUM_SEPOLIA_EXPLORER_URL,
+      isActive: true,
+      viewOnly: false,
     };
   });
+
+  if (remoteChains.length === 0) return;
 
   CHAIN_REGISTRY.splice(0, CHAIN_REGISTRY.length, ...remoteChains);
 
@@ -264,7 +274,9 @@ applyRemoteConfig(readCachedConfig());
 void loadRemoteConfig();
 
 export function getSupportedChains({ includeViewOnly = false } = {}) {
-  return CHAIN_REGISTRY.filter((chain) => chain.isActive || (includeViewOnly && chain.viewOnly));
+  return CHAIN_REGISTRY.filter((chain) =>
+    chain.chainId === ARBITRUM_SEPOLIA_CHAIN_ID && (chain.isActive || (includeViewOnly && chain.viewOnly))
+  );
 }
 
 export function getSupportedChainIds(options) {
@@ -272,11 +284,12 @@ export function getSupportedChainIds(options) {
 }
 
 export function getDefaultChainId() {
-  return Number(env.VITE_CHAIN_ID || getSupportedChains()[0]?.chainId || 11155111);
+  return ARBITRUM_SEPOLIA_CHAIN_ID;
 }
 
 export function getChainConfig(chainId = getDefaultChainId()) {
   const id = Number(chainId);
+  if (id !== ARBITRUM_SEPOLIA_CHAIN_ID) return null;
   return CHAIN_REGISTRY.find((chain) => chain.chainId === id) || null;
 }
 
@@ -299,8 +312,9 @@ export function getBundlerUrl(chainId) {
 }
 
 export function getExplorerTxUrl(chainId, txHash) {
-  const explorerUrl = getChainConfig(chainId)?.explorerUrl;
-  return explorerUrl && txHash ? `${explorerUrl}/tx/${txHash}` : "";
+  return Number(chainId) === ARBITRUM_SEPOLIA_CHAIN_ID && txHash
+    ? `${ARBITRUM_SEPOLIA_EXPLORER_URL}/tx/${txHash}`
+    : "";
 }
 
 export function getChainContracts(chainId) {

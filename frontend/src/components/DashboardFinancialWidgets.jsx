@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { buildAndSendAccountOp, encodeERC7579Batch } from '../utils/helpers';
 import { getDefaultChainId } from '../config/chains';
 import { getFriendlyErrorMessage } from '../utils/errors';
+import { ActionTag } from '../constants/actionTags';
 
 const fmt = (n, dec = 2) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 const fmtUsd = (n) => '$' + fmt(n, 2);
@@ -350,7 +351,7 @@ export function AaveV3Widget() {
         [approveData, depositData]
       );
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env?.ENTRY_POINT, env?.K1_VALIDATOR, chainId);
-      trackOp(opHash, "Aave Deposit");
+      trackOp(opHash, "Aave Deposit", { tags: [ActionTag.AAVE_SUPPLY] });
       setDepositAmount('');
     } catch (err) {
       console.error("Dashboard Aave deposit failed:", err);
@@ -381,7 +382,7 @@ export function AaveV3Widget() {
         [claimData, withdrawData]
       );
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env?.ENTRY_POINT, env?.K1_VALIDATOR, chainId);
-      trackOp(opHash, "Aave Claim & Withdraw");
+      trackOp(opHash, "Aave Claim & Withdraw", { tags: [ActionTag.AAVE_WITHDRAW] });
       setWithdrawAmount('');
     } catch (err) {
       console.error("Dashboard Aave withdraw failed:", err);
@@ -406,7 +407,7 @@ export function AaveV3Widget() {
       <div className="relative z-10 flex items-center justify-between gap-2 border-b border-white/5 pb-3 h-[53px]">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-8 h-8 flex-shrink-0 rounded-xl bg-obsidian-900 border border-white/10 text-[#00f59b] flex items-center justify-center shadow-[0_0_12px_-2px_rgba(0,245,155,0.35)]"><span className="text-sm font-bold">A</span></div>
-          <div className="min-w-0"><h3 className="text-sm font-bold text-white truncate">Aave V3 Yield Pool</h3><div className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">USDC · {resolvedChainId === 421614 ? 'Arbitrum Sepolia' : 'Sepolia testnet'}</div></div>
+          <div className="min-w-0"><h3 className="text-sm font-bold text-white truncate">Aave V3 Yield Pool</h3><div className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">USDC · Arbitrum Sepolia</div></div>
         </div>
         <div className="flex items-center gap-1.5 px-2 py-1 bg-[#00f59b]/10 border border-[#00f59b]/20 rounded-full flex-shrink-0"><span className="w-1.5 h-1.5 rounded-full bg-[#00f59b] animate-pulse" /><span className="text-[9px] font-mono font-bold text-[#00f59b] tracking-wider">ACTIVE</span></div>
       </div>

@@ -24,6 +24,8 @@ import {
 } from "../utils/abis";
 import { getSupportedChains } from "../config/chains";
 import { getFriendlyErrorMessage } from "../utils/errors";
+import { ActionTag } from "../constants/actionTags";
+import { readStoredJson, StorageKey, writeStoredJson, writeStoredString } from "../utils/storage";
 import {
   CheckCircle2,
   XCircle,
@@ -75,7 +77,6 @@ function ConnectedDashboard() {
     env,
     chainId,
     nativeToken,
-    isAmoy,
     trackOp,
     setGlobalLoading,
     loadingModules,
@@ -154,7 +155,7 @@ function ConnectedDashboard() {
         };
         const result = await quoter.quoteExactInputSingle.staticCall(params);
         setEstimatedUsdcOutput(ethers.formatUnits(result.amountOut, 6));
-      } catch (err) {
+      } catch {
         const rawOutput = parseFloat(swapAmount) * _ethPrice;
         setEstimatedUsdcOutput(
           rawOutput > 0 && rawOutput < 0.01 ? "< 0.01" : rawOutput.toFixed(2),
@@ -193,7 +194,7 @@ function ConnectedDashboard() {
     : "Predicted";
   const isCheckingAgentStatus =
     smartAccountStatus === "checking" || loadingModules;
-  const chainLabel = isAmoy ? "Amoy Testnet" : "Sepolia Testnet";
+  const chainLabel = "Arbitrum Sepolia";
   const fmtUsdShort = (value) =>
     `$${Number(value || 0).toLocaleString("en-US", {
       minimumFractionDigits: 2,
@@ -231,17 +232,13 @@ function ConnectedDashboard() {
       const burnerKey = wallet.privateKey;
       const sessionKeyAddr = wallet.address;
 
-      localStorage.setItem("session_burner_key", burnerKey);
+      writeStoredString(StorageKey.SESSION_BURNER_KEY, burnerKey);
       try {
-        const mapStr = localStorage.getItem("session_burner_keys_map");
-        const map = mapStr ? JSON.parse(mapStr) : {};
+        const map = readStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, {}, (value) => value && typeof value === 'object');
         map[sessionKeyAddr.toLowerCase()] = burnerKey;
-        localStorage.setItem("session_burner_keys_map", JSON.stringify(map));
+        writeStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, map);
       } catch {
-        localStorage.setItem(
-          "session_burner_keys_map",
-          JSON.stringify({ [sessionKeyAddr.toLowerCase()]: burnerKey }),
-        );
+        writeStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, { [sessionKeyAddr.toLowerCase()]: burnerKey });
       }
 
       const parsedValue = ethers.parseEther("0.1"); // Default max value
@@ -291,7 +288,7 @@ function ConnectedDashboard() {
         chainId,
         initCodeObj,
       );
-      trackOp(opHash, "Activate Agentic Wallet", { calldata: callData });
+      trackOp(opHash, "Activate Agentic Wallet", { calldata: callData, tags: [ActionTag.ACCOUNT_ACTIVATION] });
       toast.success(
         `Agentic Wallet Activating! OpHash: ${shortenAddress(opHash)}...`,
       );
@@ -426,6 +423,7 @@ function ConnectedDashboard() {
       // Fire and forget — global tracker handles confirmation in background
       trackOp(opHash, `${nativeToken} → USDC Swap`, {
         calldata: userOp.callData,
+        tags: [ActionTag.SWAP],
       });
       toast.withAction(
         "Swap submitted to bundler!",
@@ -1254,7 +1252,7 @@ function LandingPage() {
     ],
     [
       "Which chains are active right now?",
-      `The active chain registry currently includes ${chainLabel}. Additional view-only chains appear as roadmap entries until they are activated.`,
+      `${chainLabel} is the only active network in this platform.`,
     ],
     [
       "Does the agent hold funds?",
@@ -1435,7 +1433,7 @@ function LandingPage() {
                 <span></span> agent demo active
               </div>
               <div className="new-agent-meta">
-                Sepolia / Amoy / Arbitrum Sepolia
+                Arbitrum Sepolia
               </div>
             </div>
             <div className="new-agent-grid">

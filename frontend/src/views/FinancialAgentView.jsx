@@ -6,6 +6,7 @@ import { useToast } from '../context/ToastContext';
 import { buildAndSendAccountOp, encodeERC7579Batch } from '../utils/helpers';
 import { getDefaultChainId } from '../config/chains';
 import { getFriendlyErrorMessage } from '../utils/errors';
+import { ActionTag } from '../constants/actionTags';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const FINANCIAL_API = (import.meta.env.VITE_FINANCIAL_AGENT_URL || 'http://127.0.0.1:3003').replace(/\/$/, '');
@@ -180,7 +181,7 @@ export default function FinancialAgentView() {
         [approveData, depositData]
       );
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env?.ENTRY_POINT, env?.K1_VALIDATOR, chainId);
-      trackOp(opHash, "Aave Deposit");
+      trackOp(opHash, "Aave Deposit", { tags: [ActionTag.AAVE_SUPPLY] });
       setDepositAmount('');
     } catch (err) {
       console.error("Financial agent Aave deposit failed:", err);
@@ -211,7 +212,7 @@ export default function FinancialAgentView() {
         [claimData, withdrawData]
       );
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env?.ENTRY_POINT, env?.K1_VALIDATOR, chainId);
-      trackOp(opHash, "Aave Claim & Withdraw");
+      trackOp(opHash, "Aave Claim & Withdraw", { tags: [ActionTag.AAVE_WITHDRAW] });
       setWithdrawAmount('');
     } catch (err) {
       console.error("Financial agent Aave withdrawal failed:", err);
@@ -665,7 +666,7 @@ export default function FinancialAgentView() {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-gray-900">Aave V3 — USDC</h3>
-                    <div className="text-[10px] text-stone-400">{resolvedChainId === 421614 ? 'Arbitrum Sepolia' : 'Sepolia testnet'}</div>
+                    <div className="text-[10px] text-stone-400">Arbitrum Sepolia</div>
                   </div>
                 </div>
                 <div className="flex items-center space-x-1 text-emerald-600 text-xs font-semibold">

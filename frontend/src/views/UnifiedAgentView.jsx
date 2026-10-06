@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import ReactMarkdown from 'react-markdown';
+import SafeMarkdown from '../components/SafeMarkdown';
 import { useChatbotContext } from '../context/ChatbotContext';
 import { useAppContext } from '../context/AppContext';
 import { ethers } from 'ethers';
@@ -9,6 +9,9 @@ import { buildAndSendAccountOp, encodeERC7579Single, encodeERC7579Batch, getActi
 import { estimateUserOperationGas, sendUserOperation, getUserOpReceipt, getDynamicGasFees, applyBufferedGasEstimate } from '../utils/bundler';
 import { getDefaultChainId } from '../config/chains';
 import { getFriendlyErrorMessage } from '../utils/errors';
+import { ActionTag } from '../constants/actionTags';
+import { useToast } from '../context/ToastContext';
+import { useConfirmDialog } from '../components/ConfirmDialog';
 
 /* ---------- icons ---------- */
 const BotIcon = ({ size = 16 }) => (
@@ -92,7 +95,7 @@ const CardHeader = ({ title, subtitle }) => (
 
 const SCOPES = [
   { id: "native",  emoji: "⚡", name: "Native Transfer", desc: "ETH transfers", suggestions: ['Send 0.001 ETH to 0x1234...', 'Send 0.01 ETH to my friend 3 times'] },
-  { id: "uniswap", emoji: "🦄", name: "Uniswap V3", desc: "Swaps on Sepolia", suggestions: ['Swap 0.001 ETH for USDC', 'Swap 0.001 ETH for USDC 3 times'] },
+  { id: "uniswap", emoji: "🦄", name: "Uniswap V3", desc: "Swaps on Arbitrum Sepolia", suggestions: ['Swap 0.001 ETH for USDC', 'Swap 0.001 ETH for USDC 3 times'] },
   { id: "erc20",   emoji: "💸", name: "ERC-20",     desc: "USDC transfers + Aave deposits", suggestions: ['Send 0.5 USDC to 0x1234...', 'Deposit 100 USDC into Aave', 'Send 1 USDC to my friend 3 times'] }
 ];
 
@@ -432,14 +435,14 @@ function AgentWorkspace({
         {messages.map((m, i) =>
           m.role === "user" ? (
             <div className="row row--user" key={i}>
-              <div className="bubble markdown-body"><ReactMarkdown>{m.content}</ReactMarkdown></div>
+              <div className="bubble markdown-body"><SafeMarkdown>{m.content}</SafeMarkdown></div>
               <span className="avatar"><UserIcon /></span>
             </div>
           ) : (
             <div className="row row--agent" key={i}>
               <span className="avatar avatar--bot"><BotIcon size={15} /></span>
               <div className="stack">
-                <div className="bubble markdown-body"><ReactMarkdown>{m.content}</ReactMarkdown></div>
+                <div className="bubble markdown-body"><SafeMarkdown>{m.content}</SafeMarkdown></div>
                 {m.ops?.map((op) => (
                   <div className="op" key={op.iteration}>
                     <span className="op__check"><CheckCircle size={15} /></span>
@@ -489,6 +492,8 @@ function AgentWorkspace({
 }
 
 export default function UnifiedAgentView() {
+    const toast = useToast();
+    const [confirmAction, confirmDialog] = useConfirmDialog();
     const {
         isAgentConfigured,
         agentStatus,
@@ -721,7 +726,7 @@ export default function UnifiedAgentView() {
     const handleCreateAssistant = async ({ scopesConfig, validityDays }) => {
         const parsedValidityDays = Number(validityDays || DEFAULT_AGENT_VALIDITY_DAYS);
         if (!Number.isFinite(parsedValidityDays) || parsedValidityDays < 1 || parsedValidityDays > 365) {
-            alert("Assistant access duration must be between 1 and 365 days.");
+            toast.error("Assistant access duration must be between 1 and 365 days.");
             return;
         }
         
@@ -848,7 +853,7 @@ export default function UnifiedAgentView() {
             userOp.signature = sig;
 
             const returnedHash = await sendUserOperation(userOp, chainId);
-            trackOp(returnedHash, 'Batch Create AI Assistants', { calldata: userOp.callData });
+            trackOp(returnedHash, 'Batch Create AI Assistants', { calldata: userOp.callData, tags: [ActionTag.SESSION_KEY] });
 
             const receipt = await waitForReceipt(returnedHash);
 
@@ -871,11 +876,11 @@ export default function UnifiedAgentView() {
                 }
                 go("workspace");
             } else {
-                alert("Assistant creation failed or timed out. Please try again.");
+                toast.error("Assistant creation failed or timed out. Please try again.");
             }
         } catch (e) {
             console.error("Assistant creation failed:", e);
-            alert(getFriendlyErrorMessage(e, "We could not create the assistant. Please check your wallet and try again."));
+            toast.error(getFriendlyErrorMessage(e, "We could not create the assistant. Please check your wallet and try again."));
         } finally {
             setIsCreating(false);
         }
@@ -950,7 +955,7 @@ export default function UnifiedAgentView() {
             }
         } catch (e) {
             console.error("Agent sync failed:", e);
-            alert(getFriendlyErrorMessage(e, "We could not sync agents right now. Please try again."));
+            toast.error(getFriendlyErrorMessage(e, "We could not sync agents right now. Please try again."));
         } finally {
             setIsSyncing(false);
         }
@@ -958,7 +963,12 @@ export default function UnifiedAgentView() {
 
     const handleDeleteAgent = async (agentAddress) => {
         if (!agentAddress) return;
-        const confirmed = window.confirm("Revoke this agent on-chain and remove its signing key from the backend?");
+        const confirmed = await confirmAction({
+            title: "Revoke assistant?",
+            message: "This revokes the assistant on-chain and removes its signing key from the backend.",
+            confirmLabel: "Revoke assistant",
+            danger: true,
+        });
         if (!confirmed) return;
         setIsDeleting(true);
         try {
@@ -969,7 +979,7 @@ export default function UnifiedAgentView() {
             const innerCall = skValidator.interface.encodeFunctionData("revokeSessionKey", [agentAddress]);
             const callData = encodeERC7579Single(validatorAddr, 0n, innerCall);
             const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
-            trackOp(opHash, 'Revoke AI Agent', { calldata: callData });
+            trackOp(opHash, 'Revoke AI Agent', { calldata: callData, tags: [ActionTag.SESSION_KEY] });
 
             const receipt = await waitForReceipt(opHash);
             if (!receipt?.success) throw new Error("Agent revocation failed or timed out.");
@@ -983,14 +993,19 @@ export default function UnifiedAgentView() {
             }
         } catch (e) {
             console.error("Agent revoke failed:", e);
-            alert(getFriendlyErrorMessage(e, "We could not revoke this agent. Please check your wallet and try again."));
+            toast.error(getFriendlyErrorMessage(e, "We could not revoke this agent. Please check your wallet and try again."));
         } finally {
             setIsDeleting(false);
         }
     };
 
     const handleRevokeAllAgents = async () => {
-        const confirmed = window.confirm("This uninstalls SessionKeyValidator from your smart account and revokes all AI agents on-chain.");
+        const confirmed = await confirmAction({
+            title: "Revoke all assistants?",
+            message: "This uninstalls the session-key validator and revokes every AI assistant on-chain.",
+            confirmLabel: "Revoke all",
+            danger: true,
+        });
         if (!confirmed) return;
         setIsRevokingAll(true);
         try {
@@ -1014,7 +1029,7 @@ export default function UnifiedAgentView() {
                 )
                 : uninstallCallData;
             const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
-            trackOp(opHash, 'Revoke All AI Agents', { calldata: callData });
+            trackOp(opHash, 'Revoke All AI Agents', { calldata: callData, tags: [ActionTag.SESSION_KEY] });
 
             const receipt = await waitForReceipt(opHash);
             if (!receipt?.success) throw new Error("Revoke all agents failed or timed out.");
@@ -1027,7 +1042,7 @@ export default function UnifiedAgentView() {
             handleNewAgent();
         } catch (e) {
             console.error("Revoke all agents failed:", e);
-            alert(getFriendlyErrorMessage(e, "We could not revoke all agents. Please check your wallet and try again."));
+            toast.error(getFriendlyErrorMessage(e, "We could not revoke all agents. Please check your wallet and try again."));
         } finally {
             setIsRevokingAll(false);
         }
@@ -1048,6 +1063,7 @@ export default function UnifiedAgentView() {
 
     return (
         <div className="stage">
+          {confirmDialog}
           <div className="shell">
                 <nav className="tabs" role="tablist">
                     {TABS.map((t) => (

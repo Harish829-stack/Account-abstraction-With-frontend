@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@aa/action-tags": "file:../packages/action-tags",
     "@dynamic-labs/ethereum": "^5.3.2",
     "@dynamic-labs/ethers-v6": "^5.3.2",
     "@dynamic-labs/sdk-react-core": "^5.3.2",

@@ -1,0 +1,23 @@
+{
+  "name": "@aa/action-tags",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "module": "index.mjs",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.mjs",
+      "require": "./index.js",
+      "default": "./index.js"
+    },
+    "./index.mjs": "./index.mjs"
+  },
+  "files": [
+    "index.js",
+    "index.mjs",
+    "index.d.ts",
+    "action-tags.json"
+  ]
+}

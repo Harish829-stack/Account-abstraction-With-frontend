@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
-import { CheckCircle2, XCircle, Info, X, ExternalLink } from 'lucide-react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { CheckCircle2, XCircle, Info, TriangleAlert, X, ExternalLink } from 'lucide-react';
 
 const ToastContext = createContext(null);
 
@@ -13,6 +13,12 @@ export function useToast() {
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
+  const timersRef = useRef(new Set());
+
+  useEffect(() => () => {
+    timersRef.current.forEach((timer) => clearTimeout(timer));
+    timersRef.current.clear();
+  }, []);
 
   const removeToast = useCallback((id) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
@@ -20,13 +26,21 @@ export function ToastProvider({ children }) {
 
   const addToast = useCallback((message, type = 'info', action = null, duration = 4000) => {
     const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, message, type, action }]);
-    setTimeout(() => removeToast(id), duration);
+    setToasts((prev) => {
+      if (prev.some((toast) => toast.message === message && toast.type === type)) return prev;
+      return [...prev.slice(-3), { id, message, type, action }];
+    });
+    const timer = setTimeout(() => {
+      timersRef.current.delete(timer);
+      removeToast(id);
+    }, duration);
+    timersRef.current.add(timer);
   }, [removeToast]);
 
   const success = useCallback((message) => addToast(message, 'success'), [addToast]);
   const error = useCallback((message) => addToast(message, 'error', null, 6000), [addToast]);
   const info = useCallback((message) => addToast(message, 'info'), [addToast]);
+  const warning = useCallback((message) => addToast(message, 'warning', null, 6000), [addToast]);
 
   // Toast with an action button: toast.withAction("msg", "Label", () => doSomething(), 'success')
   const withAction = useCallback((message, buttonLabel, onButtonClick, type = 'success') => {
@@ -34,15 +48,16 @@ export function ToastProvider({ children }) {
   }, [addToast]);
 
   return (
-    <ToastContext.Provider value={{ success, error, info, withAction }}>
+    <ToastContext.Provider value={{ success, error, info, warning, withAction }}>
       {children}
-      <div className="toast-container">
+      <div className="toast-container" role="region" aria-label="Notifications" aria-live="polite">
         {toasts.map((toast) => (
           <div key={toast.id} className={`toast-item toast-${toast.type}`}>
             <div className="toast-icon">
               {toast.type === 'success' && <CheckCircle2 size={20} className="text-secondary" />}
               {toast.type === 'error' && <XCircle size={20} className="text-danger" />}
               {toast.type === 'info' && <Info size={20} className="text-primary" />}
+              {toast.type === 'warning' && <TriangleAlert size={20} aria-hidden="true" />}
             </div>
             <div className="toast-message" style={{ flex: 1 }}>{toast.message}</div>
             {toast.action && (
@@ -72,7 +87,7 @@ export function ToastProvider({ children }) {
                 {toast.action.label}
               </button>
             )}
-            <button className="toast-close" onClick={() => removeToast(toast.id)}>
+            <button className="toast-close" aria-label="Dismiss notification" onClick={() => removeToast(toast.id)}>
               <X size={16} />
             </button>
           </div>

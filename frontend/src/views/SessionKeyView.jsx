@@ -8,6 +8,8 @@ import { Key, PlusCircle, Zap, Settings, ChevronRight, XCircle } from 'lucide-re
 import { SmartAccountABI, IEntryPointABI, SessionKeyValidatorABI } from '../utils/abis';
 import { revokeAllPersistedAgents, revokePersistedAgent } from '../utils/backendApi';
 import { getFriendlyErrorMessage } from '../utils/errors';
+import { ActionTag } from '../constants/actionTags';
+import { readStoredJson, readStoredString, removeStoredValue, StorageKey, writeStoredJson, writeStoredString } from '../utils/storage';
 
 export default function SessionKeyView() {
   const { smartAccountAddress, signer, provider, env, setGlobalLoading, chainId, refreshTrigger, nativeToken, installedModules, refreshInstalledModules, trackOp } = useAppContext();
@@ -48,8 +50,8 @@ export default function SessionKeyView() {
 
     const handleModuleRevoked = (event) => {
       if (!matchesCurrentAccount(event.detail)) return;
-      localStorage.removeItem("session_burner_key");
-      localStorage.removeItem("session_burner_keys_map");
+      removeStoredValue(StorageKey.SESSION_BURNER_KEY);
+      removeStoredValue(StorageKey.SESSION_BURNER_KEYS_MAP);
       setBurnerKey("");
       setAllSessionKeys([]);
     };
@@ -84,7 +86,7 @@ export default function SessionKeyView() {
 
   useEffect(() => {
     // Attempt to load burner key from local storage
-    const storedKey = localStorage.getItem("session_burner_key");
+    const storedKey = readStoredString(StorageKey.SESSION_BURNER_KEY);
     if (storedKey) {
         setBurnerKey(storedKey);
     }
@@ -96,7 +98,7 @@ export default function SessionKeyView() {
       if (!smartAccountAddress || !provider || !validatorAddr || !isSkInstalled) {
         return;
       }
-      const storedKey = localStorage.getItem("session_burner_key");
+      const storedKey = readStoredString(StorageKey.SESSION_BURNER_KEY);
       if (!storedKey) return;
       try {
         const burnerWallet = new ethers.Wallet(storedKey);
@@ -113,13 +115,12 @@ export default function SessionKeyView() {
     const generateKey = () => {
         const wallet = ethers.Wallet.createRandom();
         setBurnerKey(wallet.privateKey);
-        localStorage.setItem("session_burner_key", wallet.privateKey);
+        writeStoredString(StorageKey.SESSION_BURNER_KEY, wallet.privateKey);
         
         try {
-            const mapStr = localStorage.getItem("session_burner_keys_map");
-            const map = mapStr ? JSON.parse(mapStr) : {};
+            const map = readStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, {}, (value) => value && typeof value === 'object');
             map[wallet.address.toLowerCase()] = wallet.privateKey;
-            localStorage.setItem("session_burner_keys_map", JSON.stringify(map));
+            writeStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, map);
         } catch {
             console.warn("Failed to update keys map");
         }
@@ -129,8 +130,7 @@ export default function SessionKeyView() {
 
     const handleUseSpecificKey = (keyAddress) => {
         try {
-            const mapStr = localStorage.getItem("session_burner_keys_map");
-            const map = mapStr ? JSON.parse(mapStr) : {};
+            const map = readStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, {}, (value) => value && typeof value === 'object');
             
             // Convert to lowercase map for case-insensitive lookup
             const lowerMap = {};
@@ -140,7 +140,7 @@ export default function SessionKeyView() {
             
             // Legacy fallback: check if it's the currently active single burner key
             if (!privKey) {
-                const legacyKey = localStorage.getItem("session_burner_key");
+                const legacyKey = readStoredString(StorageKey.SESSION_BURNER_KEY);
                 if (legacyKey) {
                     try {
                         const legacyWallet = new ethers.Wallet(legacyKey);
@@ -148,7 +148,7 @@ export default function SessionKeyView() {
                             privKey = legacyKey;
                             // Add it to the map for future use
                             map[keyAddress.toLowerCase()] = privKey;
-                            localStorage.setItem("session_burner_keys_map", JSON.stringify(map));
+                            writeStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, map);
                         }
                     } catch {
                         // Ignore malformed legacy burner key.
@@ -158,7 +158,7 @@ export default function SessionKeyView() {
             
             if (privKey) {
                 setBurnerKey(privKey);
-                localStorage.setItem("session_burner_key", privKey); // Update active key
+                writeStoredString(StorageKey.SESSION_BURNER_KEY, privKey); // Update active key
                 setActiveTab('execute');
                 toast.success("Burner key loaded! Ready to execute.");
             } else {
@@ -211,14 +211,14 @@ export default function SessionKeyView() {
           const callData = encodeERC7579Single(validatorAddr, 0n, innerCall);
 
           const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
-          trackOp(opHash, 'Session Key Revocation', { calldata: callData });
+          trackOp(opHash, 'Session Key Revocation', { calldata: callData, tags: [ActionTag.SESSION_KEY] });
           
           toast.success(`Key Revoked Successfully! OpHash: ${shortenAddress(opHash)}`);
           
           if (burnerKey) {
              const currentBurnerWallet = new ethers.Wallet(burnerKey);
              if (currentBurnerWallet.address.toLowerCase() === keyAddress.toLowerCase()) {
-                 localStorage.removeItem("session_burner_key");
+                 removeStoredValue(StorageKey.SESSION_BURNER_KEY);
                  setBurnerKey("");
              }
           }
@@ -267,7 +267,7 @@ export default function SessionKeyView() {
               : uninstallCallData;
 
           const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
-          trackOp(opHash, 'Uninstall Session Key Module', { calldata: callData });
+          trackOp(opHash, 'Uninstall Session Key Module', { calldata: callData, tags: [ActionTag.SESSION_KEY] });
 
           const receipt = await waitForUserOpReceipt(opHash);
           if (!receipt?.success) {
@@ -276,8 +276,8 @@ export default function SessionKeyView() {
 
           toast.success(`Module Uninstalled & Session Keys Revoked! OpHash: ${shortenAddress(opHash)}`);
           
-          localStorage.removeItem("session_burner_key");
-          localStorage.removeItem("session_burner_keys_map");
+          removeStoredValue(StorageKey.SESSION_BURNER_KEY);
+          removeStoredValue(StorageKey.SESSION_BURNER_KEYS_MAP);
           setBurnerKey("");
           setAllSessionKeys([]);
           await revokeAllPersistedAgents({
@@ -313,10 +313,9 @@ export default function SessionKeyView() {
       
       // Save to local map when installing manually entered keys
       try {
-          const mapStr = localStorage.getItem("session_burner_keys_map");
-          const map = mapStr ? JSON.parse(mapStr) : {};
+          const map = readStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, {}, (value) => value && typeof value === 'object');
           map[sessionKeyAddr.toLowerCase()] = burnerKey;
-          localStorage.setItem("session_burner_keys_map", JSON.stringify(map));
+          writeStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, map);
       } catch {
           // Local key map persistence is best-effort.
       }
@@ -350,7 +349,7 @@ export default function SessionKeyView() {
           const callData = accountIface.encodeFunctionData("installModule", [1, validatorAddr, initData]);
           
           const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
-          trackOp(opHash, 'Install Session Key Module', { calldata: callData });
+          trackOp(opHash, 'Install Session Key Module', { calldata: callData, tags: [ActionTag.SESSION_KEY] });
           const receipt = await waitForUserOpReceipt(opHash);
           if (!receipt?.success) {
               throw new Error("Session key module install failed or timed out.");
@@ -373,7 +372,7 @@ export default function SessionKeyView() {
           );
 
           const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
-          trackOp(opHash, 'Add Session Key', { calldata: callData });
+          trackOp(opHash, 'Add Session Key', { calldata: callData, tags: [ActionTag.SESSION_KEY] });
           toast.success(`Session Key adding! OpHash: ${shortenAddress(opHash)}...`);
           await queryAllSessionKeys();
       }
@@ -451,7 +450,7 @@ export default function SessionKeyView() {
           rpcUserOp.signature = ethers.hexlify(packedSignature);
 
           const opHash = await sendUserOperation(rpcUserOp, chainId);
-          trackOp(opHash, 'Session Key Execution', { calldata: rpcUserOp.callData });
+          trackOp(opHash, 'Session Key Execution', { calldata: rpcUserOp.callData, tags: [ActionTag.SESSION_KEY] });
 
           toast.success(`Bundler executing! OpHash: ${shortenAddress(opHash)}...`);
       } catch (err) {

@@ -6,6 +6,7 @@ import { SmartAccountABI, ERC20_ABI, IEntryPointABI } from '../utils/abis';
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
 import { toHex, getEthPriceInUsd, packUserOp, encodeERC7579Batch } from '../utils/helpers';
 import { getFriendlyErrorMessage } from '../utils/errors';
+import { ActionTag } from '../constants/actionTags';
 import { Layers, Settings, ExternalLink, Plus, Trash2, Send, CheckCircle2, RotateCcw } from 'lucide-react';
 
 export default function BatchSendView() {
@@ -270,7 +271,7 @@ export default function BatchSendView() {
       toast.success("Bundler accepted the transaction!");
 
       // Fire and forget — global tracker handles confirmation in background
-      trackOp(opHash, 'Batch UserOperation', { calldata: userOp.callData });
+      trackOp(opHash, 'Batch UserOperation', { calldata: userOp.callData, tags: [ActionTag.FULL_SYNC] });
 
       setPending(false);
       setGlobalLoading(false);

@@ -4,9 +4,8 @@ import { SmartAccountABI, IEntryPointABI } from "./abis";
 import { getDynamicGasFees } from "./bundler";
 import { encodeERC7579Single, buildAndSendAccountOp } from "./helpers";
 import { SHARED_CONTRACTS } from "../config/chains";
+import { readStoredJson, StorageKey, writeStoredJson } from "./storage";
 
-
-const STORAGE_KEY = "webauthn_credential";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,10 +25,10 @@ export async function registerPasskey(username) {
 
 
  // Persist to localStorage (same pattern as session_burner_key in SessionKeyView)
- localStorage.setItem(STORAGE_KEY, JSON.stringify({
+ writeStoredJson(StorageKey.WEBAUTHN_CREDENTIAL, {
    id: credential.id,       // credential ID — needed for signing later
    publicKey: { qx, qy },  // P256 public key — needed for installModule
- }));
+ });
 
 
  return { credential, qx, qy };
@@ -38,8 +37,9 @@ export async function registerPasskey(username) {
 
 // Helper: load saved credential from localStorage
 export function loadPasskeyCredential() {
- const raw = localStorage.getItem(STORAGE_KEY);
- return raw ? JSON.parse(raw) : null;
+ return readStoredJson(StorageKey.WEBAUTHN_CREDENTIAL, null, (value) => (
+   value && typeof value.id === "string" && typeof value.publicKey?.qx === "string" && typeof value.publicKey?.qy === "string"
+ ));
 }
 
 

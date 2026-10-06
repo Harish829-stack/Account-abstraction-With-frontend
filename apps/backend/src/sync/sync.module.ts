@@ -9,5 +9,6 @@ import { SyncService } from "./sync.service";
   imports: [AccountsModule],
   controllers: [SyncController, MarketController],
   providers: [SyncService, ChainReaderService],
+  exports: [SyncService],
 })
 export class SyncModule {}

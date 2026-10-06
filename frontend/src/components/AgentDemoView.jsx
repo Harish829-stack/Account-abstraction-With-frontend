@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import ReactMarkdown from 'react-markdown';
+import SafeMarkdown from './SafeMarkdown';
+import { useConfirmDialog } from './ConfirmDialog';
 
 /* ---------- icons ---------- */
 const BotIcon = ({ size = 16 }) => (
@@ -83,7 +84,7 @@ const CardHeader = ({ title, subtitle }) => (
 
 const SCOPES = [
   { id: "native",  emoji: "⚡", name: "Native Transfer", desc: "ETH transfers", suggestions: ['Send 0.001 ETH to 0x1234...', 'Send 0.01 ETH to my friend 3 times'] },
-  { id: "uniswap", emoji: "🦄", name: "Uniswap V3", desc: "Swaps on Sepolia", suggestions: ['Swap 0.001 ETH for USDC', 'Swap 0.001 ETH for USDC 3 times'] },
+  { id: "uniswap", emoji: "🦄", name: "Uniswap V3", desc: "Swaps on Arbitrum Sepolia", suggestions: ['Swap 0.001 ETH for USDC', 'Swap 0.001 ETH for USDC 3 times'] },
   { id: "erc20",   emoji: "💸", name: "ERC-20",     desc: "USDC transfers", suggestions: ['Send 0.5 USDC to 0x1234...', 'Send 1 USDC to my friend 3 times'] }
 ];
 
@@ -339,14 +340,14 @@ function AgentWorkspace({
         {messages.map((m, i) =>
           m.role === "user" ? (
             <div className="row row--user" key={i}>
-              <div className="bubble markdown-body"><ReactMarkdown>{m.content}</ReactMarkdown></div>
+              <div className="bubble markdown-body"><SafeMarkdown>{m.content}</SafeMarkdown></div>
               <span className="avatar"><UserIcon /></span>
             </div>
           ) : (
             <div className="row row--agent" key={i}>
               <span className="avatar avatar--bot"><BotIcon size={15} /></span>
               <div className="stack">
-                <div className="bubble markdown-body"><ReactMarkdown>{m.content}</ReactMarkdown></div>
+                <div className="bubble markdown-body"><SafeMarkdown>{m.content}</SafeMarkdown></div>
                 {m.ops?.map((op) => (
                   <div className="op" key={op.iteration}>
                     <span className="op__check"><CheckCircle size={15} /></span>
@@ -418,6 +419,7 @@ function AgentWorkspace({
 }
 
 export default function AgentDemoView() {
+    const [confirmAction, confirmDialog] = useConfirmDialog();
     // --- Mock State ---
     const [mockBalances, setMockBalances] = useState({ eth: 2.4, usdc: 4700 });
     const [mockAgents, setMockAgents] = useState([]);
@@ -629,7 +631,7 @@ export default function AgentDemoView() {
 
     const handleDeleteAgent = async (agentAddress) => {
         if (!agentAddress) return;
-        const confirmed = window.confirm("Revoke this agent on-chain and remove its signing key from the backend?");
+        const confirmed = await confirmAction({ title: "Revoke assistant?", message: "This removes the selected demo assistant.", confirmLabel: "Revoke assistant", danger: true });
         if (!confirmed) return;
         setIsDeleting(true);
         setTimeout(() => {
@@ -645,7 +647,7 @@ export default function AgentDemoView() {
     };
 
     const handleRevokeAllAgents = async () => {
-        const confirmed = window.confirm("This uninstalls SessionKeyValidator from your smart account and revokes all AI agents on-chain.");
+        const confirmed = await confirmAction({ title: "Revoke all assistants?", message: "This removes every configured demo assistant.", confirmLabel: "Revoke all", danger: true });
         if (!confirmed) return;
         setIsRevokingAll(true);
         setTimeout(() => {
@@ -673,6 +675,7 @@ export default function AgentDemoView() {
 
     return (
         <div className="agent-demo-frame">
+        {confirmDialog}
         <div className="stage agent-demo-stage">
           <div className="shell">
                 <nav className="tabs" role="tablist">

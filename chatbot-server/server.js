@@ -16,6 +16,19 @@ const {
     waitForUserOp
 } = require('./userOpBuilder');
 const { resolvePaymasterRoute } = require('./paymasterRouter');
+const { toPublicError } = require('./errorTranslator');
+const { isBlockedSelector, isToolAllowed } = require('./securityPolicy');
+const { ActionTag } = require('@aa/action-tags');
+
+const ARBITRUM_SEPOLIA_CHAIN_ID = 421614;
+const ARBITRUM_SEPOLIA_RPC_URL = process.env.ARBITRUM_SEPOLIA_RPC_URL || process.env.SEPOLIA_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc';
+const ARBITRUM_EXPLORER_URL = (process.env.ARBITRUM_SEPOLIA_EXPLORER_URL || 'https://sepolia.arbiscan.io').replace(/\/$/, '');
+const TOOL_ACTION_TAGS = Object.freeze({
+    uniswap_swap: [ActionTag.SWAP],
+    erc20_transfer: [ActionTag.ERC20_TRANSFER],
+    aave_supply: [ActionTag.AAVE_SUPPLY],
+    transfer_eth: [ActionTag.ETH_TRANSFER]
+});
 
 const app = express();
 const parseCorsOrigins = () => {
@@ -55,12 +68,23 @@ app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
 const rateLimiter = createRateLimiter();
 if (rateLimiter) app.use(rateLimiter);
 
+app.use('/api', (req, res, next) => {
+    const requestedChainId = Number(req.query.chainId || req.body?.chainId || ARBITRUM_SEPOLIA_CHAIN_ID);
+    if (requestedChainId !== ARBITRUM_SEPOLIA_CHAIN_ID) {
+        return res.status(400).json({
+            code: 'WRONG_NETWORK',
+            error: 'This platform is available only on Arbitrum Sepolia (421614).'
+        });
+    }
+    next();
+});
+
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const provider = process.env.SEPOLIA_RPC_URL.startsWith('wss://') 
-  ? new ethers.WebSocketProvider(process.env.SEPOLIA_RPC_URL) 
-  : new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
+const provider = ARBITRUM_SEPOLIA_RPC_URL.startsWith('wss://')
+  ? new ethers.WebSocketProvider(ARBITRUM_SEPOLIA_RPC_URL)
+  : new ethers.JsonRpcProvider(ARBITRUM_SEPOLIA_RPC_URL);
 const agentStoreApiUrl = (process.env.AGENT_STORE_API_URL || process.env.CONFIG_API_URL || '').replace(/\/$/, '');
-const defaultChainId = Number(process.env.CHAIN_ID || process.env.DEFAULT_CHAIN_ID || 11155111);
+const defaultChainId = ARBITRUM_SEPOLIA_CHAIN_ID;
 
 // In-memory store: smartAccountAddress -> Array<{ privateKey, agentAddress, name, scope, maxAmount, authorized }>
 const agentConfigs = new Map();
@@ -215,7 +239,7 @@ app.post('/api/agent/generate', async (req, res) => {
         res.json(publicAgentConfig(agent));
     } catch (e) {
         console.error(e);
-        res.status(500).json({ error: e.message });
+        res.status(500).json(toPublicError(e, 'We could not create the assistant. Please try again.'));
     }
 });
 
@@ -270,7 +294,7 @@ app.patch('/api/agent/:smartAccountAddress/:agentAddress/authorize', async (req,
             const agents = await listStoredAgents(req.params.smartAccountAddress, getRequestChainId(req));
             return res.json({ agent, agents });
         } catch (error) {
-            return res.status(error.response?.status || 500).json(error.response?.data || { error: error.message });
+            return res.status(error.response?.status || 500).json(toPublicError(error, 'We could not authorize the assistant.'));
         }
     }
 
@@ -310,7 +334,7 @@ app.patch('/api/agent/:smartAccountAddress/:agentAddress/revoke', async (req, re
             const agents = await listStoredAgents(req.params.smartAccountAddress, getRequestChainId(req));
             return res.json({ agent, agents });
         } catch (error) {
-            return res.status(error.response?.status || 500).json(error.response?.data || { error: error.message });
+            return res.status(error.response?.status || 500).json(toPublicError(error, 'We could not revoke the assistant.'));
         }
     }
 
@@ -352,7 +376,7 @@ app.delete('/api/agent/:smartAccountAddress/:agentAddress', async (req, res) => 
             const agents = await listStoredAgents(req.params.smartAccountAddress, getRequestChainId(req));
             return res.json({ removed: true, agent, agents });
         } catch (error) {
-            return res.status(error.response?.status || 500).json(error.response?.data || { error: error.message });
+            return res.status(error.response?.status || 500).json(toPublicError(error, 'We could not remove the assistant.'));
         }
     }
 
@@ -380,7 +404,7 @@ app.delete('/api/agent/:smartAccountAddress', async (req, res) => {
             );
             return res.json({ removed: true, agents });
         } catch (error) {
-            return res.status(error.response?.status || 500).json(error.response?.data || { error: error.message });
+            return res.status(error.response?.status || 500).json(toPublicError(error, 'We could not remove the assistants.'));
         }
     }
 
@@ -413,7 +437,7 @@ app.post('/api/agent/sync/:smartAccountAddress', async (req, res) => {
             );
             return res.json({ agents });
         } catch (error) {
-            return res.status(error.response?.status || 500).json(error.response?.data || { error: error.message });
+            return res.status(error.response?.status || 500).json(toPublicError(error, 'We could not synchronize assistants.'));
         }
     }
 
@@ -469,7 +493,7 @@ app.post('/api/chat', async (req, res) => {
         return res.status(400).json({ error: 'Missing agentAddress' });
     }
 
-    let rpcUrl = process.env.SEPOLIA_RPC_URL;
+    let rpcUrl = ARBITRUM_SEPOLIA_RPC_URL;
     let bundlerUrl = process.env.BUNDLER_URL;
     let activeChainInfo = null;
     
@@ -483,7 +507,7 @@ app.post('/api/chat', async (req, res) => {
                 activeChainInfo = chainInfo;
             }
         } catch (e) {
-            console.warn("Failed to fetch chain config, falling back to Sepolia defaults", e.message);
+            console.warn("Failed to fetch chain config, using Arbitrum Sepolia defaults", e.message);
         }
     }
     const chainProvider = rpcUrl.startsWith('wss://') 
@@ -518,6 +542,9 @@ app.post('/api/chat', async (req, res) => {
         // 1. Setup tools based on scope
         let tools = [];
         let systemPrompt = `You are a helpful Web3 AI assistant. Your job is to translate user requests into function calls.
+        Keep normal replies concise: lead with the answer, then at most three short supporting points.
+        Use plain language. Never expose raw JSON, tool names, internal field names, stack traces, or revert strings.
+        Do not invent balances, prices, transaction results, addresses, or hashes.
         If the user asks to repeat an action, set the 'repeat' parameter to that number.
         CRITICAL: Use the configured protocol addresses. Never invent USDC, WETH, router, or Aave pool addresses.
         CRITICAL: If the user does not specify a recipient address for a transfer, DO NOT hallucinate an address. You must return a normal text response asking them to provide the recipient address.
@@ -611,8 +638,15 @@ app.post('/api/chat', async (req, res) => {
 
         // 3. Process Tool Call & Validate
         const toolCall = responseMessage.tool_calls[0];
+        if (!isToolAllowed(config.scope, toolCall.function.name)) {
+            return res.status(400).json({
+                code: 'ACTION_NOT_ALLOWED',
+                error: 'This assistant is not authorized for that action.'
+            });
+        }
         const args = JSON.parse(toolCall.function.arguments);
         const repeatCount = Math.min(args.repeat || 1, 5); // Hardcap at 5
+        const operationTags = TOOL_ACTION_TAGS[toolCall.function.name] || [ActionTag.FULL_SYNC];
         
         let target = "0x";
         let innerCallData = "0x";
@@ -622,8 +656,8 @@ app.post('/api/chat', async (req, res) => {
         if (toolCall.function.name === 'uniswap_swap') {
             target = process.env.UNISWAP_ROUTER;
             // Enforce WETH for tokenIn to avoid allowance issues and hallucinated addresses
-            const safeTokenIn = process.env.WETH_SEPOLIA;
-            const safeTokenOut = process.env.USDC_SEPOLIA; // Fallback to USDC if LLM hallucinates
+            const safeTokenIn = process.env.WETH_TOKEN || process.env.WETH_SEPOLIA;
+            const safeTokenOut = process.env.USDC_TOKEN || process.env.USDC_SEPOLIA;
             
             let amountInWei;
             try {
@@ -651,7 +685,7 @@ app.post('/api/chat', async (req, res) => {
 
         } else if (toolCall.function.name === 'erc20_transfer') {
             // Enforce authorized USDC token to prevent SessionKey target mismatch
-            target = activeChainInfo?.contracts?.usdcToken || process.env.USDC_SEPOLIA;
+            target = activeChainInfo?.contracts?.usdcToken || process.env.USDC_TOKEN || process.env.USDC_SEPOLIA;
             
             // The LLM now provides a human-readable amount (e.g. "0.00005"). We convert it to base units using 6 decimals.
             let amountInWei;
@@ -669,7 +703,7 @@ app.post('/api/chat', async (req, res) => {
             }
 
         } else if (toolCall.function.name === 'aave_supply') {
-            const usdcToken = activeChainInfo?.contracts?.usdcToken || process.env.USDC_SEPOLIA;
+            const usdcToken = activeChainInfo?.contracts?.usdcToken || process.env.USDC_TOKEN || process.env.USDC_SEPOLIA;
             const aavePool = activeChainInfo?.contracts?.aavePool || process.env.AAVE_YIELD_POOL;
             if (!usdcToken || !aavePool) {
                 return res.status(400).json({ error: "Aave pool or USDC token is not configured for this chain." });
@@ -729,10 +763,12 @@ app.post('/api/chat', async (req, res) => {
             value = args.value;
             
             // Block dangerous selectors off-chain
-            const selector = innerCallData.length >= 10 ? innerCallData.slice(0, 10).toLowerCase() : "";
-            const blocked = ['0x095ea7b3', '0x39509351', '0xa22cb465', '0xf2fde38b']; // approve, increaseAllowance, setApprovalForAll, transferOwnership
-            if (blocked.includes(selector)) {
-                return res.json({ reply: `Security restriction: Call rejected due to dangerous selector (${selector}).`, ops: [] });
+            if (isBlockedSelector(innerCallData)) {
+                return res.status(400).json({
+                    code: 'ACTION_BLOCKED',
+                    error: "This action is blocked by the assistant's security policy.",
+                    ops: []
+                });
             }
         }
 
@@ -751,7 +787,7 @@ app.post('/api/chat', async (req, res) => {
         try {
             baseNonce = await entryPoint.getNonce(smartAccountAddress, getNonceForValidator(process.env.SESSION_KEY_VALIDATOR));
         } catch (e) {
-            return res.status(500).json({ error: "Failed to fetch nonce", details: e.message });
+            return res.status(500).json({ code: 'NONCE_UNAVAILABLE', error: 'We could not prepare the account nonce. Please try again.' });
         }
 
         const agentWallet = new ethers.Wallet(config.privateKey);
@@ -765,7 +801,7 @@ app.post('/api/chat', async (req, res) => {
         let paymasterRoute = null;
         let gasNote = '';
         const paymasterAddress = process.env.ERC20PAYMASTER || process.env.PAYMASTER || '';
-        const gasTokenAddress  = process.env.USDC_SEPOLIA || ''; // custom gas token
+        const gasTokenAddress  = process.env.GAS_TOKEN_ADDRESS || process.env.USDC_TOKEN || process.env.USDC_SEPOLIA || '';
 
         if (paymasterAddress && gasTokenAddress) {
             try {
@@ -831,7 +867,7 @@ app.post('/api/chat', async (req, res) => {
 
             } catch (routeErr) {
                 // Route C: both paths exhausted → surface to user, do NOT proceed
-                return res.status(400).json({ error: routeErr.message });
+                return res.status(400).json(toPublicError(routeErr, 'There are not enough funds to pay gas for this action.'));
             }
         } else {
             console.log('[Chat] Paymaster or gas token not configured — skipping paymaster router, using native ETH.');
@@ -859,21 +895,21 @@ app.post('/api/chat', async (req, res) => {
                 // Wait for the UserOp to be completely mined before sending the next one
                 const receipt = await waitForUserOp(opHash, 90000, bundlerUrl);
                 
-                let txUrl = `https://jiffyscan.xyz/userOpHash/${opHash}`;
+                let txUrl = `${ARBITRUM_EXPLORER_URL}/search?f=0&q=${opHash}`;
                 if (receipt && receipt.receipt && receipt.receipt.transactionHash) {
-                    const explorerUrl = activeChainInfo?.explorerUrl || 'https://sepolia.etherscan.io';
-                    txUrl = `${explorerUrl}/tx/${receipt.receipt.transactionHash}`;
+                    txUrl = `${ARBITRUM_EXPLORER_URL}/tx/${receipt.receipt.transactionHash}`;
                 }
 
                 opsResults.push({
                     iteration: i + 1,
                     opHash: opHash,
-                    txUrl: txUrl
+                    txUrl: txUrl,
+                    tags: operationTags
                 });
                 
             } catch (err) {
                 console.error(`Error on iteration ${i}:`, err);
-                return res.status(500).json({ error: err.message, opsResults });
+                return res.status(500).json({ ...toPublicError(err), opsResults });
             }
         }
 
@@ -885,7 +921,7 @@ app.post('/api/chat', async (req, res) => {
 
     } catch (error) {
         console.error(error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json(toPublicError(error));
     }
 });
 

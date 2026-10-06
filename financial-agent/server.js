@@ -58,10 +58,16 @@ function getProvider(chainId) {
 // ── Error handler middleware ───────────────────────────────────────────────────
 function handleError(err, res) {
   if (err instanceof NotFoundError || err instanceof ForbiddenError || err instanceof ConflictError) {
-    return res.status(err.statusCode).json({ error: err.message });
+    return res.status(err.statusCode).json({ code: err.name || 'REQUEST_REJECTED', error: err.message });
   }
   console.error('[Server Error]', err.message);
-  return res.status(500).json({ error: err.message || 'Internal server error' });
+  if (err.statusCode && err.statusCode < 500) {
+    return res.status(err.statusCode).json({ code: 'REQUEST_INVALID', error: err.message });
+  }
+  return res.status(500).json({
+    code: 'FINANCIAL_AGENT_UNAVAILABLE',
+    error: 'The financial assistant is unavailable right now. Please try again.'
+  });
 }
 
 // ── Validation helpers ────────────────────────────────────────────────────────
@@ -76,6 +82,9 @@ function requireChainId(value) {
   const id = Number(value);
   if (!Number.isFinite(id) || id <= 0) {
     throw Object.assign(new Error('chainId must be a positive integer'), { statusCode: 400 });
+  }
+  if (id !== 421614) {
+    throw Object.assign(new Error('This platform is available only on Arbitrum Sepolia (421614).'), { statusCode: 400 });
   }
   return id;
 }

@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { MultisigABI, ERC20PaymasterABI, StakeableABI } from '../utils/abis';
 import { getFriendlyErrorMessage } from '../utils/errors';
+import { useToast } from '../context/ToastContext';
 
 const CONTRACT_FIELDS = ['paymaster', 'usdcToken', 'wethToken', 'priceFeed', 'multisigProxy', 'aavePool', 'uniswapRouter', 'uniswapQuoter'];
 const SHARED_CONTRACT_FIELDS = [
@@ -84,6 +85,7 @@ const toContractForm = (contracts = {}, fields = CONTRACT_FIELDS) => (
 
 export default function AdminView() {
   const { eoaAddress, env } = useAppContext();
+  const toast = useToast();
 
   const [adminMode, setAdminMode] = useState('protocol');
   const [opsSummary, setOpsSummary] = useState(null);
@@ -388,10 +390,10 @@ export default function AdminView() {
       const tx = await multisig.approveHash(txHash);
       await tx.wait();
       setIsApproved(true);
-      alert("Hash approved on-chain!");
+      toast.success("Hash approved on-chain.");
     } catch (error) {
       console.error("Error approving hash:", error);
-      alert(getFriendlyErrorMessage(error, "We could not approve this hash. Please try again."));
+      toast.error(getFriendlyErrorMessage(error, "We could not approve this hash. Please try again."));
     }
   };
 
@@ -412,7 +414,7 @@ export default function AdminView() {
       const threshold = await multisig.threshold();
 
       if (approvedOwners.length < threshold) {
-        alert(`Not enough approvals. Found ${approvedOwners.length}, but need ${threshold}. Another owner must connect and click 'Approve Hash On-Chain'.`);
+        toast.info(`Not enough approvals yet. Found ${approvedOwners.length}; ${threshold} are required.`);
         return;
       }
 
@@ -436,11 +438,11 @@ export default function AdminView() {
         { value: currentTxValue }
       );
       await tx.wait();
-      alert("Transaction Executed Successfully!");
+      toast.success("Transaction executed successfully.");
       calculateTxHash();
     } catch (error) {
       console.error("Error executing tx:", error);
-      alert(getFriendlyErrorMessage(error, "We could not execute this admin transaction."));
+      toast.error(getFriendlyErrorMessage(error, "We could not execute this admin transaction."));
     }
   };
 

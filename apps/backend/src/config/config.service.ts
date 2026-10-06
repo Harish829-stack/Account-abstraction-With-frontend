@@ -6,6 +6,8 @@ import type { AppConfigResponse, ChainContractKey, SerializedChainConfig } from 
 
 const CONFIG_CACHE_KEY = "app_config";
 const CONFIG_CACHE_TTL_SECONDS = 60;
+const ARBITRUM_SEPOLIA_CHAIN_ID = 421614;
+const ARBITRUM_SEPOLIA_EXPLORER_URL = process.env.PUBLIC_ARBITRUM_SEPOLIA_EXPLORER_URL || "https://sepolia.arbiscan.io";
 
 interface ChainRecord {
   chainId: number;
@@ -52,7 +54,7 @@ export class ConfigService {
     try {
       const [chains, shared] = await Promise.all([
         this.prisma.chain.findMany({
-          where: { isActive: true },
+          where: { isActive: true, chainId: ARBITRUM_SEPOLIA_CHAIN_ID },
           include: { contracts: true },
           orderBy: { chainId: "asc" }
         }),
@@ -86,7 +88,7 @@ export class ConfigService {
       viewOnly: chain.viewOnly,
       rpcUrl: chain.rpcUrl,
       bundlerUrl: chain.bundlerUrl,
-      explorerUrl: chain.explorerUrl,
+      explorerUrl: ARBITRUM_SEPOLIA_EXPLORER_URL,
       explorerApiUrl: chain.explorerApiUrl || undefined,
       explorerApiChainId: chain.explorerApiChainId || undefined,
       nativeCurrency: {

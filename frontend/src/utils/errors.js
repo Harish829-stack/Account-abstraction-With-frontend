@@ -19,11 +19,23 @@ export function getFriendlyErrorMessage(error, fallback = "Something went wrong.
   const message = raw.toLowerCase();
 
   if (!raw) return fallback;
+  if (error?.code === "WRONG_NETWORK" || message.includes("only on arbitrum sepolia")) {
+    return "Switch your wallet to Arbitrum Sepolia and try again.";
+  }
   if (error?.code === 4001 || message.includes("user rejected") || message.includes("user denied")) {
     return "You rejected the request in your wallet.";
   }
   if (message.includes("insufficient funds") || message.includes("aa21")) {
     return "Your smart account does not have enough funds to cover this action.";
+  }
+  if (message.includes("exceeds max allowed") || message.includes("spend limit")) {
+    return "This amount is above the assistant's spending limit. Enter a smaller amount or update the limit.";
+  }
+  if (message.includes("dangerous selector") || message.includes("security restriction") || message.includes("blocked action")) {
+    return "This action is blocked by the assistant's security policy.";
+  }
+  if (message.includes("allowance")) {
+    return "The token allowance is too low. Update the approval and try again.";
   }
   if (message.includes("network") || message.includes("chain") || message.includes("wrong network")) {
     return "Please check your network and try again.";

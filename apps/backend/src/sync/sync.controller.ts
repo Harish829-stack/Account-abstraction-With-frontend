@@ -1,8 +1,16 @@
 import { Controller, Post, Param, Body, HttpCode, HttpStatus, BadRequestException } from "@nestjs/common";
 import { SyncService, VALID_ACTION_TAGS } from "./sync.service";
 import { AccountsRepository } from "../accounts/accounts.repository";
-import type { ActionTag } from "../common/chain-reader";
+import { isActionTag, type ActionTag } from "../common/action-tags";
 import { parseAddress, parseChainId, parseOptionalString } from "../common/validation";
+
+const ARBITRUM_SEPOLIA_CHAIN_ID = 421614;
+
+function requireSupportedChain(chainId: number): void {
+  if (chainId !== ARBITRUM_SEPOLIA_CHAIN_ID) {
+    throw new BadRequestException("Only Arbitrum Sepolia (421614) is supported");
+  }
+}
 
 @Controller("accounts")
 export class SyncController {
@@ -25,17 +33,18 @@ export class SyncController {
   ): Promise<{ queued: true }> {
     const saAddress = parseAddress(address, "address");
     const chainId   = parseChainId(body.chainId);
+    requireSupportedChain(chainId);
     const txHash    = parseOptionalString(body.txHash, "txHash", 66);
 
-    const rawTag = typeof body.actionTag === "string" ? body.actionTag : "";
-    if (!VALID_ACTION_TAGS.has(rawTag as ActionTag)) {
+    const rawTags = Array.isArray(body.actionTags) ? body.actionTags : [body.actionTag];
+    if (rawTags.length === 0 || !rawTags.every(isActionTag)) {
       throw new BadRequestException(
-        `actionTag must be one of: ${[...VALID_ACTION_TAGS].join(", ")}`
+        `actionTag/actionTags must contain only: ${[...VALID_ACTION_TAGS].join(", ")}`
       );
     }
 
     // Fire-and-forget — do not await so the client gets 202 immediately
-    void this.syncService.syncAccount(saAddress, chainId, rawTag as any, txHash).catch(
+    void this.syncService.syncAccountTags(saAddress, chainId, rawTags as ActionTag[], txHash).catch(
       (err: Error) => console.warn(`[SyncController] sync failed silently: ${err.message}`)
     );
 
@@ -55,15 +64,18 @@ export class SyncController {
   ) {
     const saAddress = parseAddress(address, "address");
     const chainId   = parseChainId(body.chainId);
+    requireSupportedChain(chainId);
     const txHash    = parseOptionalString(body.txHash, "txHash", 66);
 
-    const rawTag = typeof body.actionTag === "string" ? body.actionTag : "FULL_SYNC";
-    if (!VALID_ACTION_TAGS.has(rawTag as any)) {
+    const rawTags = Array.isArray(body.actionTags)
+      ? body.actionTags
+      : [typeof body.actionTag === "string" ? body.actionTag : "FULL_SYNC"];
+    if (rawTags.length === 0 || !rawTags.every(isActionTag)) {
       throw new BadRequestException(`actionTag must be one of: ${[...VALID_ACTION_TAGS].join(", ")}`);
     }
 
     // Await the sync so the response contains fresh on-chain data
-    await this.syncService.syncAccount(saAddress, chainId, rawTag as any, txHash);
+    await this.syncService.syncAccountTags(saAddress, chainId, rawTags as ActionTag[], txHash);
 
     // Return the freshly updated ledger
     const ledger = await this.repo.getLedger(saAddress, chainId);

@@ -89,6 +89,14 @@ function getNonceForValidator(validatorAddress) {
     return BigInt(validatorAddress);
 }
 
+function packSessionKeySignature(sessionKeyAddress, rawSignature) {
+    const packed = ethers.hexlify(ethers.concat([sessionKeyAddress, rawSignature]));
+    if (ethers.getBytes(packed).length !== 85) {
+        throw new Error("Session key signature must be exactly 85 bytes");
+    }
+    return packed;
+}
+
 function encodeUniswapSwap(tokenIn, tokenOut, fee, recipient, amountIn, amountOutMinimum, sqrtPriceLimitX96) {
     // We are interacting with MockUniswapRouter which implements swapExactETHForTokens instead of exactInputSingle
     const swapRouterIface = new ethers.Interface([
@@ -259,6 +267,7 @@ module.exports = {
   encodeERC7579Single,
   encodeERC7579Batch,
   getNonceForValidator,
+  packSessionKeySignature,
   encodeUniswapSwap,
   encodeERC20Transfer,
   getDynamicGasFees,
@@ -381,8 +390,7 @@ async function buildAndSendAgentOp(
     const rawSig = await agentWallet.signMessage(ethers.getBytes(userOpHash));
     
     // Pack the final 85-byte signature: [sessionKey(20)] + [sig(65)]
-    const packedSignature = ethers.concat([ agentWallet.address, rawSig ]);
-    rpcUserOp.signature = ethers.hexlify(packedSignature);
+    rpcUserOp.signature = packSessionKeySignature(agentWallet.address, rawSig);
 
     try {
         const opHash = await sendUserOperation(rpcUserOp, bundlerUrl);

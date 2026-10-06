@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { shortenAddress, formatNum, encodeERC7579Single, buildAndSendAccountOp } from '../utils/helpers';
 import { K1ValidatorFactoryABI, SmartAccountABI, K1ValidatorABI } from '../utils/abis';
 import { getFriendlyErrorMessage } from '../utils/errors';
+import { ActionTag } from '../constants/actionTags';
 import { PlusCircle, Link as LinkIcon, AlertTriangle, ArrowRight, Shield, Download, RotateCcw, Coins, Landmark, ChevronRight, ArrowDownCircle } from 'lucide-react';
 import Stepper from '../components/Stepper';
 
@@ -230,7 +231,7 @@ export default function AccountSetupView() {
       const callData = encodeERC7579Single(smartAccountAddress, 0n, innerCallData);
 
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
-      trackOp(opHash, 'EntryPoint Withdraw', { calldata: callData });
+      trackOp(opHash, 'EntryPoint Withdraw', { calldata: callData, tags: [ActionTag.ETH_BALANCE] });
       
       setWithdrawEPAmount('');
       setWithdrawEPTo('');
@@ -264,7 +265,7 @@ export default function AccountSetupView() {
       const callData = encodeERC7579Single(env.K1_VALIDATOR, 0n, innerCallData);
 
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
-      trackOp(opHash, 'Transfer Smart Account Ownership', { calldata: callData });
+      trackOp(opHash, 'Transfer Smart Account Ownership', { calldata: callData, tags: [ActionTag.FULL_SYNC] });
       
       setNewOwner('');
       setConfirmTransfer(false);
@@ -442,7 +443,7 @@ export default function AccountSetupView() {
                     The Factory contract could not be reached at <b>{env.FACTORY}</b>. This usually means:
                   </p>
                   <ul className="text-xs text-muted list-disc pl-4 space-y-1">
-                    <li>Your wallet is connected to the wrong network (please check that MetaMask is on Sepolia).</li>
+                    <li>Your wallet is connected to the wrong network (please switch MetaMask to Arbitrum Sepolia).</li>
                     <li>The Factory contract address is incorrect or not deployed on this network.</li>
                   </ul>
                 </div>

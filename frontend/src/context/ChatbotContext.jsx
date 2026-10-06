@@ -1,8 +1,9 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import axios from "axios";
 import { useAppContext } from "./AppContext";
 import { getDefaultChainId } from "../config/chains";
 import { getFriendlyErrorMessage } from "../utils/errors";
+import { readStoredJson, StorageKey, subscribeToStorage, writeStoredJson } from "../utils/storage";
 
 const ChatbotContext = createContext();
 const CHATBOT_API_URL = import.meta.env.VITE_CHATBOT_API_URL || "";
@@ -17,6 +18,7 @@ export const ChatbotProvider = ({ children }) => {
     const [activeAgentAddress, setActiveAgentAddress] = useState("");
     const [messagesByAgent, setMessagesByAgent] = useState({});
     const [isChatLoading, setIsChatLoading] = useState(false);
+    const skipNextMessageWriteRef = useRef(false);
 
     const activeAgent = useMemo(() => (
         agents.find((agent) => normalizeAddress(agent.agentAddress) === normalizeAddress(activeAgentAddress)) || null
@@ -25,6 +27,35 @@ export const ChatbotProvider = ({ children }) => {
     const messages = activeAgentAddress ? messagesByAgent[normalizeAddress(activeAgentAddress)] || [] : [];
     const isAgentConfigured = agents.some((agent) => agent.authorized !== false);
     const agentStatus = activeAgent || agents.find((agent) => agent.authorized !== false) || null;
+    const messageNamespace = smartAccountAddress && chainId
+        ? `${Number(chainId)}:${normalizeAddress(smartAccountAddress)}`
+        : null;
+
+    useEffect(() => {
+        if (!messageNamespace) {
+            setMessagesByAgent({});
+            return;
+        }
+        const stored = readStoredJson(StorageKey.CHAT_MESSAGES, {}, (value) => value && typeof value === 'object');
+        skipNextMessageWriteRef.current = true;
+        setMessagesByAgent(stored[messageNamespace] || {});
+    }, [messageNamespace]);
+
+    useEffect(() => {
+        if (!messageNamespace) return;
+        if (skipNextMessageWriteRef.current) {
+            skipNextMessageWriteRef.current = false;
+            return;
+        }
+        const stored = readStoredJson(StorageKey.CHAT_MESSAGES, {}, (value) => value && typeof value === 'object');
+        writeStoredJson(StorageKey.CHAT_MESSAGES, { ...stored, [messageNamespace]: messagesByAgent });
+    }, [messageNamespace, messagesByAgent]);
+
+    useEffect(() => subscribeToStorage([StorageKey.CHAT_MESSAGES], () => {
+        if (!messageNamespace) return;
+        const stored = readStoredJson(StorageKey.CHAT_MESSAGES, {}, (value) => value && typeof value === 'object');
+        setMessagesByAgent(stored[messageNamespace] || {});
+    }), [messageNamespace]);
 
     useEffect(() => {
         const matchesCurrentAccount = (detail = {}) => {
@@ -246,7 +277,7 @@ export const ChatbotProvider = ({ children }) => {
             (res.data.ops || []).forEach((op) => {
                 if (op.opHash) {
                     const agentName = activeAgent?.name || "AI Agent";
-                    trackOp(op.opHash, `${agentName} Operation ${op.iteration || ""}`.trim());
+                    trackOp(op.opHash, `${agentName} Operation ${op.iteration || ""}`.trim(), { tags: op.tags });
                 }
             });
             

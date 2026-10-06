@@ -10,6 +10,7 @@
  */
 
 import { Injectable, Logger } from "@nestjs/common";
+import type { ResourceTag } from "./action-tags";
 
 // ── Minimal ABIs (only what we need per function) ────────────────────────────
 const ERC20_BALANCE_ABI = [
@@ -35,15 +36,7 @@ const SA_VALIDATOR_ABI = [
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type ActionTag =
-  | "ETH_BALANCE"
-  | "USDC_BALANCE"
-  | "APPROVAL"
-  | "DEPLOYMENT"
-  | "SESSION_KEY"
-  | "AAVE_POSITION"
-  | "MARKET_PRICES"
-  | "FULL_SYNC";
+export type LedgerSyncTag = ResourceTag | "FULL_SYNC";
 
 export interface ChainContracts {
   usdcToken?: string;
@@ -84,12 +77,6 @@ function withTimeout<T>(promise: Promise<T>, ms = 10_000, label = "RPC call"): P
 }
 
 // ── Dynamic ethers import (ESM-compatible) ────────────────────────────────────
-
-async function getEthers() {
-  // ethers v6 is ESM-only; use dynamic import so NestJS CJS bundle works.
-  const { ethers } = await import("ethers");
-  return ethers;
-}
 
 async function makeProvider(rpcUrl: string) {
   const { ethers } = await import("ethers");
@@ -215,7 +202,7 @@ export async function readMarketData(
         patch.usdcPriceUsd = "1.000000"; // USDC is pegged; no second feed needed
         patch.priceUpdatedAt = now;
       }
-    } catch (err) {
+    } catch {
       // Non-fatal — leave existing price in DB
     }
   }
@@ -238,7 +225,7 @@ export async function readMarketData(
       // Human-readable with 6 decimals (MockUSDC)
       patch.aaveLiquidity = ethers.formatUnits(liquidityRaw, 6);
       patch.aaveUpdatedAt = now;
-    } catch (err) {
+    } catch {
       // Non-fatal
     }
   }
@@ -298,7 +285,7 @@ export class ChainReaderService {
   private readonly logger = new Logger(ChainReaderService.name);
 
   async resolve(
-    actionTag: ActionTag,
+    actionTag: LedgerSyncTag,
     rpcUrl: string,
     saAddress: string,
     sessionKeyValidatorAddress: string,

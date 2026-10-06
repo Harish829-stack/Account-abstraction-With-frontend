@@ -18,7 +18,10 @@ async function request(path, options = {}) {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || `Backend request failed: ${res.status}`);
+    const error = new Error(body.message || body.error || `Backend request failed: ${res.status}`);
+    error.code = body.code;
+    error.status = res.status;
+    throw error;
   }
 
   if (res.status === 204) return null;
@@ -162,11 +165,26 @@ export async function pollIndexer() {
  * The backend verifies real on-chain state and updates the DB.
  * This is fire-and-forget — the frontend never sends balance values.
  */
-export async function syncAccountLedger({ smartAccountAddress, chainId, actionTag, txHash }) {
+export async function syncAccountLedger({ smartAccountAddress, chainId, actionTag, actionTags, txHash }) {
   if (!smartAccountAddress || !chainId || !actionTag) return null;
   return request(`/accounts/${smartAccountAddress}/sync`, {
     method: "POST",
-    body: JSON.stringify({ chainId, actionTag, txHash }),
+    body: JSON.stringify({ chainId, actionTag, actionTags, txHash }),
+  });
+}
+
+export async function submitActionEvent({ smartAccountAddress, chainId, tags, userOpHash, txHash, metadata }) {
+  if (!smartAccountAddress || !chainId || !Array.isArray(tags) || tags.length === 0) return null;
+  return request('/actions/events', {
+    method: 'POST',
+    body: JSON.stringify({
+      account: smartAccountAddress,
+      chainId,
+      tags,
+      userOpHash,
+      txHash,
+      metadata,
+    }),
   });
 }
 

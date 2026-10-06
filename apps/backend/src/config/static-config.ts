@@ -4,6 +4,7 @@ const env = process.env;
 const CANONICAL_MOCK_USDC = "0x4665ed736379C8B1BeDe411EBcDA607dd4cab96E";
 const SEPOLIA_MOCK_WETH = "0xC558DBdd856501FCd9aaF1E62eae57A9F0629a3c";
 const ARBITRUM_SEPOLIA_WETH = "0x980B3b374e3c40ffBf522c74C3470D4E01B7c773";
+const ARBITRUM_SEPOLIA_EXPLORER_URL = env.PUBLIC_ARBITRUM_SEPOLIA_EXPLORER_URL || "https://sepolia.arbiscan.io";
 const AAVE_YIELD_POOL_V2 = "0xd5263f6Bc6fcD4e969E5F4ffF89359989b52831A";
 const MOCK_UNISWAP_ROUTER = "0x1e473E7A8C2EB73B744321D4CFD73195B1Ed996F";
 const SEPOLIA_UNISWAP_QUOTER = "0xedEa35800073054Fe6b994d240C0303756Bd0453";
@@ -127,7 +128,7 @@ export const CHAIN_CONFIG_SEED: SerializedChainConfig[] = [
     viewOnly: false,
     rpcUrl: env.PUBLIC_ARBITRUM_SEPOLIA_RPC_URL || "https://sepolia-rollup.arbitrum.io/rpc",
     bundlerUrl: env.PUBLIC_ARBITRUM_SEPOLIA_BUNDLER_URL || "",
-    explorerUrl: "https://sepolia.arbiscan.io",
+    explorerUrl: ARBITRUM_SEPOLIA_EXPLORER_URL,
     explorerApiUrl: "https://api-sepolia.arbiscan.io/api",
     explorerApiChainId: 421614,
     nativeCurrency: { name: "Arbitrum Sepolia Ether", symbol: "ETH", decimals: 18 },
@@ -147,7 +148,7 @@ export const CHAIN_CONFIG_SEED: SerializedChainConfig[] = [
 ];
 
 export const STATIC_CONFIG_RESPONSE: AppConfigResponse = {
-  chains: CHAIN_CONFIG_SEED.filter((chain) => chain.isActive),
+  chains: CHAIN_CONFIG_SEED.filter((chain) => chain.chainId === 421614),
   sharedContracts: Object.fromEntries(
     Object.entries(SHARED_CONTRACT_SEED).filter(([, address]) => Boolean(address))
   )

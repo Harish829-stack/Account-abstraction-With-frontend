@@ -9,6 +9,7 @@ import { estimateUserOperationGas, getDynamicGasFees, applyBufferedGasEstimate }
 import SessionKeyView from './SessionKeyView';
 import WebAuthnView from './WebAuthnView';
 import { getFriendlyErrorMessage } from '../utils/errors';
+import { ActionTag } from '../constants/actionTags';
 
 export default function ProfileView() {
   const { eoaAddress, smartAccountAddress, signer, provider, env, refreshAllData, refreshTrigger, setGlobalLoading, chainId, trackOp } = useAppContext();
@@ -95,7 +96,7 @@ export default function ProfileView() {
       const callData = accountIface.encodeFunctionData("installModule", [1, validatorAddr, initData]);
       
       const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
-      trackOp(opHash, 'Install Social Recovery Module', { calldata: callData });
+      trackOp(opHash, 'Install Social Recovery Module', { calldata: callData, tags: [ActionTag.FULL_SYNC] });
       
       toast.success(`Social Recovery Module Installed Successfully! OpHash: ${shortenAddress(opHash)}`);
       await checkRecoveryModule();
@@ -157,7 +158,7 @@ export default function ProfileView() {
         const callData = accountIface.encodeFunctionData("uninstallModule", [1, validatorAddr, deInitData]);
 
         const opHash = await buildAndSendAccountOp(signer, provider, smartAccountAddress, callData, env.ENTRY_POINT, env.K1_VALIDATOR, chainId);
-        trackOp(opHash, 'Uninstall Social Recovery Module', { calldata: callData });
+        trackOp(opHash, 'Uninstall Social Recovery Module', { calldata: callData, tags: [ActionTag.FULL_SYNC] });
         
         toast.success(`Module Uninstalled. OpHash: ${shortenAddress(opHash)}`);
         await checkRecoveryModule();

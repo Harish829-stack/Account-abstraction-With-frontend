@@ -1,17 +1,9 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { AccountsRepository } from "../accounts/accounts.repository";
-import { ChainReaderService, ActionTag } from "../common/chain-reader";
+import { ChainReaderService, type LedgerSyncTag } from "../common/chain-reader";
+import { ActionTag, expandActionTags, type ActionTag as ActionTagType } from "../common/action-tags";
 
-export const VALID_ACTION_TAGS = new Set<ActionTag>([
-  "ETH_BALANCE",
-  "USDC_BALANCE",
-  "APPROVAL",
-  "DEPLOYMENT",
-  "SESSION_KEY",
-  "AAVE_POSITION",
-  "MARKET_PRICES",
-  "FULL_SYNC",
-]);
+export const VALID_ACTION_TAGS = new Set<ActionTagType>(Object.values(ActionTag));
 
 @Injectable()
 export class SyncService {
@@ -25,13 +17,13 @@ export class SyncService {
   async syncAccount(
     address: string,
     chainId: number,
-    actionTag: ActionTag,
+    actionTag: LedgerSyncTag,
     txHash?: string
   ): Promise<void> {
     // 1. Load chain row with its ChainContract children
     const chain = await this.repo.findChainWithContracts(chainId);
-    if (!chain) {
-      this.logger.warn(`[Sync] Chain ${chainId} not found in DB — skipping sync`);
+    if (!chain?.isActive) {
+      this.logger.warn(`[Sync] Active chain ${chainId} not found in DB — skipping sync`);
       return;
     }
 
@@ -83,5 +75,15 @@ export class SyncService {
     }
 
     this.logger.log(`[Sync] ${actionTag} complete for ${address}`);
+  }
+
+  async syncAccountTags(
+    address: string,
+    chainId: number,
+    actionTags: readonly ActionTagType[],
+    txHash?: string
+  ): Promise<void> {
+    const resourceTags = expandActionTags(actionTags);
+    await Promise.all(resourceTags.map((tag) => this.syncAccount(address, chainId, tag, txHash)));
   }
 }

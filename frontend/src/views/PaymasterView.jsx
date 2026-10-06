@@ -7,6 +7,7 @@ import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees, applyBu
 import { useToast } from '../context/ToastContext';
 import { Fuel, ShieldCheck, Zap, Info, ArrowUpRight, CheckCircle2, Lock, RefreshCw } from 'lucide-react';
 import { getFriendlyErrorMessage } from '../utils/errors';
+import { ActionTag } from '../constants/actionTags';
 
 export default function PaymasterView() {
   const { 
@@ -115,7 +116,7 @@ export default function PaymasterView() {
       toast.info("Sending UserOp to approve Gas Sponsorship...");
       const opHash = await sendUserOperation(userOp, chainId);
 
-      trackOp(opHash, 'USDC Gas Sponsorship Approval', { calldata: userOp.callData });
+      trackOp(opHash, 'USDC Gas Sponsorship Approval', { calldata: userOp.callData, tags: [ActionTag.PAYMASTER_APPROVAL] });
       toast.withAction(
         'UserOp submitted to bundler!',
         'View in History →',

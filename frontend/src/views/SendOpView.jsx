@@ -6,6 +6,7 @@ import { ERC20_ABI, IEntryPointABI } from '../utils/abis';
 import { sendUserOperation, estimateUserOperationGas, getDynamicGasFees } from '../utils/bundler';
 import { toHex, getEthPriceInUsd, packUserOp, encodeERC7579Single } from '../utils/helpers';
 import { getFriendlyErrorMessage } from '../utils/errors';
+import { ActionTag } from '../constants/actionTags';
 import { Send, Settings, CheckCircle2, RotateCcw, ExternalLink } from 'lucide-react';
 
 export default function SendOpView() {
@@ -258,7 +259,7 @@ export default function SendOpView() {
       toast.success("Bundler accepted the transaction!");
 
       // Fire and forget — global tracker handles confirmation in background
-      trackOp(opHash, 'Send UserOperation', { calldata: userOp.callData });
+      trackOp(opHash, 'Send UserOperation', { calldata: userOp.callData, tags: [ActionTag.FULL_SYNC] });
       setPending(false);
       setGlobalLoading(false);
     } catch (err) {

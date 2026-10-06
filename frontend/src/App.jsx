@@ -1,18 +1,18 @@
+import { lazy, Suspense } from 'react';
 import { useAppContext } from './context/AppContext';
 import Navbar from './components/Navbar';
 import HomeView from './views/HomeView';
-import ModulesView from './views/ModulesView';
-import AccountSetupView from './views/AccountSetupView';
-import SendOpView from './views/SendOpView';
-import PaymasterView from './views/PaymasterView';
-import HistoryView from './views/HistoryView';
-import BatchSendView from './views/BatchSendView';
-import WebAuthnView from './views/WebAuthnView';
-import AdminView from './views/AdminView';
-import UnifiedAgentView from './views/UnifiedAgentView';
-import MintUSDCView from './views/MintUSDCView';
 import { AlertTriangle } from 'lucide-react';
 import { getDefaultChainId, getSupportedChainIds } from './config/chains';
+
+const ModulesView = lazy(() => import('./views/ModulesView'));
+const SendOpView = lazy(() => import('./views/SendOpView'));
+const PaymasterView = lazy(() => import('./views/PaymasterView'));
+const HistoryView = lazy(() => import('./views/HistoryView'));
+const BatchSendView = lazy(() => import('./views/BatchSendView'));
+const AdminView = lazy(() => import('./views/AdminView'));
+const UnifiedAgentView = lazy(() => import('./views/UnifiedAgentView'));
+const MintUSDCView = lazy(() => import('./views/MintUSDCView'));
 
 function App() {
   const { currentView, eoaAddress, chainId, switchNetwork, isTxLoading, txLoadingMessage } = useAppContext();
@@ -24,6 +24,18 @@ function App() {
 
   const renderCurrentView = () => {
     if (!isConnected) return <HomeView />;
+    if (isNetworkMismatch) {
+      return (
+        <section className="wallet-card network-blocked-state" role="alert">
+          <AlertTriangle size={28} aria-hidden="true" />
+          <h2>Switch networks to continue</h2>
+          <p>This platform is available on Arbitrum Sepolia only. Transactions and account data are paused on other networks.</p>
+          <button className="btn btn-primary" type="button" onClick={() => switchNetwork(defaultChainId)}>
+            Switch to Arbitrum Sepolia
+          </button>
+        </section>
+      );
+    }
 
     switch (currentView) {
       case "modules":
@@ -88,14 +100,16 @@ function App() {
             className="network-alert__action"
             onClick={() => switchNetwork(defaultChainId)}
           >
-            Switch to Sepolia
+            Switch to Arbitrum Sepolia
           </button>
         </div>
       )}
 
       {isConnected && <Navbar />}
       <main className={isConnected && currentView !== "home" ? "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-7 animate-fade-in" : "animate-fade-in"}>
-        {renderCurrentView()}
+        <Suspense fallback={<div className="wallet-card route-loading" role="status">Loading view…</div>}>
+          {renderCurrentView()}
+        </Suspense>
       </main>
       {renderGlobalLoader()}
     </div>
