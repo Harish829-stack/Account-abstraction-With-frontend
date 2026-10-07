@@ -1,11 +1,14 @@
 FROM node:20-alpine
 
-WORKDIR /app
+WORKDIR /workspace/chatbot-server
 
-COPY package*.json ./
-RUN npm install
+# The chatbot uses the repo-local @aa/action-tags package. Preserve the
+# repository-relative path expected by package.json and package-lock.json.
+COPY packages/action-tags/ ../packages/action-tags/
+COPY chatbot-server/package*.json ./
+RUN npm ci
 
-COPY . .
+COPY chatbot-server/ ./
 
 EXPOSE 3002
 
