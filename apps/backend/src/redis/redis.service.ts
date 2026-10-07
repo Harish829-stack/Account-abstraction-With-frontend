@@ -18,7 +18,10 @@ export class RedisService implements OnModuleDestroy {
     if (!this.client) return null;
     try {
       await this.connect();
-      return this.client.get(key);
+      // Await inside the try block so asynchronous ioredis failures are caught.
+      // Returning the promise directly lets a rejected command bypass this catch
+      // and turns an optional cache outage into an HTTP 500.
+      return await this.client.get(key);
     } catch (error) {
       this.logger.warn(`Redis get failed for ${key}: ${(error as Error).message}`);
       return null;
