@@ -1,8 +1,14 @@
-# Node modules
-/node_modules
+# Dependencies and package-manager state
+**/node_modules/
+.pnpm-store/
+
+# OS metadata
+.DS_Store
+**/.DS_Store
 
 # Compilation output
 /dist
+**/dist/
 
 # pnpm deploy output
 /bundle
