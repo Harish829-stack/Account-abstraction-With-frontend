@@ -39,7 +39,14 @@ export class ConfigService {
 
   async getConfig(): Promise<AppConfigResponse> {
     const cached = await this.redis.get(CONFIG_CACHE_KEY);
-    if (cached) return JSON.parse(cached) as AppConfigResponse;
+    if (cached) {
+      try {
+        return JSON.parse(cached) as AppConfigResponse;
+      } catch (error) {
+        this.logger.warn(`Ignoring invalid cached config: ${(error as Error).message}`);
+        await this.redis.del(CONFIG_CACHE_KEY);
+      }
+    }
 
     const payload = await this.loadFromDatabase();
     await this.redis.setJson(CONFIG_CACHE_KEY, payload, CONFIG_CACHE_TTL_SECONDS);
