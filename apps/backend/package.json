@@ -7,6 +7,7 @@
     "build": "nest build",
     "start": "nest start",
     "start:prod": "node dist/src/main.js",
+    "start:container": "sh ./scripts/start-container.sh",
     "start:dev": "nest start --watch",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "test": "jest",

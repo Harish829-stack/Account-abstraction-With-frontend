@@ -68,4 +68,49 @@ describe("ConfigService", () => {
       }
     });
   });
+
+  it("ignores and replaces malformed cached config", async () => {
+    const redis = {
+      get: jest.fn().mockResolvedValue("{not-json"),
+      del: jest.fn().mockResolvedValue(undefined),
+      setJson: jest.fn().mockResolvedValue(undefined)
+    };
+    const databasePayload = [{
+      chainId: 421614,
+      name: "Arbitrum Sepolia",
+      isTestnet: true,
+      isActive: true,
+      viewOnly: false,
+      rpcUrl: "https://sepolia-rollup.arbitrum.io/rpc",
+      bundlerUrl: "",
+      explorerUrl: "https://sepolia.arbiscan.io",
+      explorerApiUrl: null,
+      explorerApiChainId: 421614,
+      nativeName: "Arbitrum Sepolia Ether",
+      nativeSymbol: "ETH",
+      nativeDecimals: 18,
+      minPriorityFeeWei: "1",
+      minFeeWei: "2",
+      contracts: []
+    }];
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        ConfigService,
+        {
+          provide: PrismaService,
+          useValue: {
+            chain: { findMany: jest.fn().mockResolvedValue(databasePayload) },
+            sharedContract: { findMany: jest.fn().mockResolvedValue([]) }
+          }
+        },
+        { provide: RedisService, useValue: redis }
+      ]
+    }).compile();
+
+    await expect(moduleRef.get(ConfigService).getConfig()).resolves.toEqual(
+      expect.objectContaining({ chains: [expect.objectContaining({ chainId: 421614 })] })
+    );
+    expect(redis.del).toHaveBeenCalledWith("app_config");
+    expect(redis.setJson).toHaveBeenCalled();
+  });
 });
