@@ -327,7 +327,7 @@ export const ChatbotProvider = ({ children }) => {
             clearAgents,
             refreshAgents,
             isChatLoading,
-            setIsAgentConfigured: () => {}, // Backward-compatible no-op while ChatbotView migrates.
+            setIsAgentConfigured: () => {}, // Compatibility alias for older clients.
             setAgentStatus: setAgentStatusCompat
         }}>
             {children}
