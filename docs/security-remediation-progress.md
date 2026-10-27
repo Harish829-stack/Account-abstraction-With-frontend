@@ -163,3 +163,57 @@ include credentials, private keys, signatures, or signed UserOperations.
   or active route was changed. The backend and on-chain phases remain as recorded
   above; their checks were not repeated for this file-only cleanup.
 - Cleanup commit subject: `chore: remove unused wallet screens and starter files`.
+
+## 2026-10-27 — Post-cleanup verification against the original findings
+
+- User asked whether all issues are fixed. Rechecked committed source at
+  `87bffc3`, including the authentication/signing boundary, original contract
+  findings, execution paths, indexing, configuration, and cleanup. Answer: **no**;
+  Phase 2 and unused-file cleanup are implemented, while several critical original
+  findings remain. Passing application tests does not close those findings.
+- Implemented and regression-tested: SIWE challenges/JWT revocation; global backend
+  authentication; current-owner/admin authorization; sidecar authentication and
+  verified proposal identity; signing-service credentials; encrypted new managed
+  keys; metadata-only internal reads; no new browser key persistence; deterministic
+  signing scope checks. Verified the guard is registered through `APP_GUARD`.
+- Partial: backend key custody uses application-level encryption, not HSM/TEE
+  isolation. Legacy database keys are blocked from signing rather than migrated;
+  old on-chain permissions and browser entries require owner-driven revocation and
+  cleanup. Sign-in remains EOA-only. Deployment settings and live-wallet behavior
+  have not been verified; no secrets were inspected.
+- Open critical contract findings:
+  - `contracts/SessionKeyValidator.sol:114`: validation never increments `uses`;
+    `maxUses` is therefore ineffective. `_isCallAllowed` at line 258 checks native
+    value, target, and selector but not token amounts or cumulative budgets;
+    wildcard permissions remain. The ERC-1271 path at line 157 also still needs
+    caller/expiry review and conformance tests.
+  - `contracts/SocialRecoveryValidator.sol:126`: approval/signature validation
+    does not constrain calldata to owner rotation or consume recovery approval.
+  - `contracts/multisig/Multisig.sol:454`: the direct upgrade authorization hook
+    checks self-calling but does not enforce the pending proposal/timelock. The
+    delayed wrapper does not cover every upgrade entry path.
+- Open transaction safety findings:
+  - `chatbot-server/server.js:547` and `frontend/src/views/HomeView.jsx:353`
+    still construct swaps with zero minimum output.
+  - Repeat limits remain per operation, not a cumulative/daily/gas budget. There
+    is no complete effect-simulation, authenticated approval, and durable execution
+    pipeline; financial proposal confirmation still only records `CONFIRMED`.
+  - Concurrent requests can reuse a base nonce; durable queues, idempotency, and
+    account/chain/nonce-key coordination remain outstanding.
+- Open reliability/integration findings: timer workers and sequential chain scans,
+  no reorg rollback, mock protocol integration, conflicting WETH defaults, duplicate
+  Prisma schemas, and hardcoded Arbitrum Sepolia restrictions. Public config still
+  forwards stored RPC/bundler URLs; sanitization/public-endpoint separation is not
+  implemented and actual credential exposure was not assessed.
+- Open release gates: contract fuzz/invariant/integration suites, CI security
+  gates, audited deployment/migration, container/live-wallet verification, and an
+  independent security audit. No root contract test suite or checked-in GitHub
+  Actions workflow was found in this verification.
+- Fresh verification commands: backend `npm test -- --runInBand` passed all 48
+  tests (13 suites); chatbot `npm test` passed all 28; frontend
+  `node --test src/utils/auth-session.test.js src/constants/actionTags.test.js`
+  passed all 15. Total: 91 passing tests. Backend HTTP tests required permission
+  for their temporary loopback listener. No fund-moving calls were executed.
+- This entry is documentation-only. No runtime source, contracts, migrations,
+  configuration, or deployment was changed during the status check. Next priority
+  remains audited on-chain permissions, recovery, and upgrade enforcement.
