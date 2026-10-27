@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, Req } from "@nestjs/common";
+import type { AuthRequest } from "../auth/auth.guard";
 import {
   parseAddress,
   parseChainId,
@@ -31,12 +32,14 @@ export class AccountsController {
   @Get(":address")
   async getSmartAccount(
     @Param("address") address: string,
+    @Req() req: AuthRequest,
     @Query("chainId") chainId?: string
   ): Promise<SmartAccountResponse | SmartAccountResponse[]> {
-    return this.accountsService.getSmartAccount(
+    const account = await this.accountsService.getSmartAccount(
       parseAddress(address, "address"),
-      chainId ? parseChainId(chainId) : undefined
+      chainId ? parseChainId(chainId) : req.auth.chainId
     );
+    return chainId ? account : Array.isArray(account) ? account : [account];
   }
 
   @Get(":address/history")

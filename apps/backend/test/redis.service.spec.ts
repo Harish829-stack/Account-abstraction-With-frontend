@@ -1,4 +1,5 @@
 import { RedisService } from "../src/redis/redis.service";
+import { ServiceUnavailableException } from "@nestjs/common";
 
 describe("RedisService", () => {
   const originalRedisUrl = process.env.REDIS_URL;
@@ -23,5 +24,14 @@ describe("RedisService", () => {
     Object.defineProperty(service, "client", { value: client });
 
     await expect(service.get("app_config")).resolves.toBeNull();
+  });
+
+  it("fails closed for authentication when Redis is disabled or unavailable", async () => {
+    const service = new RedisService();
+    await expect(service.authGet("auth:session:test")).rejects.toBeInstanceOf(ServiceUnavailableException);
+    Object.defineProperty(service, "client", { value: {
+      status: "ready", get: jest.fn().mockRejectedValue(new Error("offline"))
+    } });
+    await expect(service.authGet("auth:session:test")).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 });

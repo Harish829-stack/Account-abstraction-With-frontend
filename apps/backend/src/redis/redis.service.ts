@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
+import { HttpException, HttpStatus, Injectable, Logger, OnModuleDestroy, ServiceUnavailableException } from "@nestjs/common";
 import Redis from "ioredis";
 
 @Injectable()
@@ -68,6 +68,44 @@ export class RedisService implements OnModuleDestroy {
       this.logger.warn(`Redis ping failed: ${(error as Error).message}`);
       return "error";
     }
+  }
+
+  // Authentication storage must fail closed; the optional cache methods above intentionally do not.
+  private async authCommand<T>(operation: (client: Redis) => Promise<T>): Promise<T> {
+    if (!this.client) throw new ServiceUnavailableException("Authentication storage is unavailable");
+    try {
+      await this.connect();
+      return await operation(this.client);
+    } catch {
+      throw new ServiceUnavailableException("Authentication storage is unavailable");
+    }
+  }
+
+  authGet(key: string): Promise<string | null> {
+    return this.authCommand((client) => client.get(key));
+  }
+
+  async authSet(key: string, value: string, ttl: number): Promise<void> {
+    await this.authCommand((client) => client.set(key, value, "EX", ttl));
+  }
+
+  async authDelete(key: string): Promise<void> {
+    await this.authCommand((client) => client.del(key));
+  }
+
+  async authConsume(key: string): Promise<string | null> {
+    return this.authCommand(async (client) => await client.eval(
+      "local v = redis.call('GET', KEYS[1]); if v then redis.call('DEL', KEYS[1]) end; return v",
+      1, key
+    ) as string | null);
+  }
+
+  async authRateLimit(key: string, limit: number, windowSeconds: number): Promise<void> {
+    const count = await this.authCommand(async (client) => Number(await client.eval(
+      "local n = redis.call('INCR', KEYS[1]); if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end; return n",
+      1, key, windowSeconds
+    )));
+    if (count > limit) throw new HttpException("Too many sign-in requests", HttpStatus.TOO_MANY_REQUESTS);
   }
 
   async onModuleDestroy(): Promise<void> {

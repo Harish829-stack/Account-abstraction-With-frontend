@@ -14,12 +14,14 @@ import { RedisModule } from "./redis/redis.module";
 import { SyncModule } from "./sync/sync.module";
 import { ActionsModule } from "./actions/actions.module";
 import { UserOpsModule } from "./user-ops/user-ops.module";
+import { AuthModule } from "./auth/auth.module";
 
 @Module({
   imports: [
     NestConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     RedisModule,
+    AuthModule,
     AppConfigModule,
     AdminModule,
     AccountsModule,

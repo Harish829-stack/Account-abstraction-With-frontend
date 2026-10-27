@@ -24,3 +24,28 @@ include credentials, private keys, signatures, or signed UserOperations.
   verified protocol/configuration integration; broader wallet UX and CI/audit gates.
 - No deployment, live-fund transaction, database migration, or secret inspection is
   authorized by this implementation step.
+
+## 2026-10-27 — Authentication core implemented and verified
+
+- Added exact server-issued ERC-4361 challenges (five-minute validity), atomic
+  one-time consumption, short-lived JWTs (15 minutes), issuer/audience/algorithm
+  checks, logout revocation, and Redis-backed rate limits. Security storage fails
+  closed; optional non-security caching retains its previous behavior.
+- Added a global default-protected backend guard. Admin/configuration and worker
+  controls require the database admin role. Account access verifies the current
+  K1 owner through a chain-checked RPC, or the existing index-1 factory prediction
+  for undeployed accounts. Client identity and historical owner metadata are not
+  ownership proofs. Account responses without an explicit chain retain their
+  array shape but are restricted to the authenticated chain.
+- Added characterization and regression tests before/alongside implementation.
+  Initial auth test run failed as expected before the new module existed.
+- Backend HTTP tests initially could not bind a loopback port under the sandbox;
+  rerunning with permission for that local-only test listener passed. This was an
+  environment restriction, not an HTTP assertion failure.
+- Verification at this checkpoint: backend `npm test -- --runInBand` passed 43
+  tests in 12 suites; `npm run lint` and `npm run build` passed. A schema-only
+  `DATABASE_URL=<local-validation-placeholder> npx prisma validate` passed without
+  connecting to a database. Existing Redis fallback and Prisma deprecation warnings
+  were observed.
+- Signing isolation/browser integration are implemented in the working tree and
+  are being checked as the next Phase 2 commit. No contracts or migrations changed.
