@@ -104,3 +104,22 @@ include credentials, private keys, signatures, or signed UserOperations.
 - Next phase: add contract characterization/invariant tests and design audited
   session-permission, recovery, and upgrade fixes on a separate phase branch,
   preserving CREATE3 addresses and planning explicit deployment/migration steps.
+
+## 2026-10-27 — Commit ledger and handoff
+
+- `2e270b4` — `docs: start append-only security remediation log`.
+- `3766859` — `feat(auth): enforce SIWE sessions and live account authorization`.
+- `135806f` — `feat(security): isolate agent signing and authenticate wallet clients`.
+- Implementation branch: `codex/security-phase2-auth`. Working tree was clean
+  after the implementation commits; this final log entry is a documentation-only
+  checkpoint. The log's previous committed contents were verified to be an exact
+  prefix of the updated file.
+- Final automated totals: 48 backend, 28 chatbot/shared-adapter, and 15 frontend
+  tests passed (91 total). Backend/frontend lint and builds and Prisma validation
+  passed, with the existing warnings recorded above.
+- Nothing was pushed or deployed. No live wallet interaction, database migration,
+  contract change, dependency update, or lockfile edit was performed.
+- Before running the upgraded services, follow `security-auth-rollout.md`: supply
+  server-only auth/encryption/service credentials, provision the admin role, and
+  revoke/recreate legacy agents. Continue the remaining remediation in its own
+  phase rather than treating this authentication checkpoint as a complete audit.
