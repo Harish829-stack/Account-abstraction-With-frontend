@@ -123,3 +123,43 @@ include credentials, private keys, signatures, or signed UserOperations.
   server-only auth/encryption/service credentials, provision the admin role, and
   revoke/recreate legacy agents. Continue the remaining remediation in its own
   phase rather than treating this authentication checkpoint as a complete audit.
+
+## 2026-10-27 — User-requested unused-file cleanup
+
+- User requested committing the changes and removing unnecessary files in this
+  pass. Confirmed the implementation was already committed through `46c2e2b` and
+  the working tree was clean before cleanup. This is a Phase 2 cleanup follow-up,
+  not the start of a contract/security behavior phase.
+- Removed nine files with no active entrypoint, import, route, or package-script
+  consumer:
+  - `frontend/src/views/ChatbotView.jsx`
+  - `frontend/src/views/FinancialAgentView.jsx`
+  - `frontend/src/views/AccountSetupView.jsx`
+  - `frontend/src/wagmiConfig.js`
+  - `frontend/src/utils/wagmiToEthers.js`
+  - `frontend/src/index.css`
+  - `frontend/src/assets/react.svg`
+  - `frontend/src/assets/vite.svg`
+  - `chatbot-server/selector.js`
+- Evidence: inspected active routes in `frontend/src/App.jsx`, traced relative
+  static/lazy/CSS imports from `main.jsx`, searched repository source/configuration
+  and package scripts, and confirmed none of the removed frontend files were
+  reachable. Preserved active styles, branded assets, tests, deployment utilities,
+  contracts, migrations, secrets, dependency manifests/lockfiles, and prior docs.
+- Updated one stale compatibility comment and appended a runbook note explaining
+  its historical references to the removed UI screens. Prior sources remain
+  recoverable at `46c2e2b`. The current auth rollout guide remains authoritative.
+- Verification:
+  - Frontend `npm run lint` passed: zero errors, 11 existing hook warnings. Three
+    warnings disappeared with removal of the unrouted screens.
+  - Frontend `node --test src/utils/auth-session.test.js src/constants/actionTags.test.js`
+    passed all 15 tests.
+  - Frontend `npm run build -- --outDir /private/tmp/aa-wallet-unused-files-cleanup-build`
+    passed; repository-generated output was left untouched.
+  - Chatbot `npm test` passed all 28 tests.
+  - `git diff --check` passed. Source/configuration references to the deleted
+    modules were absent; historical references are explicitly documented.
+- No new tests were added for deletion of unreachable files. No runtime behavior
+  or active route was changed. The backend and on-chain phases remain as recorded
+  above; their checks were not repeated for this file-only cleanup.
+- Cleanup commit subject: `chore: remove unused wallet screens and starter files`.

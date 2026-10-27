@@ -814,3 +814,16 @@ sequenceDiagram
 - UNVERIFIED: chatbot/financial healthchecks do not test dependencies, and no alerting, tracing, SLO, backup, restore, or disaster-recovery policy is checked in.
 - UNVERIFIED: migrations consist of one timestamped initial migration dated 2026-10-01; confirm whether it has already been applied anywhere before changing schema.
 - UNVERIFIED: no safe production reset or rollback migration exists; deployment rollback does not undo database changes.
+
+## 2026-10-27 cleanup and current-source note
+
+The source citations and UI diagrams above describe the historical review snapshot.
+The unrouted `ChatbotView`, `FinancialAgentView`, and `AccountSetupView` screens
+were removed during cleanup; active agent routing uses `UnifiedAgentView`.
+Descriptions of the removed screens are historical references, not current routes.
+Their last committed versions can be inspected with
+`git show 46c2e2b:frontend/src/views/<filename>.jsx`.
+
+For the implemented authentication/signing boundary and its rollout requirements,
+see [Phase 2 rollout](security-auth-rollout.md). For cleanup evidence, verification,
+and open remediation phases, see the [append-only progress log](security-remediation-progress.md).
