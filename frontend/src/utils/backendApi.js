@@ -1,3 +1,5 @@
+import { authenticatedFetch } from './auth';
+
 const CONFIG_API_URL = import.meta.env.VITE_CONFIG_API_URL || "";
 
 function getApiBase() {
@@ -8,7 +10,7 @@ async function request(path, options = {}) {
   const base = getApiBase();
   if (!base) return null;
 
-  const res = await fetch(`${base}${path}`, {
+  const res = await authenticatedFetch(`${base}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { ethers } from "ethers";
 import { useAppContext } from "../context/AppContext";
+import { useChatbotContext } from "../context/ChatbotContext";
 import { useToast } from "../context/ToastContext";
 import {
   shortenAddress,
@@ -16,6 +17,7 @@ import {
   estimateUserOperationGas,
   getDynamicGasFees,
   applyBufferedGasEstimate,
+  getUserOpReceipt,
 } from "../utils/bundler";
 import {
   IEntryPointABI,
@@ -25,7 +27,6 @@ import {
 import { getSupportedChains } from "../config/chains";
 import { getFriendlyErrorMessage } from "../utils/errors";
 import { ActionTag } from "../constants/actionTags";
-import { readStoredJson, StorageKey, writeStoredJson, writeStoredString } from "../utils/storage";
 import {
   CheckCircle2,
   XCircle,
@@ -82,6 +83,7 @@ function ConnectedDashboard() {
     loadingModules,
   } = useAppContext();
   const toast = useToast();
+  const { generateAgent, authorizeAgent } = useChatbotContext();
   const uniswapRouter = env.UNISWAP_ROUTER || "";
   const uniswapQuoter = env.UNISWAP_QUOTER || "";
   const wethToken = env.WETH_TOKEN || "";
@@ -228,18 +230,7 @@ function ConnectedDashboard() {
 
     setGlobalLoading(true, "Activating Agentic AI...");
     try {
-      const wallet = ethers.Wallet.createRandom();
-      const burnerKey = wallet.privateKey;
-      const sessionKeyAddr = wallet.address;
-
-      writeStoredString(StorageKey.SESSION_BURNER_KEY, burnerKey);
-      try {
-        const map = readStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, {}, (value) => value && typeof value === 'object');
-        map[sessionKeyAddr.toLowerCase()] = burnerKey;
-        writeStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, map);
-      } catch {
-        writeStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, { [sessionKeyAddr.toLowerCase()]: burnerKey });
-      }
+      const sessionKeyAddr = await generateAgent('native', '0.1', 'Wallet Assistant');
 
       const parsedValue = ethers.parseEther("0.1"); // Default max value
       const validUntilTimestamp =
@@ -289,6 +280,16 @@ function ConnectedDashboard() {
         initCodeObj,
       );
       trackOp(opHash, "Activate Agentic Wallet", { calldata: callData, tags: [ActionTag.ACCOUNT_ACTIVATION] });
+      let receipt;
+      for (let attempt = 0; attempt < 45 && !receipt; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        receipt = await getUserOpReceipt(opHash, chainId);
+      }
+      if (!receipt?.success) throw new Error('Activation failed or is still pending. Check transaction history before retrying.');
+      await authorizeAgent({
+        agentAddress: sessionKeyAddr, target: ethers.ZeroAddress, selector: '0x00000000',
+        maxValueWei: parsedValue.toString(), validAfter: 0, validUntil: validUntilTimestamp, txHashInstall: opHash
+      });
       toast.success(
         `Agentic Wallet Activating! OpHash: ${shortenAddress(opHash)}...`,
       );

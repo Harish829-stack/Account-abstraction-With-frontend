@@ -19,6 +19,7 @@ const { resolvePaymasterRoute } = require('./paymasterRouter');
 const { toPublicError } = require('./errorTranslator');
 const { isBlockedSelector, isToolAllowed } = require('./securityPolicy');
 const { ActionTag } = require('@aa/action-tags');
+const { createAuthMiddleware, getAuthorization } = require('../packages/server-auth');
 
 const ARBITRUM_SEPOLIA_CHAIN_ID = 421614;
 const ARBITRUM_SEPOLIA_RPC_URL = process.env.ARBITRUM_SEPOLIA_RPC_URL || process.env.SEPOLIA_RPC_URL || 'https://sepolia-rollup.arbitrum.io/rpc';
@@ -86,8 +87,11 @@ const provider = ARBITRUM_SEPOLIA_RPC_URL.startsWith('wss://')
 const agentStoreApiUrl = (process.env.AGENT_STORE_API_URL || process.env.CONFIG_API_URL || '').replace(/\/$/, '');
 const defaultChainId = ARBITRUM_SEPOLIA_CHAIN_ID;
 
-// In-memory store: smartAccountAddress -> Array<{ privateKey, agentAddress, name, scope, maxAmount, authorized }>
-const agentConfigs = new Map();
+app.use('/api', createAuthMiddleware({
+    backendUrl: agentStoreApiUrl,
+    resolveAccount: (req) => req.body?.smartAccountAddress
+        || req.path.match(/^\/agent\/(?:status\/|sync\/)?(0x[a-fA-F0-9]{40})(?:\/|$)/)?.[1]
+}));
 
 const normalizeAddress = (value) => {
     if (!value || !ethers.isAddress(value)) return null;
@@ -126,12 +130,18 @@ const publicAgentConfig = (agent) => {
 const getRequestChainId = (req) => Number(req.query.chainId || req.body?.chainId || defaultChainId);
 
 async function agentStoreRequest(method, path, data) {
-    if (!agentStoreApiUrl) return null;
+    if (!agentStoreApiUrl || !getAuthorization()) throw new Error('Authenticated agent storage is unavailable.');
     const res = await axios({
         method,
         url: `${agentStoreApiUrl}${path}`,
         data,
-        headers: { 'Content-Type': 'application/json' }
+        timeout: 8000,
+        maxRedirects: 0,
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: getAuthorization(),
+            'X-Signing-Service-Token': process.env.SIGNING_SERVICE_TOKEN || ''
+        }
     });
     return res.data;
 }
@@ -152,32 +162,6 @@ async function getStoredAgent(smartAccountAddress, chainId, agentAddress) {
     );
 }
 
-const getAgentsForAccount = (smartAccountAddress) => {
-    const accountKey = normalizeAddress(smartAccountAddress);
-    if (!accountKey) return null;
-    return agentConfigs.get(accountKey) || [];
-};
-
-const setAgentsForAccount = (smartAccountAddress, agents) => {
-    const accountKey = normalizeAddress(smartAccountAddress);
-    if (!accountKey) return false;
-    if (agents.length === 0) {
-        agentConfigs.delete(accountKey);
-    } else {
-        agentConfigs.set(accountKey, agents);
-    }
-    return true;
-};
-
-const findAgentConfig = (smartAccountAddress, agentAddress) => {
-    const accountKey = normalizeAddress(smartAccountAddress);
-    const agentKey = normalizeAddress(agentAddress);
-    if (!accountKey || !agentKey) return null;
-    const agents = agentConfigs.get(accountKey) || [];
-    return agents.find((agent) => normalizeAddress(agent.agentAddress) === agentKey) || null;
-};
-
-
 app.get('/health', (req, res) => {
     res.json({
         status: 'ok',
@@ -194,7 +178,7 @@ app.post('/health', (req, res) => {
 // Generate an agent keypair for a smart account and set its scope
 app.post('/api/agent/generate', async (req, res) => {
     try {
-        const { smartAccountAddress, ownerEoa, scope, maxAmount, name } = req.body;
+        const { smartAccountAddress, scope, maxAmount, name } = req.body;
         const chainId = getRequestChainId(req);
         if (!smartAccountAddress || !scope) {
             return res.status(400).json({ error: 'Missing smartAccountAddress or scope' });
@@ -205,40 +189,17 @@ app.post('/api/agent/generate', async (req, res) => {
             return res.status(400).json({ error: 'Invalid smartAccountAddress' });
         }
 
-        const wallet = ethers.Wallet.createRandom();
-        const existingAgents = agentConfigs.get(accountKey) || [];
         const agentName = typeof name === 'string' && name.trim()
             ? name.trim().slice(0, 64)
-            : `Agent ${existingAgents.length + 1}`;
-        const agent = {
-            privateKey: wallet.privateKey,
-            agentAddress: wallet.address,
-            name: agentName,
-            scope, // 'uniswap', 'erc20', or 'custom'
-            maxAmount: maxAmount || '0',
-            authorized: false,
-            createdAt: new Date().toISOString()
-        };
-        
-        if (agentStoreApiUrl) {
-            await agentStoreRequest('post', '/agents', {
-                smartAccountAddress,
-                ownerEoa,
-                chainId,
-                agentAddress: wallet.address,
-                privateKey: wallet.privateKey,
-                name: agentName,
-                scope,
-                maxAmount: maxAmount || '0'
-            });
-        } else {
-            agentConfigs.set(accountKey, [...existingAgents, agent]);
-        }
-
-        console.log(`[Agent] Generated ${wallet.address} for ${smartAccountAddress} with scope ${scope}`);
+            : 'Assistant';
+        const agent = await agentStoreRequest('post', '/agents', {
+            smartAccountAddress, ownerEoa: req.auth.address, chainId,
+            name: agentName, scope, maxAmount: maxAmount || '0'
+        });
+        if (!agent) return res.status(503).json({ error: 'The signing service is unavailable.' });
         res.json(publicAgentConfig(agent));
     } catch (e) {
-        console.error(e);
+        console.error('[Agent] Request failed.');
         res.status(500).json(toPublicError(e, 'We could not create the assistant. Please try again.'));
     }
 });
@@ -246,9 +207,7 @@ app.post('/api/agent/generate', async (req, res) => {
 // Check agent status
 app.get('/api/agent/status/:smartAccountAddress', async (req, res) => {
     const chainId = getRequestChainId(req);
-    const agents = agentStoreApiUrl
-        ? await listStoredAgents(req.params.smartAccountAddress, chainId)
-        : getAgentsForAccount(req.params.smartAccountAddress);
+    const agents = await listStoredAgents(req.params.smartAccountAddress, chainId);
     if (!agents) {
         return res.status(400).json({ error: 'Invalid smartAccountAddress' });
     }
@@ -298,20 +257,7 @@ app.patch('/api/agent/:smartAccountAddress/:agentAddress/authorize', async (req,
         }
     }
 
-    const agents = agentConfigs.get(accountKey) || [];
-    const index = agents.findIndex((agent) => normalizeAddress(agent.agentAddress) === agentKey);
-    if (index === -1) {
-        return res.status(404).json({ error: 'Agent not found' });
-    }
-
-    const updatedAgent = {
-        ...agents[index],
-        authorized: true,
-        authorizedAt: new Date().toISOString()
-    };
-    agents[index] = updatedAgent;
-    agentConfigs.set(accountKey, agents);
-    res.json({ agent: publicAgentConfig(updatedAgent), agents: agents.map(publicAgentConfig) });
+    return res.status(503).json({ error: 'The signing service is unavailable.' });
 });
 
 app.patch('/api/agent/:smartAccountAddress/:agentAddress/revoke', async (req, res) => {
@@ -338,22 +284,7 @@ app.patch('/api/agent/:smartAccountAddress/:agentAddress/revoke', async (req, re
         }
     }
 
-    const agents = agentConfigs.get(accountKey) || [];
-    const index = agents.findIndex((agent) => normalizeAddress(agent.agentAddress) === agentKey);
-    if (index === -1) {
-        return res.status(404).json({ error: 'Agent not found' });
-    }
-    agents[index] = {
-        ...agents[index],
-        privateKey: undefined,
-        authorized: false,
-        revoked: true,
-        status: 'revoked',
-        txHashRevoke: req.body.txHashRevoke,
-        revokedAt: new Date().toISOString()
-    };
-    agentConfigs.set(accountKey, agents);
-    res.json({ agent: publicAgentConfig(agents[index]), agents: agents.map(publicAgentConfig) });
+    return res.status(503).json({ error: 'The signing service is unavailable.' });
 });
 
 app.delete('/api/agent/:smartAccountAddress/:agentAddress', async (req, res) => {
@@ -380,14 +311,7 @@ app.delete('/api/agent/:smartAccountAddress/:agentAddress', async (req, res) => 
         }
     }
 
-    const agents = agentConfigs.get(accountKey) || [];
-    const remainingAgents = agents.filter((agent) => normalizeAddress(agent.agentAddress) !== agentKey);
-    if (remainingAgents.length === agents.length) {
-        return res.status(404).json({ error: 'Agent not found' });
-    }
-
-    setAgentsForAccount(accountKey, remainingAgents);
-    res.json({ removed: true, agents: remainingAgents.map(publicAgentConfig) });
+    return res.status(503).json({ error: 'The signing service is unavailable.' });
 });
 
 app.delete('/api/agent/:smartAccountAddress', async (req, res) => {
@@ -408,8 +332,7 @@ app.delete('/api/agent/:smartAccountAddress', async (req, res) => {
         }
     }
 
-    agentConfigs.delete(accountKey);
-    res.json({ removed: true, agents: [] });
+    return res.status(503).json({ error: 'The signing service is unavailable.' });
 });
 
 app.post('/api/agent/sync/:smartAccountAddress', async (req, res) => {
@@ -421,7 +344,6 @@ app.post('/api/agent/sync/:smartAccountAddress', async (req, res) => {
     const activeAgentAddresses = Array.isArray(req.body.activeAgentAddresses)
         ? req.body.activeAgentAddresses
         : [];
-    const activeSet = new Set(activeAgentAddresses.map(normalizeAddress).filter(Boolean));
     const moduleInstalled = Boolean(req.body.moduleInstalled);
 
     if (agentStoreApiUrl) {
@@ -441,46 +363,7 @@ app.post('/api/agent/sync/:smartAccountAddress', async (req, res) => {
         }
     }
 
-    const nowSeconds = Math.floor(Date.now() / 1000);
-    const agents = (agentConfigs.get(accountKey) || []).map((agent) => {
-        const agentKey = normalizeAddress(agent.agentAddress);
-        const isActiveOnChain = agentKey && activeSet.has(agentKey);
-        const isExpired = Number(agent.validUntil || 0) > 0 && Number(agent.validUntil) < nowSeconds;
-
-        if (!moduleInstalled || (!isActiveOnChain && getAgentRuntimeStatus(agent) === 'active')) {
-            return {
-                ...agent,
-                privateKey: undefined,
-                authorized: false,
-                revoked: true,
-                status: 'revoked',
-                revokedAt: agent.revokedAt || new Date().toISOString()
-            };
-        }
-
-        if (isExpired) {
-            return {
-                ...agent,
-                privateKey: undefined,
-                authorized: false,
-                status: 'expired'
-            };
-        }
-
-        if (isActiveOnChain && getAgentRuntimeStatus(agent) !== 'active') {
-            return {
-                ...agent,
-                authorized: true,
-                revoked: false,
-                status: 'active',
-                authorizedAt: agent.authorizedAt || new Date().toISOString()
-            };
-        }
-
-        return agent;
-    });
-    setAgentsForAccount(accountKey, agents);
-    res.json({ agents: agents.map(publicAgentConfig) });
+    return res.status(503).json({ error: 'The signing service is unavailable.' });
 });
 
 // Main chat execution
@@ -515,12 +398,10 @@ app.post('/api/chat', async (req, res) => {
         : new ethers.JsonRpcProvider(rpcUrl);
 
 
-    const config = agentStoreApiUrl
-        ? await getStoredAgent(smartAccountAddress, Number(chainId || defaultChainId), agentAddress).catch((error) => {
+    const config = await getStoredAgent(smartAccountAddress, Number(chainId || defaultChainId), agentAddress).catch((error) => {
             console.error('[Agent] Failed to load persisted agent:', error.response?.data || error.message);
             return null;
-        })
-        : findAgentConfig(smartAccountAddress, agentAddress);
+        });
     if (!config) {
         return res.status(400).json({ error: 'Agent not configured. Please initialize agent first.' });
     }
@@ -533,9 +414,6 @@ app.post('/api/chat', async (req, res) => {
     }
     if (runtimeStatus === 'expired') {
         return res.status(400).json({ error: 'Agent access has expired. Create a new agent.' });
-    }
-    if (!config.privateKey) {
-        return res.status(400).json({ error: 'Agent signing key is unavailable. Recreate the agent.' });
     }
 
     try {
@@ -790,7 +668,16 @@ app.post('/api/chat', async (req, res) => {
             return res.status(500).json({ code: 'NONCE_UNAVAILABLE', error: 'We could not prepare the account nonce. Please try again.' });
         }
 
-        const agentWallet = new ethers.Wallet(config.privateKey);
+        const agentWallet = {
+            address: config.agentAddress,
+            signUserOp: async (userOp) => {
+                const result = await agentStoreRequest('post',
+                    `/agents/internal/${smartAccountAddress}/${config.agentAddress}/sign`,
+                    { chainId: Number(chainId || defaultChainId), userOp });
+                if (!result?.signature) throw new Error('The signing service is unavailable.');
+                return result.signature;
+            }
+        };
         let opsResults = [];
 
         // ── Waterfall Gas Routing ────────────────────────────────────────────
@@ -908,7 +795,7 @@ app.post('/api/chat', async (req, res) => {
                 });
                 
             } catch (err) {
-                console.error(`Error on iteration ${i}:`, err);
+                console.error(`[Chat] Operation ${i + 1} failed.`);
                 return res.status(500).json({ ...toPublicError(err), opsResults });
             }
         }
@@ -920,7 +807,7 @@ app.post('/api/chat', async (req, res) => {
         });
 
     } catch (error) {
-        console.error(error);
+        console.error('[Chat] Request failed.');
         res.status(500).json(toPublicError(error));
     }
 });

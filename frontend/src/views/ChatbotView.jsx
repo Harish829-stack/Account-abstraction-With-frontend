@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
+import axios from '../utils/auth';
 import SafeMarkdown from '../components/SafeMarkdown';
 import { useChatbotContext } from '../context/ChatbotContext';
 import { useAppContext } from '../context/AppContext';

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import axios from 'axios';
+import axios from '../utils/auth';
 import { ethers } from 'ethers';
 import { useAppContext } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';

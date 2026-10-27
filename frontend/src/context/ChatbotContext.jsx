@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from "react";
-import axios from "axios";
+import axios from "../utils/auth";
 import { useAppContext } from "./AppContext";
 import { getDefaultChainId } from "../config/chains";
 import { getFriendlyErrorMessage } from "../utils/errors";

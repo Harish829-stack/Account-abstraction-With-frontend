@@ -22,6 +22,7 @@ import {
   SHARED_CONTRACTS,
 } from "../config/chains";
 import { getFriendlyErrorMessage } from "../utils/errors";
+import { authenticatedFetch, configureWalletAuth, clearWalletAuth } from "../utils/auth";
 import { ActionTag, expandActionTags, labelToActionTag, normalizeActionTags } from "../constants/actionTags";
 import { readStoredJson, readStoredString, removeStoredValue, StorageKey, subscribeToStorage, writeStoredJson, writeStoredString } from "../utils/storage";
 
@@ -434,7 +435,7 @@ export const AppProvider = ({ children }) => {
     const key = getAccountDataKey();
     if (!key || !smartAccountAddress) return null;
     return readCachedData("portfolio", key, async () => {
-      const response = await fetch(`${FINANCIAL_API}/api/financial/portfolio/${chainId}/${smartAccountAddress}`);
+      const response = await authenticatedFetch(`${FINANCIAL_API}/api/financial/portfolio/${chainId}/${smartAccountAddress}`);
       if (!response.ok) throw new Error(`Portfolio request failed with ${response.status}`);
       return response.json();
     }, { force });
@@ -444,7 +445,7 @@ export const AppProvider = ({ children }) => {
     const key = getChainDataKey();
     if (!key || !chainId) return null;
     return readCachedData("prices", key, async () => {
-      const response = await fetch(`${FINANCIAL_API}/api/financial/market/prices?chainId=${chainId}`);
+      const response = await authenticatedFetch(`${FINANCIAL_API}/api/financial/market/prices?chainId=${chainId}`);
       if (!response.ok) throw new Error(`Price request failed with ${response.status}`);
       const payload = await response.json();
       return payload.prices;
@@ -459,7 +460,7 @@ export const AppProvider = ({ children }) => {
         ? `${FINANCIAL_API}/api/financial/aave/${chainId}/usdc/${smartAccountAddress}`
         : `${FINANCIAL_API}/api/financial/aave/${chainId}/usdc`;
         
-      const response = await fetch(aaveUrl);
+      const response = await authenticatedFetch(aaveUrl);
       if (!response.ok) throw new Error(`Aave request failed with ${response.status}`);
       const data = await response.json();
       if (data.error) throw new Error(data.error);
@@ -1281,6 +1282,7 @@ export const AppProvider = ({ children }) => {
       setSigner(_signer);
 
       const address = await _signer.getAddress();
+      configureWalletAuth({ signer: _signer, address, chainId: currentChainId });
       setEoaAddress(address);
 
       await loadEOABalances(address, browserProvider, { includeOwnership: true });
@@ -1301,6 +1303,7 @@ export const AppProvider = ({ children }) => {
   };
 
   const disconnect = () => {
+    clearWalletAuth();
     writeStoredString(StorageKey.USER_DISCONNECTED, 'true');
     setProvider(null);
     setSigner(null);
@@ -1368,6 +1371,7 @@ export const AppProvider = ({ children }) => {
         }
       };
       const handleChainChanged = () => {
+        clearWalletAuth();
         window.location.reload();
       };
 
@@ -1404,6 +1408,7 @@ export const AppProvider = ({ children }) => {
             setSigner(_signer);
 
             const address = await _signer.getAddress();
+            configureWalletAuth({ signer: _signer, address, chainId: currentChainId });
             setEoaAddress(address);
 
             await loadEOABalances(address, browserProvider, { includeOwnership: true });

@@ -38,17 +38,26 @@ export class AuthGuard implements CanActivate {
     }
     if (path.startsWith("/agents/internal/")) this.auth.requireSigningService(req.headers["x-signing-service-token"]);
     const body = req.body || {};
+    for (const chain of [req.query.chainId, body.chainId, req.params.chainId]) {
+      if (chain !== undefined && parseChainId(chain) !== session.chainId) {
+        throw new ForbiddenException("Request chain does not match the signed-in session");
+      }
+    }
     for (const key of ["ownerEoa", "userId"]) {
       if (body[key] !== undefined && (typeof body[key] !== "string" || body[key].toLowerCase() !== session.sub)) {
         throw new ForbiddenException("Request identity does not match the signed-in wallet");
       }
     }
 
-    const account = req.params.address || req.params.smartAccount || req.params.smartAccountAddress
-      || req.query.smartAccount || body.smartAccountAddress || body.account
-      || (path === "/accounts/upsert" ? body.address : undefined);
+    const accounts = [req.params.address, req.params.smartAccount, req.params.smartAccountAddress,
+      req.query.smartAccount, body.smartAccountAddress, body.account,
+      path === "/accounts/upsert" ? body.address : undefined].filter((value) => value !== undefined);
+    const account = accounts[0];
     if (account !== undefined) {
-      if (typeof account !== "string") throw new ForbiddenException("Valid smart account required");
+      if (typeof account !== "string" || accounts.some((value) => typeof value !== "string"
+        || value.toLowerCase() !== account.toLowerCase())) {
+        throw new ForbiddenException("Request must refer to one smart account");
+      }
       const chainId = parseChainId(req.query.chainId || body.chainId || session.chainId);
       await this.ownership.requireOwner(session, account, chainId);
     }

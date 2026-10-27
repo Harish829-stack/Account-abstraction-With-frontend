@@ -103,7 +103,7 @@ export class AuthService {
   }
 
   async authenticate(authorization: string | undefined): Promise<AuthSession> {
-    if (!authorization || !/^Bearer [A-Za-z0-9_.-]+$/.test(authorization) || authorization.length > 4096) {
+    if (typeof authorization !== "string" || !/^Bearer [A-Za-z0-9_.-]+$/.test(authorization) || authorization.length > 4096) {
       throw new UnauthorizedException("Wallet sign-in required");
     }
     const settings = this.settings();

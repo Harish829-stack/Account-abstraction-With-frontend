@@ -49,3 +49,58 @@ include credentials, private keys, signatures, or signed UserOperations.
   were observed.
 - Signing isolation/browser integration are implemented in the working tree and
   are being checked as the next Phase 2 commit. No contracts or migrations changed.
+
+## 2026-10-27 — Signing boundary and wallet clients completed
+
+- Backend generates managed agents and encrypts keys with AES-256-GCM, binding
+  ciphertext to the account, chain, and agent. The existing database column is
+  reused; public key import and plaintext legacy signing are rejected. Internal
+  reads now return metadata only. Signing requires an authenticated current owner
+  and an independent service credential, checks deterministic scope/call/amount
+  rules and live on-chain key validity, and signs the configured EntryPoint hash.
+- Chatbot no longer creates, retrieves, or retains private keys. It forwards the
+  requesting user's session and requests signatures from the backend; its local
+  in-memory agent fallback was removed. The builder verifies the returned signer
+  against its own UserOperation hash before submission.
+- Both sidecars use the shared `packages/server-auth` adapter, with request-scoped
+  credential propagation, bounded authorization timeouts, and fail-closed backend
+  authorization. Financial proposal identity comes from the verified session.
+- Browser clients authenticate backend/agent requests and coordinate concurrent
+  requests through one SIWE prompt. Tokens stay in memory and are cleared/revoked
+  on disconnect or wallet/network changes. Dashboard activation uses managed
+  agents. Manual keys remain temporary component state, with no storage reads or
+  writes. Existing browser-stored keys are intentionally not silently erased;
+  revoke old on-chain keys and clear their legacy entries during rollout.
+- Final review closed conflicting query/body account and chain selectors. A new
+  HTTP regression test ensures a request cannot authorize one resource while
+  acting on another. Signing tests also caught valid zero-padded ethers quantities
+  being rejected; uint256 input validation now accepts them without changing nonce
+  semantics or packing.
+- Added `docs/security-auth-rollout.md` with configuration, admin provisioning,
+  legacy-agent migration, Docker context changes, and release limitations. Only
+  empty secret placeholders were appended to service `.env.example` templates.
+- Final verification:
+  - Backend: `npm run lint`, `npm run build`, and `npm test -- --runInBand`
+    passed; 48 tests across 13 suites. HTTP tests used an ephemeral local listener
+    with sandbox permission. Chain and database behavior is mocked in those tests.
+  - Backend: `DATABASE_URL=<local-validation-placeholder> npx prisma validate`
+    passed; schema validation only, no database connection or migration.
+  - Chatbot: `npm test` passed, 28 tests.
+  - Frontend: `npm run lint` passed with the same 14 pre-existing hook warnings;
+    an introduced unused binding was fixed before final verification.
+  - Frontend: `node --test src/utils/auth-session.test.js src/constants/actionTags.test.js`
+    passed, 15 tests. `npm run build -- --outDir /private/tmp/aa-wallet-phase2-verified-build`
+    passed; repository build output was left untouched.
+  - `node --check` passed for chatbot server/builder, financial server/backend
+    client, and the shared auth adapter. `git diff --check` passed.
+- Remaining release gates: configure the new secrets and admin role; test the real
+  wallet/agent lifecycle on an explicitly approved testnet; verify container builds;
+  migrate/revoke legacy plaintext agents and browser entries; provide contract-owner
+  and passkey-native sign-in; independently review the auth and signing boundary.
+  Backend application encryption is not an HSM/TEE.
+- Critical on-chain permission/usage, recovery, upgrade, slippage, aggregate/gas
+  budgets, nonce concurrency, and reorg issues from the review remain open. No
+  claim of production readiness or completion of the entire remediation is made.
+- Next phase: add contract characterization/invariant tests and design audited
+  session-permission, recovery, and upgrade fixes on a separate phase branch,
+  preserving CREATE3 addresses and planning explicit deployment/migration steps.

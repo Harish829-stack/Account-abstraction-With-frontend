@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 'use strict';
+const { getAuthorization } = require('../../packages/server-auth');
 
 const BACKEND_URL = (process.env.BACKEND_API_URL || 'http://localhost:3001').replace(/\/$/, '');
 const TIMEOUT_MS  = 8_000;
@@ -16,7 +17,8 @@ async function _get(path) {
   try {
     const res = await fetch(`${BACKEND_URL}${path}`, {
       signal: controller.signal,
-      headers: { 'Content-Type': 'application/json' },
+      redirect: 'error',
+      headers: { 'Content-Type': 'application/json', Authorization: getAuthorization() || '' },
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));

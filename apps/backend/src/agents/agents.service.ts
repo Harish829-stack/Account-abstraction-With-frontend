@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import type { SessionKey, SmartAccount } from "@prisma/client";
 import { AgentsRepository } from "./agents.repository";
+import { AgentKeysService } from "./agent-keys.service";
 import type {
   AgentResponse,
   AuthorizeAgentInput,
@@ -12,12 +13,15 @@ import type {
 
 @Injectable()
 export class AgentsService {
-  constructor(private readonly agentsRepository: AgentsRepository) {}
+  constructor(private readonly agentsRepository: AgentsRepository, private readonly keys: AgentKeysService) {}
 
-  async createAgent(input: CreateAgentInput): Promise<AgentResponse> {
+  async createAgent(input: Omit<CreateAgentInput, "agentAddress" | "privateKey">): Promise<AgentResponse> {
     await this.requireChain(input.chainId);
     const account = await this.requireOrCreateAccount(input.smartAccountAddress, input.chainId, input.ownerEoa);
-    const agent = await this.agentsRepository.upsertAgent(input, account.id);
+    const generated = this.keys.generate(input.smartAccountAddress, input.chainId);
+    const agent = await this.agentsRepository.upsertAgent({
+      ...input, agentAddress: generated.agentAddress, privateKey: generated.encryptedKey
+    }, account.id);
     return this.serialize(agent);
   }
 
@@ -64,7 +68,7 @@ export class AgentsService {
     const account = await this.requireAccount(smartAccountAddress, chainId);
     const agent = await this.agentsRepository.findAgent(account.id, agentAddress);
     if (!agent) throw new NotFoundException("Agent not found");
-    return this.serialize(agent, true);
+    return this.serialize(agent);
   }
 
   private async requireChain(chainId: number): Promise<void> {
@@ -85,7 +89,7 @@ export class AgentsService {
     return this.agentsRepository.upsertSmartAccount(address, ownerEoa, chainId);
   }
 
-  private serialize(agent: SessionKey, includePrivateKey = false): InternalAgentResponse {
+  private serialize(agent: SessionKey): InternalAgentResponse {
     const nowSeconds = Math.floor(Date.now() / 1000);
     const expired = !agent.revoked && agent.validUntil > 0 && agent.validUntil < nowSeconds;
     const status = agent.revoked ? "revoked" : expired ? "expired" : agent.status;
@@ -104,7 +108,6 @@ export class AgentsService {
       revoked: agent.revoked,
       txHashInstall: agent.txHashInstall || undefined,
       txHashRevoke: agent.txHashRevoke || undefined,
-      privateKey: includePrivateKey ? agent.privateKey || undefined : undefined,
       createdAt: agent.createdAt.toISOString(),
       authorizedAt: agent.authorizedAt?.toISOString(),
       revokedAt: agent.revokedAt?.toISOString(),

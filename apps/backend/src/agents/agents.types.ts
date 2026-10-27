@@ -64,6 +64,4 @@ export interface AgentResponse {
   updatedAt: string;
 }
 
-export interface InternalAgentResponse extends AgentResponse {
-  privateKey?: string;
-}
+export type InternalAgentResponse = AgentResponse;

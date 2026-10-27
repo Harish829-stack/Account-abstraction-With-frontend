@@ -387,7 +387,12 @@ async function buildAndSendAgentOp(
     );
     const userOpHash = await entryPoint.getUserOpHash(packedOp);
 
-    const rawSig = await agentWallet.signMessage(ethers.getBytes(userOpHash));
+    const rawSig = agentWallet.signUserOp
+        ? await agentWallet.signUserOp(packedOp)
+        : await agentWallet.signMessage(ethers.getBytes(userOpHash));
+    if (ethers.verifyMessage(ethers.getBytes(userOpHash), rawSig).toLowerCase() !== agentWallet.address.toLowerCase()) {
+        throw new Error('Signing service and transaction configuration do not match.');
+    }
     
     // Pack the final 85-byte signature: [sessionKey(20)] + [sig(65)]
     rpcUserOp.signature = packSessionKeySignature(agentWallet.address, rawSig);

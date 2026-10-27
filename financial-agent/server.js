@@ -29,6 +29,7 @@ const {
   ConflictError,
 } = require('./transactions/proposalService');
 const { getChainConfig } = require('./config/chains');
+const { createAuthMiddleware } = require('../packages/server-auth');
 
 const app = express();
 
@@ -42,6 +43,12 @@ const parseCorsOrigins = () => {
 app.use(cors({ origin: parseCorsOrigins(), methods: ['GET', 'POST', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
 app.options('/{*splat}', cors());
 app.use(express.json({ limit: '1mb' }));
+app.use('/api', createAuthMiddleware({
+  backendUrl: process.env.BACKEND_API_URL || 'http://localhost:3001',
+  resolveAccount: (req) => req.body?.smartAccountAddress
+    || req.path.match(/^\/financial\/portfolio\/\d+\/(0x[a-fA-F0-9]{40})(?:\/|$)/)?.[1]
+    || req.path.match(/^\/financial\/aave\/\d+\/usdc\/(0x[a-fA-F0-9]{40})(?:\/|$)/)?.[1]
+}));
 
 // ── Provider cache ────────────────────────────────────────────────────────────
 const _providers = {};
@@ -108,7 +115,8 @@ app.get('/health', (_req, res) => {
 // Main agentic endpoint. The AI orchestrates read and prepare tools.
 app.post('/api/financial/chat', async (req, res) => {
   try {
-    const { message, smartAccountAddress, chainId, userId, agentAddress, conversationHistory, liveContext } = req.body;
+    const { message, smartAccountAddress, chainId, agentAddress, conversationHistory, liveContext } = req.body;
+    const userId = req.auth.address;
 
     if (!message) return res.status(400).json({ error: 'message is required' });
     if (!smartAccountAddress) return res.status(400).json({ error: 'smartAccountAddress is required' });
@@ -247,7 +255,8 @@ app.get('/api/financial/uniswap/quote', async (req, res) => {
 // Create a proposal directly (without going through the agent).
 app.post('/api/financial/proposals', async (req, res) => {
   try {
-    const { userId, smartAccountAddress, agentAddress, chainId, action, calls, displayedSummary, financialContext } = req.body;
+    const { smartAccountAddress, agentAddress, chainId, action, calls, displayedSummary, financialContext } = req.body;
+    const userId = req.auth.address;
     if (!userId || !smartAccountAddress || !chainId || !action || !calls) {
       return res.status(400).json({ error: 'userId, smartAccountAddress, chainId, action, calls are required' });
     }
@@ -272,7 +281,7 @@ app.post('/api/financial/proposals', async (req, res) => {
 // ── GET /api/financial/proposals/:id ─────────────────────────────────────────
 app.get('/api/financial/proposals/:id', async (req, res) => {
   try {
-    const userId = (req.query.userId || req.headers['x-user-id'] || '').toLowerCase();
+    const userId = req.auth.address;
     if (!userId) return res.status(401).json({ error: 'userId query param or x-user-id header is required' });
     const proposal = await getProposal(req.params.id, userId);
     res.json(proposal);
@@ -285,7 +294,7 @@ app.get('/api/financial/proposals/:id', async (req, res) => {
 app.post('/api/financial/proposals/:id/confirm', async (req, res) => {
   let proposal;
   try {
-    const userId = (req.body.userId || req.headers['x-user-id'] || '').toLowerCase();
+    const userId = req.auth.address;
     if (!userId) return res.status(401).json({ error: 'userId is required' });
     proposal = await confirmProposal(req.params.id, userId);
     res.json({
@@ -303,7 +312,7 @@ app.post('/api/financial/proposals/:id/confirm', async (req, res) => {
 // ── POST /api/financial/proposals/:id/reject ─────────────────────────────────
 app.post('/api/financial/proposals/:id/reject', async (req, res) => {
   try {
-    const userId = (req.body.userId || req.headers['x-user-id'] || '').toLowerCase();
+    const userId = req.auth.address;
     if (!userId) return res.status(401).json({ error: 'userId is required' });
     const proposal = await rejectProposal(req.params.id, userId, req.body.reason);
     res.json(proposal);

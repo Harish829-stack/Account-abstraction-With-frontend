@@ -9,10 +9,10 @@ import { SmartAccountABI, IEntryPointABI, SessionKeyValidatorABI } from '../util
 import { revokeAllPersistedAgents, revokePersistedAgent } from '../utils/backendApi';
 import { getFriendlyErrorMessage } from '../utils/errors';
 import { ActionTag } from '../constants/actionTags';
-import { readStoredJson, readStoredString, removeStoredValue, StorageKey, writeStoredJson, writeStoredString } from '../utils/storage';
+import { removeStoredValue, StorageKey } from '../utils/storage';
 
 export default function SessionKeyView() {
-  const { smartAccountAddress, signer, provider, env, setGlobalLoading, chainId, refreshTrigger, nativeToken, installedModules, refreshInstalledModules, trackOp } = useAppContext();
+  const { smartAccountAddress, signer, provider, env, setGlobalLoading, chainId, nativeToken, installedModules, refreshInstalledModules, trackOp } = useAppContext();
   const toast = useToast();
 
   const [showSessionKeys, setShowSessionKeys] = useState(false);
@@ -72,6 +72,7 @@ export default function SessionKeyView() {
 
   // Form State
   const [burnerKey, setBurnerKey] = useState("");
+  useEffect(() => { setBurnerKey(""); }, [smartAccountAddress, chainId]);
   const [targetAddr, setTargetAddr] = useState(ethers.ZeroAddress);
   const [selector, setSelector] = useState("0x00000000");
   const [maxValue, setMaxValue] = useState("0.1");
@@ -84,92 +85,21 @@ export default function SessionKeyView() {
 
   const [activeTab, setActiveTab] = useState('setup');
 
-  useEffect(() => {
-    // Attempt to load burner key from local storage
-    const storedKey = readStoredString(StorageKey.SESSION_BURNER_KEY);
-    if (storedKey) {
-        setBurnerKey(storedKey);
-    }
-  }, []);
+  const generateKey = () => {
+    setBurnerKey(ethers.Wallet.createRandom().privateKey);
+    toast.info("Temporary key created for this tab. It is cleared when you leave or reload.");
+  };
 
-  // Load session key details when module is installed and burner key exists
-  useEffect(() => {
-    const loadKeyDetails = async () => {
-      if (!smartAccountAddress || !provider || !validatorAddr || !isSkInstalled) {
+  const handleUseSpecificKey = (keyAddress) => {
+    try {
+      if (burnerKey && new ethers.Wallet(burnerKey).address.toLowerCase() === keyAddress.toLowerCase()) {
+        setActiveTab('execute');
         return;
       }
-      const storedKey = readStoredString(StorageKey.SESSION_BURNER_KEY);
-      if (!storedKey) return;
-      try {
-        const burnerWallet = new ethers.Wallet(storedKey);
-        const skValidator = new ethers.Contract(validatorAddr, SessionKeyValidatorABI, provider);
-        const skData = await skValidator.sessionKeys(burnerWallet.address, smartAccountAddress);
-        if (!skData.enabled) return;
-      } catch {
-        // Module/key details are optional for this view.
-      }
-    };
-    loadKeyDetails();
-  }, [smartAccountAddress, provider, validatorAddr, isSkInstalled, refreshTrigger]);
-
-    const generateKey = () => {
-        const wallet = ethers.Wallet.createRandom();
-        setBurnerKey(wallet.privateKey);
-        writeStoredString(StorageKey.SESSION_BURNER_KEY, wallet.privateKey);
-        
-        try {
-            const map = readStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, {}, (value) => value && typeof value === 'object');
-            map[wallet.address.toLowerCase()] = wallet.privateKey;
-            writeStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, map);
-        } catch {
-            console.warn("Failed to update keys map");
-        }
-        
-        toast.success("New Burner Key generated and saved to Local Storage!");
-    };
-
-    const handleUseSpecificKey = (keyAddress) => {
-        try {
-            const map = readStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, {}, (value) => value && typeof value === 'object');
-            
-            // Convert to lowercase map for case-insensitive lookup
-            const lowerMap = {};
-            Object.keys(map).forEach(k => lowerMap[k.toLowerCase()] = map[k]);
-            
-            let privKey = lowerMap[keyAddress.toLowerCase()];
-            
-            // Legacy fallback: check if it's the currently active single burner key
-            if (!privKey) {
-                const legacyKey = readStoredString(StorageKey.SESSION_BURNER_KEY);
-                if (legacyKey) {
-                    try {
-                        const legacyWallet = new ethers.Wallet(legacyKey);
-                        if (legacyWallet.address.toLowerCase() === keyAddress.toLowerCase()) {
-                            privKey = legacyKey;
-                            // Add it to the map for future use
-                            map[keyAddress.toLowerCase()] = privKey;
-                            writeStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, map);
-                        }
-                    } catch {
-                        // Ignore malformed legacy burner key.
-                    }
-                }
-            }
-            
-            if (privKey) {
-                setBurnerKey(privKey);
-                writeStoredString(StorageKey.SESSION_BURNER_KEY, privKey); // Update active key
-                setActiveTab('execute');
-                toast.success("Burner key loaded! Ready to execute.");
-            } else {
-                toast.error("Private key not found on this device! Please manually enter it in the Setup tab.");
-                setActiveTab('setup');
-            }
-        } catch (err) {
-            console.error(err);
-            toast.error("Error reading local storage.");
-        }
-    };
+    } catch { /* Invalid manually entered keys are handled by the setup form. */ }
+    toast.info("This key is unavailable in this tab. Use the assistant workspace for managed agents, or revoke and recreate legacy keys.");
+    setActiveTab('setup');
+  };
 
   const queryAllSessionKeys = async () => {
       if (!smartAccountAddress || !provider || !validatorAddr) return;
@@ -311,15 +241,6 @@ export default function SessionKeyView() {
       const burnerWallet = new ethers.Wallet(burnerKey);
       const sessionKeyAddr = burnerWallet.address;
       
-      // Save to local map when installing manually entered keys
-      try {
-          const map = readStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, {}, (value) => value && typeof value === 'object');
-          map[sessionKeyAddr.toLowerCase()] = burnerKey;
-          writeStoredJson(StorageKey.SESSION_BURNER_KEYS_MAP, map);
-      } catch {
-          // Local key map persistence is best-effort.
-      }
-
       const parsedValue = ethers.parseEther(maxValue || "0");
       const validUntilTimestamp = Math.floor(Date.now() / 1000) + (Number(validForMinutes) * 60);
       
@@ -542,7 +463,7 @@ export default function SessionKeyView() {
                                             <input type="text" className="input-field bg-slate-900/50 border-slate-700 text-slate-500 text-sm cursor-not-allowed" value={validatorAddr} disabled />
                                         </div>
                                         <div>
-                                            <label className="text-xs text-slate-400 mb-1 block">Burner Private Key (Stored locally)</label>
+                                            <label className="text-xs text-slate-400 mb-1 block">Temporary Burner Private Key (This tab only)</label>
                                             <input type="password" className="input-field bg-slate-900/50 border-slate-700 text-slate-200 text-sm focus:border-amber-500" placeholder="0x..." value={burnerKey} onChange={(e) => setBurnerKey(e.target.value)} />
                                         </div>
 
@@ -654,7 +575,7 @@ export default function SessionKeyView() {
                                 <div className="flex flex-col gap-5 animate-fade-in">
                                     <div>
                                         <h3 className="text-lg font-bold text-blue-400 drop-shadow-sm">Send Operation via Session Key</h3>
-                                        <p className="text-xs text-blue-100/50 mt-1">Send a custom transaction signed solely by the burner key in your local storage.</p>
+                                        <p className="text-xs text-blue-100/50 mt-1">Send a custom transaction using this tab’s temporary key. The key is cleared when you leave or reload.</p>
                                     </div>
                                     
                                     <div className="flex flex-col gap-4 p-4 bg-blue-950/20 border border-blue-500/20 rounded-xl">
