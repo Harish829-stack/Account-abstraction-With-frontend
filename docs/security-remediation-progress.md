@@ -163,6 +163,7 @@ include credentials, private keys, signatures, or signed UserOperations.
   or active route was changed. The backend and on-chain phases remain as recorded
   above; their checks were not repeated for this file-only cleanup.
 - Cleanup commit subject: `chore: remove unused wallet screens and starter files`.
+<<<<<<< HEAD
 
 ## 2026-10-27 — Post-cleanup verification against the original findings
 
@@ -217,3 +218,5 @@ include credentials, private keys, signatures, or signed UserOperations.
 - This entry is documentation-only. No runtime source, contracts, migrations,
   configuration, or deployment was changed during the status check. Next priority
   remains audited on-chain permissions, recovery, and upgrade enforcement.
+=======
+>>>>>>> d8f01fc2b6dc2a0687f9e23de506830dd844ee39
